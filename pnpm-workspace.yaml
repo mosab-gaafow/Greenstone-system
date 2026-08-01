@@ -1,0 +1,19 @@
+packages:
+  - frontend
+  - backend
+
+# pnpm 11 reads workspace settings from this file, not from .npmrc.
+# Dependency build scripts are blocked unless explicitly allowed below.
+strictDepBuilds: true
+
+allowBuilds:
+  # Downloads the Prisma query engine binaries.
+  "@prisma/engines": true
+  # Prisma CLI postinstall.
+  prisma: true
+  # Installs the platform-specific esbuild binary. Required by tsx.
+  esbuild: true
+  # Installs the native image-processing binary used by Next.js image optimisation.
+  sharp: true
+  # Installs the native resolver binary used by eslint-config-next.
+  unrs-resolver: true

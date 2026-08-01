@@ -1,0 +1,17 @@
+# Backend-specific ignores. Shared ignores live in the root .gitignore.
+
+# build output
+/dist/
+*.tsbuildinfo
+
+# generated Prisma client — rebuilt by `pnpm --filter backend prisma:generate`
+/src/generated/
+
+# env files
+.env
+.env.*
+!.env.example
+
+# local development file storage — never commit uploaded files
+/storage/*
+!/storage/.gitkeep

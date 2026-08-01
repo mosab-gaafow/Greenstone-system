@@ -1,0 +1,81 @@
+// Greenstone Management System — Prisma schema
+//
+// Phase 1 creates shared infrastructure tables only.
+// Business entities are added from Phase 2 onward, in the phase that owns them.
+//
+// See docs/technical-blueprint.md sections 4.14, 7.2 and 10.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+// Prisma 7 no longer accepts `url` here.
+// The connection URL lives in prisma.config.ts for the CLI, and is passed to
+// PrismaClient through the driver adapter at runtime.
+datasource db {
+  provider = "mysql"
+}
+
+/// Document types that receive an official backend-generated number.
+/// Values come from the approved numbering table (business-blueprint section 3).
+enum DocumentType {
+  QUOTATION
+  ORDER
+  PRODUCTION
+  DELIVERY
+  INVOICE
+  RECEIPT
+  PURCHASE
+  CUSTOMER_PAYMENT
+  PURCHASE_PAYMENT
+  SALARY_PAYMENT
+  EXPENSE
+}
+
+/// One counter per document type per Africa/Nairobi calendar year.
+/// Rows are locked with SELECT ... FOR UPDATE during number generation so that
+/// simultaneous requests can never receive the same number.
+model DocumentSequence {
+  id           String       @id @default(uuid())
+  documentType DocumentType
+  year         Int
+  lastNumber   Int          @default(0)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([documentType, year])
+  @@map("document_sequences")
+}
+
+/// Append-only history of sensitive actions.
+///
+/// Audit rows are written by backend services inside the same transaction as the
+/// business change they describe. They are never updated or deleted.
+///
+/// `userId` is a plain column in Phase 1 because the User model does not exist
+/// yet. Phase 2 adds the foreign-key relation.
+model AuditLog {
+  id             String   @id @default(uuid())
+  userId         String?
+  userName       String?
+  userRole       String?
+  action         String
+  module         String
+  entityType     String
+  entityId       String?
+  documentNumber String?
+  previousData   Json?
+  updatedData    Json?
+  reason         String?  @db.Text
+  requestId      String?
+  ipAddress      String?
+  userAgent      String?  @db.Text
+  createdAt      DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([module, action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

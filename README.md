@@ -10,9 +10,13 @@ The business blueprint and technical implementation blueprint are approved.
 
 The project is currently at:
 
-**Phase 0 — Repository and documentation setup**
+**Phase 1 — Backend foundation**
 
-Application features have not been implemented yet.
+The repository foundation and the shared backend infrastructure are in place:
+configuration, database access, transactions, audit logging, document
+numbering, storage and PDF abstractions, error handling and health endpoints.
+
+Authentication and business features have not been implemented yet.
 
 ## Main MVP Areas
 
@@ -113,11 +117,44 @@ The planned repository structure is:
 
 ```text
 greenstone-system/
+├── .github/
+│   └── workflows/
+│       └── validate.yml
 ├── frontend/
+│   ├── app/
+│   ├── components/
+│   ├── features/
+│   ├── lib/
+│   ├── providers/
+│   ├── hooks/
+│   ├── styles/
+│   ├── types/
+│   ├── public/
+│   ├── tests/
+│   └── e2e/
 ├── backend/
+│   ├── src/
+│   │   ├── config/
+│   │   ├── modules/
+│   │   ├── shared/
+│   │   ├── health/
+│   │   ├── app.ts
+│   │   └── server.ts
+│   ├── prisma/
+│   │   └── seed/
+│   │       ├── development/
+│   │       └── production/
+│   ├── storage/
+│   └── tests/
 ├── docs/
 │   ├── business-blueprint.md
-│   └── technical-blueprint.md
+│   ├── technical-blueprint.md
+│   ├── implementation-plan.md
+│   ├── permissions-matrix.md
+│   ├── api-conventions.md
+│   ├── database-notes.md
+│   ├── deployment-guide.md
+│   └── production-setup-checklist.md
 ├── scripts/
 ├── CLAUDE.md
 ├── README.md
@@ -125,14 +162,27 @@ greenstone-system/
 └── pnpm-workspace.yaml
 ```
 
+`backend/src/shared/` and `backend/src/health/` hold the Phase 1 infrastructure.
+`backend/src/modules/` and most `frontend/` subfolders are still empty
+placeholders, filled in the phase that owns the work.
+
 ## Documentation
 
 The approved project documents are stored in:
 
 - `docs/business-blueprint.md`
 - `docs/technical-blueprint.md`
+- `docs/implementation-plan.md`
 
 These documents are the main source of truth.
+
+The following documents are placeholders and are written in the phase that owns them:
+
+- `docs/permissions-matrix.md` — Phase 2
+- `docs/api-conventions.md` — Phase 1
+- `docs/database-notes.md` — Phase 1 onward
+- `docs/deployment-guide.md` — Phase 12
+- `docs/production-setup-checklist.md` — Phase 12
 
 Implementation must not invent or change approved business requirements.
 
@@ -206,7 +256,136 @@ Real company data will be entered during production setup.
 
 ## Local Development
 
-Local setup commands will be added after the frontend and backend applications are created during Phase 0.
+### Requirements
+
+- Node.js 24 or newer (CI validates Node 24 and Node 26)
+- pnpm 11.18.0 or newer
+- A running MySQL server with two databases: one for development and one for tests
+
+### Install
+
+```bash
+pnpm install
+```
+
+This installs the root workspace and both applications.
+
+### Environment files
+
+```bash
+cp backend/.env.example backend/.env
+cp frontend/.env.example frontend/.env.local
+```
+
+Fill in `DATABASE_URL`, `TEST_DATABASE_URL` and `CSRF_SECRET` in `backend/.env`.
+
+Never commit a real environment file. Never place a secret in a frontend variable.
+
+### Database setup
+
+Create both databases, then apply the migrations:
+
+```sql
+CREATE DATABASE greenstone_dev;
+CREATE DATABASE greenstone_test;
+```
+
+```bash
+pnpm --filter backend prisma:generate   # generate the Prisma client
+pnpm --filter backend prisma:migrate    # create and apply migrations (development)
+```
+
+The Prisma client is generated code and is not committed. Run
+`prisma:generate` after cloning the repository and after any schema change.
+
+> **The test database is wiped repeatedly.** The suite refuses to run unless
+> `TEST_DATABASE_URL` differs from `DATABASE_URL` and its database name ends
+> with `_test`.
+
+| Command                                 | Purpose                                       |
+| --------------------------------------- | --------------------------------------------- |
+| `pnpm --filter backend prisma:generate` | Regenerate the Prisma client                  |
+| `pnpm --filter backend prisma:migrate`  | Create and apply a migration (development)    |
+| `pnpm --filter backend prisma:deploy`   | Apply existing migrations (CI, staging, prod) |
+| `pnpm --filter backend prisma:studio`   | Browse the database                           |
+
+### Running the applications
+
+Run the frontend and the backend in **two separate terminal sessions**. Keep both
+processes running while developing.
+
+Terminal 1 — backend:
+
+```bash
+pnpm dev:backend
+```
+
+Terminal 2 — frontend:
+
+```bash
+pnpm dev:frontend
+```
+
+| Application | Default address       |
+| ----------- | --------------------- |
+| Frontend    | http://localhost:3000 |
+| Backend     | http://localhost:4000 |
+
+The backend exposes health endpoints only. Business routes are added from
+Phase 2 onward.
+
+| Endpoint                   | Purpose                                             |
+| -------------------------- | --------------------------------------------------- |
+| `GET /api/v1/health/live`  | Liveness. Does not touch the database.              |
+| `GET /api/v1/health/ready` | Readiness. Checks database, configuration, storage. |
+
+### Validation commands
+
+| Command             | Purpose                                      |
+| ------------------- | -------------------------------------------- |
+| `pnpm format`       | Apply Prettier formatting                    |
+| `pnpm format:check` | Verify formatting                            |
+| `pnpm lint`         | Lint both applications                       |
+| `pnpm lint:fix`     | Lint and apply safe fixes                    |
+| `pnpm typecheck`    | Type check both applications                 |
+| `pnpm build`        | Build both applications                      |
+| `pnpm validate`     | Run format check, lint, type check and build |
+
+`pnpm validate` runs the same steps as the GitHub Actions validation workflow.
+
+### Tests
+
+```bash
+pnpm --filter backend test         # full suite
+pnpm --filter backend test:unit    # unit tests only, no database needed
+pnpm --filter backend test:watch   # watch mode
+```
+
+Unit tests need no database. Integration and API tests use `TEST_DATABASE_URL`.
+Test files run serially because they share one database.
+
+### Seeds
+
+Seed commands are reserved but not implemented yet.
+
+| Command                           | Implemented in |
+| --------------------------------- | -------------- |
+| `pnpm --filter backend seed:dev`  | Phase 4        |
+| `pnpm --filter backend seed:prod` | Phase 2        |
+
+See `backend/prisma/seed/README.md`.
+
+### Toolchain notes
+
+- TypeScript is pinned to 5.9 because `typescript-eslint` does not yet support
+  TypeScript 7.
+- ESLint is pinned to 9 because `eslint-config-next` is not yet compatible with
+  ESLint 10.
+- Prisma 7 requires a driver adapter; `@prisma/adapter-mariadb` is the one for
+  the `mysql` provider.
+- Prisma 7 no longer reads the connection URL from `schema.prisma`. It lives in
+  `backend/prisma.config.ts`, which loads `.env` through Node's built-in loader
+  so the project needs no `dotenv` dependency.
 
 ## License
 

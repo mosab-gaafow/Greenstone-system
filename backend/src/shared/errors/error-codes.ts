@@ -1,0 +1,34 @@
+/**
+ * Stable application error codes.
+ *
+ * These are part of the API contract. Values must never change once released,
+ * because the frontend and integrations branch on them.
+ *
+ * See docs/technical-blueprint.md section 5.6.
+ */
+export const ERROR_CODES = {
+  VALIDATION_ERROR: 'VALIDATION_ERROR',
+  AUTHENTICATION_REQUIRED: 'AUTHENTICATION_REQUIRED',
+  INVALID_CREDENTIALS: 'INVALID_CREDENTIALS',
+  SESSION_EXPIRED: 'SESSION_EXPIRED',
+  PERMISSION_DENIED: 'PERMISSION_DENIED',
+  RESOURCE_NOT_FOUND: 'RESOURCE_NOT_FOUND',
+  RESOURCE_CONFLICT: 'RESOURCE_CONFLICT',
+  BUSINESS_RULE_VIOLATION: 'BUSINESS_RULE_VIOLATION',
+  CUSTOMER_CREDIT_BLOCKED: 'CUSTOMER_CREDIT_BLOCKED',
+  INSUFFICIENT_FINISHED_STOCK: 'INSUFFICIENT_FINISHED_STOCK',
+  INSUFFICIENT_RAW_MATERIAL: 'INSUFFICIENT_RAW_MATERIAL',
+  CURING_NOT_COMPLETE: 'CURING_NOT_COMPLETE',
+  INVALID_DOCUMENT_STATUS: 'INVALID_DOCUMENT_STATUS',
+  DUPLICATE_DOCUMENT: 'DUPLICATE_DOCUMENT',
+  FILE_VALIDATION_FAILED: 'FILE_VALIDATION_FAILED',
+  INTERNAL_SERVER_ERROR: 'INTERNAL_SERVER_ERROR',
+} as const;
+
+export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
+
+/**
+ * Message returned to the client for unexpected failures. Internal details are
+ * logged, never sent.
+ */
+export const GENERIC_ERROR_MESSAGE = 'An unexpected error occurred. Please try again.';

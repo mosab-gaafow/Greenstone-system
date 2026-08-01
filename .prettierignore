@@ -1,0 +1,19 @@
+node_modules/
+pnpm-lock.yaml
+
+frontend/.next/
+frontend/out/
+frontend/next-env.d.ts
+
+backend/dist/
+backend/storage/
+backend/src/generated/
+backend/prisma/migrations/
+
+coverage/
+*.tsbuildinfo
+
+# Approved documentation is kept in its authored formatting.
+docs/business-blueprint.md
+docs/technical-blueprint.md
+docs/implementation-plan.md

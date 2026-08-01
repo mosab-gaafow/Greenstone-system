@@ -1,0 +1,89 @@
+name: Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: validate-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Format, lint, type check, test, build (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [24, 26]
+
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root-password
+          MYSQL_DATABASE: greenstone_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci-root-password"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      # CI provisions its own throwaway database. These values are not secrets
+      # and never reach any real environment.
+      #
+      # Only greenstone_test exists. DATABASE_URL points at an unused name so it
+      # differs from TEST_DATABASE_URL — the test harness refuses to run when the
+      # two are equal. Nothing ever connects to it: `prisma generate` does not
+      # open a connection, and the suite overrides DATABASE_URL with the test URL
+      # before applying migrations.
+      DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/greenstone_ci_unused
+      TEST_DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/greenstone_test
+      FRONTEND_ORIGIN: http://localhost:3000
+      CSRF_SECRET: ci-only-csrf-secret-value-at-least-32-chars
+      NODE_ENV: test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.18.0
+
+      - name: Set up Node.js ${{ matrix.node }}
+        uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter backend prisma:generate
+
+      - name: Check formatting
+        run: pnpm format:check
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Type check
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm --filter backend test
+
+      - name: Build
+        run: pnpm build
