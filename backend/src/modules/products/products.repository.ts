@@ -1,5 +1,6 @@
 import type { Prisma, Product } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
+import { normalizeForComparison } from '../../shared/utils/normalize.js';
 import type { DbClient } from '../../shared/database/transaction.js';
 import type {
   CreateProductInput,
@@ -60,17 +61,19 @@ export async function findProductById(
 }
 
 /**
- * Finds a product by name, case-insensitively.
+ * Finds a product by its normalised name.
  *
- * The column collation is `utf8mb4_unicode_ci`, so MySQL already compares
- * without regard to case. This is what makes the duplicate-name check catch
- * "Hollow Blocks 6 x 9" against "hollow blocks 6 x 9".
+ * Comparing on `nameNormalized` rather than `name` is what makes the check
+ * catch "Hollow Blocks 6 x 9" against "Hollow Blocks 6 × 9" and against
+ * "hollow  blocks 6 x 9".
  */
 export async function findProductByName(
   name: string,
   client: DbClient = getPrisma(),
 ): Promise<ProductRow | null> {
-  return client.product.findFirst({ where: { name } });
+  return client.product.findUnique({
+    where: { nameNormalized: normalizeForComparison(name) },
+  });
 }
 
 export async function insertProduct(
@@ -80,6 +83,7 @@ export async function insertProduct(
   return client.product.create({
     data: {
       name: input.name,
+      nameNormalized: normalizeForComparison(input.name),
       category: input.category,
       size: input.size,
       description: input.description ?? null,
@@ -96,6 +100,9 @@ export async function updateProduct(
 
   if (input.name !== undefined) {
     data.name = input.name;
+    // Kept in step with `name`, otherwise the unique index would guard a stale
+    // value and duplicates could slip back in.
+    data.nameNormalized = normalizeForComparison(input.name);
   }
   if (input.category !== undefined) {
     data.category = input.category;

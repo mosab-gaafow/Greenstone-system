@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { ProductCategory } from '../../generated/prisma/client.js';
+import { normalizeText } from '../../shared/utils/normalize.js';
 
 /**
  * Product request schemas.
@@ -18,13 +19,16 @@ const nameSchema = z
   .string()
   .trim()
   .min(2, 'Product name must be at least 2 characters.')
-  .max(120, 'Product name must be 120 characters or fewer.');
+  .max(120, 'Product name must be 120 characters or fewer.')
+  // Stored collapsed, so extra spacing cannot create a near-duplicate.
+  .transform(normalizeText);
 
 const sizeSchema = z
   .string()
   .trim()
   .min(1, 'Size is required.')
-  .max(60, 'Size must be 60 characters or fewer.');
+  .max(60, 'Size must be 60 characters or fewer.')
+  .transform(normalizeText);
 
 const descriptionSchema = z
   .string()

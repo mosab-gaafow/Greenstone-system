@@ -1,5 +1,6 @@
 import { ProductCategory } from '../../../src/generated/prisma/client.js';
 import type { DbClient } from '../../../src/shared/database/transaction.js';
+import { normalizeForComparison } from '../../../src/shared/utils/normalize.js';
 
 /**
  * Confirmed initial product definitions.
@@ -53,14 +54,18 @@ export async function seedInitialProducts(client: DbClient): Promise<SeedProduct
   let skipped = 0;
 
   for (const product of INITIAL_PRODUCTS) {
-    const existing = await client.product.findFirst({ where: { name: product.name } });
+    const existing = await client.product.findUnique({
+      where: { nameNormalized: normalizeForComparison(product.name) },
+    });
 
     if (existing) {
       skipped += 1;
       continue;
     }
 
-    await client.product.create({ data: product });
+    await client.product.create({
+      data: { ...product, nameNormalized: normalizeForComparison(product.name) },
+    });
     created += 1;
   }
 

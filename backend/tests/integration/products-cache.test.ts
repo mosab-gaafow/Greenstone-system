@@ -52,7 +52,12 @@ describe('product list caching', () => {
 
   it('returns the same result on a repeated read', async () => {
     await getTestPrisma().product.create({
-      data: { name: 'Cached block', category: 'HOLLOW_BLOCK', size: '6 × 9' },
+      data: {
+        name: 'Cached block',
+        nameNormalized: 'cached block',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+      },
     });
 
     const first = await productsService.listProducts(FILTERS);
@@ -111,8 +116,8 @@ describe('product list caching', () => {
   it('keeps different filters in separate cache entries', async () => {
     await getTestPrisma().product.createMany({
       data: [
-        { name: 'A block', category: 'HOLLOW_BLOCK', size: '6 × 9' },
-        { name: 'A pot', category: 'HOLLOW_POT', size: '380' },
+        { name: 'A block', nameNormalized: 'a block', category: 'HOLLOW_BLOCK', size: '6 × 9' },
+        { name: 'A pot', nameNormalized: 'a pot', category: 'HOLLOW_POT', size: '380' },
       ],
     });
 
@@ -126,7 +131,12 @@ describe('product list caching', () => {
 
   it('writes list entries under the products namespace', async () => {
     await getTestPrisma().product.create({
-      data: { name: 'Namespaced', category: 'HOLLOW_BLOCK', size: '6 × 9' },
+      data: {
+        name: 'Namespaced',
+        nameNormalized: 'namespaced',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+      },
     });
 
     await productsService.listProducts(FILTERS);
@@ -149,7 +159,12 @@ describe('product list caching', () => {
 
   it('returns correct data even when nothing is cached', async () => {
     await getTestPrisma().product.create({
-      data: { name: 'Uncached', category: 'HOLLOW_BLOCK', size: '6 × 9' },
+      data: {
+        name: 'Uncached',
+        nameNormalized: 'uncached',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+      },
     });
 
     await cache.delByPrefix(buildCacheKeyPrefix('products'));

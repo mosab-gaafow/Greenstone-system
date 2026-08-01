@@ -38,6 +38,8 @@ const TABLES = [
   'document_sequences',
   'audit_logs',
   'products',
+  'customer_addresses',
+  'customers',
   'user_capability_grants',
   'session',
   'account',

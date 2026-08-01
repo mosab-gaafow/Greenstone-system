@@ -4,6 +4,7 @@ import { API_BASE_PATH, createApp } from '../../src/app.js';
 import { CSRF_HEADER_NAME } from '../../src/config/security.js';
 import { disconnectPrisma } from '../../src/shared/database/prisma.js';
 import { createSignedInUser } from '../setup/auth-helpers.js';
+import { normalizeForComparison } from '../../src/shared/utils/normalize.js';
 import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-database.js';
 
 const app = createApp();
@@ -27,9 +28,12 @@ async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
 async function seedProduct(
   overrides: Partial<{ name: string; size: string; isActive: boolean }> = {},
 ) {
+  const name = overrides.name ?? `Test Product ${Math.random().toString(36).slice(2, 8)}`;
+
   return getTestPrisma().product.create({
     data: {
-      name: overrides.name ?? `Test Product ${Math.random().toString(36).slice(2, 8)}`,
+      name: name,
+      nameNormalized: normalizeForComparison(name),
       category: 'HOLLOW_BLOCK',
       size: overrides.size ?? '6 × 9',
       isActive: overrides.isActive ?? true,
@@ -143,7 +147,7 @@ describe('products module', () => {
       const { cookie } = await createSignedInUser('admin');
       await seedProduct({ name: 'A block' });
       await getTestPrisma().product.create({
-        data: { name: 'A pot', category: 'HOLLOW_POT', size: '380' },
+        data: { name: 'A pot', nameNormalized: 'a pot', category: 'HOLLOW_POT', size: '380' },
       });
 
       const response = await request(app)
@@ -304,6 +308,7 @@ describe('products module', () => {
       const product = await getTestPrisma().product.create({
         data: {
           name: 'Has description',
+          nameNormalized: 'has description',
           category: 'HOLLOW_BLOCK',
           size: '6 × 9',
           description: 'x',

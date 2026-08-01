@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -8,6 +9,8 @@ import { TextareaField } from '@/components/forms/textarea-field';
 import { SelectField } from '@/components/forms/select-field';
 import { FormSection } from '@/components/forms/form-section';
 import { FormActions } from '@/components/forms/form-actions';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ApiError } from '@/lib/api-client';
 import { productFormSchema, type ProductFormValues } from '../schemas/product.schema';
 import { CATEGORY_OPTIONS, type Product } from '../types/product.types';
 
@@ -25,6 +28,7 @@ interface ProductFormProps {
  */
 export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
   const router = useRouter();
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const {
     register,
@@ -44,11 +48,33 @@ export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
   return (
     <form
       onSubmit={(event) => {
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(async (values) => {
+          setSubmitError(null);
+
+          try {
+            await onSubmit(values);
+          } catch (error) {
+            // A rejected duplicate arrives as a business-rule error with a
+            // message naming the record it clashes with. Shown on the form
+            // rather than only as a toast, which disappears before it can be
+            // read and acted on.
+            setSubmitError(
+              error instanceof ApiError
+                ? error.message
+                : 'The details could not be saved. Please try again.',
+            );
+          }
+        })(event);
       }}
       className="max-w-xl space-y-8"
       noValidate
     >
+      {submitError && (
+        <Alert variant="destructive" role="alert">
+          <AlertDescription>{submitError}</AlertDescription>
+        </Alert>
+      )}
+
       <FormSection
         title="Product details"
         description="Products have no fixed price. The price is agreed on each quotation and order."

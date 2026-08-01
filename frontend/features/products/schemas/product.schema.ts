@@ -12,7 +12,8 @@ export const productFormSchema = z.object({
     .string()
     .trim()
     .min(2, 'Product name must be at least 2 characters.')
-    .max(120, 'Product name must be 120 characters or fewer.'),
+    .max(120, 'Product name must be 120 characters or fewer.')
+    .transform((value) => value.replace(/\s+/g, ' ')),
   category: z.enum(PRODUCT_CATEGORIES, { message: 'Choose a category.' }),
   size: z
     .string()
