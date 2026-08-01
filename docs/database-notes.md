@@ -125,6 +125,43 @@ fail and asserting the business row is gone.
 - Tables are truncated between tests.
 - Test files run serially, because they share one database.
 
+## Cache
+
+Redis is a performance layer. **MySQL is the source of truth.** Losing Redis
+must not lose or corrupt any business information.
+
+- Client: the official `redis` package (node-redis). Not ioredis.
+- `REDIS_URL` is optional. Empty disables caching, and every read goes to MySQL.
+- Code lives in `backend/src/shared/cache/`. Services use it; controllers and
+  repositories never touch it.
+- Keys: `greenstone:v1:<environment>:<module>:<resource>:<identifier>`, built
+  only by `cache-keys.ts`.
+- Every cached value has a TTL. `set()` rejects a missing or non-positive one,
+  so a permanent cache record cannot be created.
+- Cache-aside: check Redis, load from MySQL on a miss, store with a TTL,
+  invalidate after the write commits.
+
+### Why the cache cannot break a request
+
+Every cache operation is wrapped so it returns a safe fallback instead of
+throwing — a read failure becomes a miss, a write or delete failure is logged
+and ignored, and a slow command is abandoned after a short timeout.
+
+Two client settings back this up. The offline command queue is disabled, so a
+command fails immediately rather than waiting on a reconnection that may never
+arrive; and an error listener is always attached, because an unhandled error
+event from node-redis terminates the Node process.
+
+### Never cached
+
+Better Auth sessions, passwords and secrets, permissions used for final
+authorisation, customer credit status, customer and supplier balances, finished
+stock and raw-material availability, stock reservations, document-number
+sequences, payment and salary approval status, invoice balances, audit logs.
+
+These are read from MySQL inside the transaction that uses them, every time. See
+`docs/technical-blueprint.md` section 4A.
+
 ## Standards
 
 - UUID identifiers for business records.

@@ -30,6 +30,20 @@ const envSchema = z
     // Only used by the test suite. Never used by the running server.
     TEST_DATABASE_URL: z.string().min(1).optional(),
 
+    // Redis, used for caching only. MySQL remains the source of truth.
+    //
+    // Optional on purpose. When it is empty the cache is disabled and every
+    // read goes to MySQL, which is what makes "the system works without Redis"
+    // true by construction rather than by hope.
+    REDIS_URL: z
+      .string()
+      .trim()
+      .optional()
+      .transform((value) => (value === '' ? undefined : value)),
+
+    // Fallback time-to-live for cached values, in seconds.
+    CACHE_DEFAULT_TTL_SECONDS: z.coerce.number().int().positive().default(60),
+
     // Secret used to sign CSRF tokens. Must be long and random in production.
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),
 

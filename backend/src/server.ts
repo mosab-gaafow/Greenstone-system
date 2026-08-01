@@ -6,6 +6,7 @@ import process from 'node:process';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
 import { checkDatabaseConnection, disconnectPrisma } from './shared/database/prisma.js';
+import { disconnectRedis, getRedisClient } from './shared/cache/redis.client.js';
 import { getLogger } from './shared/utils/logger.js';
 
 /**
@@ -27,6 +28,10 @@ async function start(): Promise<void> {
     return;
   }
 
+  // Starts connecting in the background. Never awaited: a slow or absent Redis
+  // must not delay startup, and the application runs correctly without it.
+  getRedisClient();
+
   const app = createApp();
   const server = app.listen(env.PORT, () => {
     logger.info({ port: env.PORT, environment: env.NODE_ENV }, 'Greenstone backend started');
@@ -36,7 +41,7 @@ async function start(): Promise<void> {
     logger.info({ signal }, 'Shutting down');
 
     server.close(() => {
-      void disconnectPrisma().finally(() => {
+      void Promise.allSettled([disconnectPrisma(), disconnectRedis()]).finally(() => {
         process.exit(0);
       });
     });

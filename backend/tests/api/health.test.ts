@@ -49,14 +49,28 @@ describe('health endpoints', () => {
     expect(response.body.requestId).not.toContain('<script>');
   });
 
-  it('reports readiness with each check passing', async () => {
+  it('reports readiness with each required check passing', async () => {
     const response = await request(app).get(`${API_BASE_PATH}/health/ready`);
 
     expect(response.status).toBe(200);
-    expect(response.body.data).toEqual({
-      status: 'ready',
-      checks: { database: 'ok', configuration: 'ok', storage: 'ok' },
+    expect(response.body.data.status).toBe('ready');
+    expect(response.body.data.checks).toMatchObject({
+      database: 'ok',
+      configuration: 'ok',
+      storage: 'ok',
     });
+  });
+
+  it('reports cache state without letting it decide readiness', async () => {
+    const response = await request(app).get(`${API_BASE_PATH}/health/ready`);
+
+    // Redis is a performance layer. Whatever state it is in, a working
+    // database means the process can serve traffic — so it stays ready and
+    // returns 200. Failing here would pull a healthy server out of rotation
+    // and turn a minor degradation into an outage.
+    expect(['ok', 'degraded', 'disabled']).toContain(response.body.data.checks.cache);
+    expect(response.body.data.status).toBe('ready');
+    expect(response.status).toBe(200);
   });
 
   it('never exposes configuration values in health output', async () => {

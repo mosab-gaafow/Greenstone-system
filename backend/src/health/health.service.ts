@@ -1,6 +1,8 @@
 import { getEnv } from '../config/env.js';
 import { checkDatabaseConnection } from '../shared/database/prisma.js';
 import { getStorageProvider } from '../shared/storage/storage.service.js';
+import { cache } from '../shared/cache/cache.service.js';
+import type { CacheStatus } from '../shared/cache/cache.types.js';
 
 /**
  * Liveness and readiness checks.
@@ -22,6 +24,11 @@ export interface ReadinessResult {
     database: CheckStatus;
     configuration: CheckStatus;
     storage: CheckStatus;
+    /**
+     * Informational only. Redis is a performance layer, so its state never
+     * decides readiness.
+     */
+    cache: CacheStatus;
   };
 }
 
@@ -39,6 +46,11 @@ export function getLiveness(): LivenessResult {
 
 /**
  * Readiness answers "can this process serve traffic".
+ *
+ * The cache is reported but deliberately excluded from the decision. Without
+ * Redis the system still answers every request correctly, just more slowly, so
+ * failing readiness would pull a working server out of rotation and turn a
+ * minor degradation into an outage.
  */
 export async function getReadiness(): Promise<ReadinessResult> {
   const [database, configuration, storage] = await Promise.all([
@@ -54,11 +66,12 @@ export async function getReadiness(): Promise<ReadinessResult> {
     }),
   ]);
 
-  const allPassed = [database, configuration, storage].every((check) => check === 'ok');
+  const required = [database, configuration, storage];
+  const allPassed = required.every((check) => check === 'ok');
 
   return {
     status: allPassed ? 'ready' : 'not_ready',
-    checks: { database, configuration, storage },
+    checks: { database, configuration, storage, cache: cache.status() },
   };
 }
 

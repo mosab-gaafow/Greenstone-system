@@ -204,22 +204,41 @@ May be cached:
 
 Must never be cached:
 
-- Customer credit status used to allow or block an action
-- Available stock used for reservation or dispatch
-- Raw-material stock used for production usage
-- Customer and supplier balances used for approval
-- Document-number allocation
-- Payment, salary, and curing approval state
-- Permission, session, and capability checks
+- Better Auth sessions
+- Passwords and authentication secrets
+- Permissions used for final authorisation
+- Customer credit status used during a transaction
+- Customer balances
+- Supplier balances
+- Finished-stock availability during a transaction
+- Raw-material availability during a transaction
+- Stock reservations
+- Document-number sequences
+- Payment approval status
+- Salary approval status
+- Invoice balances
+- Audit logs
 
 Rules:
 
-- Redis is never the source of truth.
-- A Redis outage must never fail a request. Treat errors as a cache miss and
-  read from MySQL.
+- Use the official `redis` package (node-redis). Do not add ioredis.
+- Redis is never the source of truth. MySQL always is.
+- `REDIS_URL` may be empty. Caching is then disabled and every read goes to
+  MySQL.
+- A Redis failure must never fail a request:
+  - Read failure: read from MySQL.
+  - Write failure: log and continue.
+  - Delete or invalidation failure: log and continue.
+- A Redis failure must never fail liveness or readiness. Readiness may report
+  the cache as `degraded` while the application stays ready.
+- Use the cache-aside pattern: check Redis, load from MySQL on a miss, store
+  with a TTL, and invalidate after a successful MySQL update.
 - Invalidate affected keys in the service layer, after the transaction commits.
-- Always set a time-to-live.
-- Use versioned keys: `greenstone:<schemaVersion>:<entity>:<scope>`.
+- Always set a time-to-live. Never create a permanent cache record.
+- Use versioned, namespaced keys:
+  `greenstone:v1:<environment>:<module>:<resource>:<identifier>`.
+- Business services must always read critical values from MySQL, inside the
+  required transaction.
 - Never store passwords, session tokens, or payment evidence in Redis.
 
 ## Authentication Rules

@@ -194,8 +194,15 @@ Prepare:
 - Liveness endpoint.
 - Readiness endpoint.
 - Test database configuration.
-- Redis cache infrastructure. Added as a Phase 1 addendum before Phase 4, since
-  there is no business data to cache until then.
+- Redis cache infrastructure. Delivered as a Phase 1 addendum before Phase 4,
+  since there is no business data to cache until then.
+  - Official `redis` package (node-redis).
+  - `REDIS_URL` optional. Empty disables caching safely.
+  - Cache-aside pattern with a required TTL on every value.
+  - Versioned, environment-namespaced keys.
+  - A cache failure never fails a request, liveness, or readiness.
+  - Readiness may report the cache as `degraded` while staying ready.
+  - Infrastructure only. No business data is cached in this phase.
 
 ## Do not build
 

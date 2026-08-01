@@ -1243,16 +1243,20 @@ Read-heavy data that users look at:
 Any value used to make a business decision must be read from the database,
 inside the transaction that uses it:
 
-- Customer credit status used to allow or block an order or delivery.
-- Available finished stock used for reservation or dispatch.
-- Raw-material stock used for production usage.
-- Customer and supplier outstanding balances used for approval.
-- Document-number allocation.
-- Payment approval and reversal state.
-- Salary approval, correction, and reversal state.
-- Curing completion checks.
-- Permission, session, and capability checks.
-- Audit-log writes.
+- Better Auth sessions.
+- Passwords and authentication secrets.
+- Permissions used for final authorisation.
+- Customer credit status used during a transaction.
+- Customer balances.
+- Supplier balances.
+- Finished-stock availability during a transaction.
+- Raw-material availability during a transaction.
+- Stock reservations.
+- Document-number sequences.
+- Payment approval status.
+- Salary approval status.
+- Invoice balances.
+- Audit logs.
 
 A cached value may be shown on screen. It must never be the value a transaction
 acts on. The database, inside a transaction with the appropriate locking, is
@@ -1274,22 +1278,29 @@ Rules:
 
 ## 4A.5 Key naming
 
-Use a consistent, versioned key structure:
+Use a consistent, versioned, namespaced key structure:
 
 ```text
-greenstone:<schemaVersion>:<entity>:<scope>
+greenstone:<version>:<environment>:<module>:<resource>:<identifier>
 ```
 
 Examples:
 
 ```text
-greenstone:v1:customers:list:page=1&size=25&status=ACTIVE
-greenstone:v1:dashboard:summary
-greenstone:v1:products:active
+greenstone:v1:development:products:list:active
+greenstone:v1:production:dashboard:summary
+greenstone:v1:test:customers:list:page=1&size=25
 ```
 
-Bumping the schema version retires every old key at once, which is the safe way
-to handle a shape change.
+The environment segment means one Redis instance can serve development, test
+and production without their keys ever meeting. Without it, a test run clearing
+its keys would also clear development's.
+
+Bumping the version retires every old key at once, which is the safe way to
+handle a shape change.
+
+Keys are built in one place, `backend/src/shared/cache/cache-keys.ts`, which
+rejects any segment containing the separator or whitespace.
 
 ## 4A.6 Time-to-live guidance
 
@@ -1305,17 +1316,39 @@ range.
 
 ## 4A.7 Failure behaviour
 
-- A Redis read failure is a cache miss. Fall back to the database.
-- A Redis write failure is logged and ignored.
-- A Redis outage must never return an error to the user.
+Redis is optional. The application must work correctly without it.
+
+| Situation | Behaviour |
+|---|---|
+| `REDIS_URL` empty | Caching is disabled. Every read goes to MySQL. |
+| Redis unreachable | Read failure is a cache miss. Write and delete failures are logged and ignored. |
+| Redis slow | The command is abandoned after a short timeout and treated as a miss. |
+| Liveness | Never affected. It does not touch Redis. |
+| Readiness | Reports the cache as `ok`, `degraded` or `disabled`, and stays **ready** as long as the database is available. |
+
+Readiness deliberately excludes the cache from its decision. Without Redis the
+system still answers every request correctly, only more slowly, so failing
+readiness would remove a working server from rotation and turn a minor
+degradation into an outage.
+
 - Never store the only copy of anything in Redis.
 - Do not store passwords, session tokens, or payment evidence in Redis.
 
-## 4A.8 Location
+## 4A.8 Client and location
+
+Use the official `redis` package (node-redis). Do not add ioredis.
 
 Cache access belongs in `backend/src/shared/cache/`. Business modules use the
 shared cache service from their service layer. Controllers and repositories must
 not read or write the cache directly.
+
+Two client settings exist specifically to protect the rules above:
+
+- The offline command queue is disabled, so a command fails immediately when
+  Redis is down rather than waiting for a reconnection that may never come.
+- An error listener is always attached. node-redis is an EventEmitter, and an
+  unhandled error event would terminate the process — turning a brief network
+  problem into a backend outage.
 
 ---
 

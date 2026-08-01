@@ -37,6 +37,16 @@ jobs:
           --health-timeout=5s
           --health-retries=10
 
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
     env:
       # CI provisions its own throwaway database. These values are not secrets
       # and never reach any real environment.
@@ -54,6 +64,9 @@ jobs:
       # run. Never reuse these anywhere real.
       BETTER_AUTH_SECRET: ci-only-better-auth-secret-at-least-32-chars
       BETTER_AUTH_URL: http://localhost:4000
+      # Cache is optional. Set here so the cache tests exercise a real Redis
+      # rather than only the disabled path.
+      REDIS_URL: redis://127.0.0.1:6379
       NODE_ENV: test
 
     steps:
