@@ -9,9 +9,9 @@ Use:
 - TypeScript
 - Prisma ORM
 - MySQL
+- Redis (caching)
 - Zod
-- JWT access tokens
-- Refresh tokens
+- Better Auth
 - Secure HTTP-only cookies
 
 ## Source of Truth
@@ -49,6 +49,22 @@ Do not create:
 - Module-specific utility files
 
 Shared concerns belong in `src/shared/`.
+
+### Approved Better Auth exception
+
+Better Auth owns the `/api/auth/*` endpoints and is an approved exception to the
+six-file request flow. Its configuration, adapter, handler, session helpers, and
+authentication middleware live in `src/shared/auth/`.
+
+Everything else is unchanged:
+
+- All Greenstone business modules still follow
+  `routes → controller → service → repository → Prisma`.
+- The `users` business module still contains exactly six files.
+- Greenstone user-management actions call Better Auth server APIs from the
+  service layer.
+- Controllers must never call Better Auth directly.
+- Never edit Better Auth tables directly from controllers or repositories.
 
 ## Required Dependency Flow
 
@@ -173,35 +189,97 @@ Types contain:
 - Do not hard-delete issued transactional records.
 - Never edit production data through development seed files.
 
-## Authentication Rules
+## Caching Rules
 
-- Use short-lived JWT access tokens.
-- Use rotating refresh tokens.
-- Store only refresh-token hashes.
-- Detect refresh-token reuse.
-- Revoke the token family when reuse is detected.
-- Revoke sessions on logout.
-- Revoke all sessions when a user is deactivated.
-- Hash passwords securely.
-- Never log passwords or tokens.
-- Apply rate limiting to authentication endpoints.
-- Use secure HTTP-only cookies.
-- Use CSRF protection and origin checks for cookie-authenticated state changes.
+Cache access lives in `src/shared/cache/`. Services use it. Controllers and
+repositories must never touch the cache.
 
-## Permission Rules
+May be cached:
 
-Confirmed roles:
+- Dashboard summaries
+- Report results
+- List and pagination results
+- Master-data lookups
+- Notification counts
 
-- Super Admin
-- Admin
-- Accountant
+Must never be cached:
+
+- Customer credit status used to allow or block an action
+- Available stock used for reservation or dispatch
+- Raw-material stock used for production usage
+- Customer and supplier balances used for approval
+- Document-number allocation
+- Payment, salary, and curing approval state
+- Permission, session, and capability checks
 
 Rules:
 
-- Permission definitions are shared.
+- Redis is never the source of truth.
+- A Redis outage must never fail a request. Treat errors as a cache miss and
+  read from MySQL.
+- Invalidate affected keys in the service layer, after the transaction commits.
+- Always set a time-to-live.
+- Use versioned keys: `greenstone:<schemaVersion>:<entity>:<scope>`.
+- Never store passwords, session tokens, or payment evidence in Redis.
+
+## Authentication Rules
+
+Better Auth is the only authentication framework. Do not build any part of
+authentication by hand.
+
+Never create:
+
+- Custom JWT access tokens
+- Refresh tokens or refresh-token rotation
+- Custom password hashing
+- Custom session tables
+- Custom authentication cookies
+- Custom authentication endpoints
+
+Use:
+
+- Better Auth with the Prisma adapter and MySQL.
+- Email and password login.
+- Better Auth database-backed sessions.
+- Better Auth password hashing.
+- The Better Auth Admin plugin.
+- Custom Better Auth access control for roles and permissions.
+
+Do not enable public registration, social login, magic links, passkeys,
+organization or multi-tenant plugins, the JWT plugin, user impersonation, or
+automatic authentication emails.
+
+Rules that still apply:
+
+- Users are created only by Super Admin or Admin.
+- Revoke sessions on logout.
+- Revoke all sessions when a user is deactivated.
+- Revoke sessions when a user's role changes.
+- Never log passwords or session tokens.
+- Apply rate limiting to authentication endpoints.
+- Use secure HTTP-only cookies.
+- Use CSRF protection and origin checks for cookie-authenticated state changes
+  on Greenstone business routes.
+
+## Permission Rules
+
+Confirmed roles, as named in Better Auth access control:
+
+- `super_admin` — Super Admin
+- `admin` — Admin
+- `accountant` — Accountant
+
+Rules:
+
+- Roles and permissions are defined once, using Better Auth custom access
+  control in `src/shared/auth/`.
 - Do not create module-level permission files.
 - Backend permission checks are mandatory.
-- Support only approved user-specific capability grants.
+- Better Auth permissions control system access. Greenstone services still
+  validate business state such as stock, credit, payments, salaries, and status
+  transitions.
+- Keep a Greenstone-specific capability system only for approved per-user
+  permissions: Accountant curing release and Accountant salary registration.
 - Capability grants and revocations must be audited.
 - Default to denying actions that are not approved.
 
@@ -214,6 +292,10 @@ Audit logs must be:
 - Searchable.
 - Created by backend services.
 - Connected to the affected record.
+
+Better Auth owns its own tables. Greenstone owns the audit trail. Audit logs are
+mandatory for user creation, role changes, activation, deactivation, session
+revocation, and capability grants or revocations.
 
 Sensitive actions must record:
 
@@ -288,11 +370,20 @@ Rules:
 
 ## API Rules
 
-Base path:
+Base path for Greenstone business endpoints:
 
 ```text
 /api/v1
 ```
+
+Better Auth owns a separate base path and its own request and response formats:
+
+```text
+/api/auth
+```
+
+The envelope rules below apply to `/api/v1` only. Do not wrap, rewrite, or
+proxy Better Auth responses.
 
 Success response:
 

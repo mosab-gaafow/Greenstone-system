@@ -194,6 +194,8 @@ Prepare:
 - Liveness endpoint.
 - Readiness endpoint.
 - Test database configuration.
+- Redis cache infrastructure. Added as a Phase 1 addendum before Phase 4, since
+  there is no business data to cache until then.
 
 ## Do not build
 
@@ -230,28 +232,46 @@ Create exactly six files for:
 
 ## Work
 
+Better Auth is the only authentication framework. Do not build any part of
+authentication by hand.
+
 Implement:
 
-- Secure password hashing.
-- Login.
+- Better Auth with the Prisma adapter and MySQL.
+- Email and password login.
 - Logout.
-- Short-lived access token.
-- Refresh-token rotation.
-- Refresh-token family tracking.
-- Refresh-token reuse detection.
+- Better Auth database-backed sessions.
+- Better Auth password hashing.
 - Secure HTTP-only cookies.
-- CSRF protection.
+- The Better Auth handler mounted at `/api/auth/*`, before `express.json()`.
+- Public sign-up disabled.
+- User creation by Super Admin and Admin only.
+- The Better Auth Admin plugin.
+- Custom Better Auth access control.
+- CSRF protection for `/api/v1` business routes.
 - User activation.
 - User deactivation.
-- Session revocation.
+- Session revocation on logout, deactivation, and role change.
 - Fixed roles:
-  - Super Admin.
-  - Admin.
-  - Accountant.
-- Shared permission map.
+  - `super_admin`.
+  - `admin`.
+  - `accountant`.
+- Shared permission map from the approved permissions matrix.
 - Approved user capability grants.
 - Authentication audit logs.
 - Login rate limiting.
+
+Do not build:
+
+- Custom JWT access tokens.
+- Refresh tokens or refresh-token rotation.
+- Custom password hashing.
+- Custom session tables.
+- Custom authentication endpoints.
+
+Do not enable public registration, social login, magic links, passkeys,
+organization plugins, the JWT plugin, user impersonation, or automatic
+authentication emails.
 
 ## Do not build
 
@@ -263,11 +283,13 @@ Implement:
 ## Completion gate
 
 - Login and logout work.
-- Refresh rotation works.
-- Reused refresh tokens are rejected.
-- Deactivated users lose access.
+- Public sign-up is rejected.
+- Sessions are stored in the database.
+- Session revocation takes effect immediately.
+- Deactivated users lose access and their sessions are revoked.
 - Role checks work.
 - Capability grants work.
+- Only Super Admin and Admin can create users or change roles.
 - Security tests pass.
 - Backend validation and build pass.
 
@@ -283,7 +305,8 @@ Create the mobile-first application shell and connect it to backend authenticati
 
 Implement:
 
-- Login page.
+- Better Auth client setup.
+- Login page using email and password.
 - Session-expired handling.
 - Authenticated route group.
 - Main application layout.
@@ -295,8 +318,7 @@ Implement:
 - Light and dark mode.
 - TanStack Query provider.
 - Central API client.
-- Safe refresh handling.
-- Permission helpers.
+- Permission helpers for interface control only.
 - Loading pages.
 - Error pages.
 - Not-found page.
@@ -313,8 +335,8 @@ Implement:
 
 - Login works on mobile and desktop.
 - Protected pages redirect correctly.
-- Refresh failure returns the user to login.
-- Several failed requests do not create several refresh requests.
+- A missing or revoked session returns the user to login.
+- No custom token-refresh logic exists.
 - Navigation works on small screens.
 - Frontend lint, type check, tests, and build pass.
 
@@ -354,6 +376,14 @@ Include the confirmed initial product definitions:
 - Hollow Pot 380 × 200 × 300 mm
 
 Do not add a required fixed selling price to products.
+
+## Caching
+
+Cache master-data list and lookup queries, and invalidate them on every create,
+update, activate, and deactivate.
+
+Never cache a value a transaction acts on. See `docs/technical-blueprint.md`
+section 4A.
 
 ## Demo data
 
@@ -752,6 +782,14 @@ Implement approved operational reports for Accountant access:
 
 Do not give Accountant access to unapproved financial reports.
 
+## Caching
+
+Cache dashboard summaries, report results, and alert counts in Redis.
+
+- Use short time-to-live values for financial and stock figures.
+- Invalidate affected entries when the underlying records change.
+- Reports and dashboards must never serve a figure that a transaction acts on.
+
 ## Do not add
 
 - Automatic WhatsApp.
@@ -765,6 +803,8 @@ Do not give Accountant access to unapproved financial reports.
 - Alerts do not duplicate unnecessarily.
 - Permission-based report access works.
 - Reports do not change business data.
+- Cached dashboard and report values refresh when the underlying data changes.
+- The system works correctly when Redis is unavailable.
 - Tests and builds pass.
 
 ---

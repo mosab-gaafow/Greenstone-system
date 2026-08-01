@@ -50,6 +50,10 @@ jobs:
       TEST_DATABASE_URL: mysql://root:ci-root-password@127.0.0.1:3306/greenstone_test
       FRONTEND_ORIGIN: http://localhost:3000
       CSRF_SECRET: ci-only-csrf-secret-value-at-least-32-chars
+      # Better Auth. Throwaway values for a container that is destroyed after the
+      # run. Never reuse these anywhere real.
+      BETTER_AUTH_SECRET: ci-only-better-auth-secret-at-least-32-chars
+      BETTER_AUTH_URL: http://localhost:4000
       NODE_ENV: test
 
     steps:

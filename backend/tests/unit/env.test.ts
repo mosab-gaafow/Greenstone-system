@@ -7,6 +7,8 @@ const validEnv = {
   FRONTEND_ORIGIN: 'http://localhost:3000',
   DATABASE_URL: 'mysql://user:pass@127.0.0.1:3306/greenstone_dev',
   CSRF_SECRET: 'a-secret-value-that-is-at-least-32-chars',
+  BETTER_AUTH_SECRET: 'another-secret-value-at-least-32-chars',
+  BETTER_AUTH_URL: 'http://localhost:4000',
 } as NodeJS.ProcessEnv;
 
 describe('environment validation', () => {

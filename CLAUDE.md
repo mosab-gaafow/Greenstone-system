@@ -93,10 +93,38 @@ Before making changes, read:
 - TypeScript
 - Prisma ORM
 - MySQL
+- Redis (caching)
 - Zod
-- JWT access tokens
-- Refresh tokens
+- Better Auth
 - Secure HTTP-only cookies
+
+### Authentication
+
+Better Auth is the only authentication framework for this project.
+
+- Use Better Auth with Express, Prisma, and MySQL.
+- Use email and password login.
+- Use Better Auth database-backed sessions.
+- Use the Better Auth Admin plugin and custom access control.
+- Never build custom JWT access tokens, refresh tokens, refresh-token rotation,
+  password hashing, session tables, authentication cookies, or authentication
+  endpoints.
+- Never introduce another authentication provider.
+
+## Caching Rules
+
+Redis is used for caching so the system stays fast and does not query the
+database for every read.
+
+- Redis is a performance layer, never the source of truth.
+- The system must work correctly when Redis is unavailable.
+- Cache dashboard values, lists, reports, and master-data lookups.
+- Never cache a value that a transaction acts on, such as credit status, stock
+  availability, balances, document numbers, or approval state.
+- Every mutation invalidates the cache entries it affects, after the transaction
+  commits.
+- Every cache entry has a time-to-live, so a missed invalidation self-heals.
+- Never store passwords, session tokens, or payment evidence in Redis.
 
 ## Data Rules
 
@@ -114,11 +142,12 @@ Before making changes, read:
 
 - Backend permission checks are mandatory.
 - Hiding buttons in the frontend is not security.
-- Never store access or refresh tokens in localStorage.
+- Never store session tokens or authentication data in localStorage.
 - Never expose secrets in frontend environment variables.
-- Never log passwords, JWTs, refresh tokens, or sensitive file contents.
+- Never log passwords, session tokens, or sensitive file contents.
 - Use secure HTTP-only cookies.
 - Use CSRF protection for cookie-authenticated state changes.
+- Revoke all sessions when a user is deactivated.
 
 ## Demo and Production Data
 

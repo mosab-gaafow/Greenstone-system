@@ -5,19 +5,63 @@ Implemented conventions for the Greenstone backend.
 The approved source is `docs/technical-blueprint.md` section 5. This document
 records what exists in code.
 
-## Base path
+## Base paths
+
+Greenstone business endpoints:
 
 ```text
 /api/v1
 ```
 
-Health endpoints live under the same base path so the production Nginx layout,
-which proxies only `/api/v1` to Express, can reach them.
+Better Auth endpoints:
+
+```text
+/api/auth
+```
+
+Better Auth owns `/api/auth/*` completely — its routes, request and response
+formats, and cookies. **The conventions in this document apply to `/api/v1`
+only.** Better Auth responses must not be wrapped in the Greenstone envelope,
+rewritten, or proxied.
+
+Health endpoints live under `/api/v1` so a deployment that proxies the API paths
+to Express reaches them without extra configuration.
+
+### Implemented endpoints
+
+System:
 
 | Endpoint                   | Purpose                                                |
 | -------------------------- | ------------------------------------------------------ |
 | `GET /api/v1/health/live`  | Liveness. Never touches the database.                  |
 | `GET /api/v1/health/ready` | Readiness. Checks database, configuration and storage. |
+| `GET /api/v1/csrf-token`   | Issues the CSRF cookie and returns the paired token.   |
+
+Authentication, owned by Better Auth:
+
+| Endpoint                       | Purpose                                      |
+| ------------------------------ | -------------------------------------------- |
+| `POST /api/auth/sign-in/email` | Sign in with email and password.             |
+| `POST /api/auth/sign-out`      | End the current session.                     |
+| `GET /api/auth/get-session`    | Read the current session.                    |
+| `POST /api/auth/sign-up/email` | Always rejected. Public sign-up is disabled. |
+
+Users, restricted to Super Admin and Admin:
+
+| Endpoint                                 | Purpose                                        |
+| ---------------------------------------- | ---------------------------------------------- |
+| `GET /api/v1/users`                      | Paginated list, with optional search.          |
+| `GET /api/v1/users/:id`                  | One user, with active capabilities.            |
+| `POST /api/v1/users`                     | Create a user.                                 |
+| `PATCH /api/v1/users/:id/role`           | Change role, then revoke that user's sessions. |
+| `POST /api/v1/users/:id/deactivate`      | Block sign-in and end all sessions.            |
+| `POST /api/v1/users/:id/activate`        | Allow sign-in again.                           |
+| `POST /api/v1/users/:id/revoke-sessions` | Sign the user out everywhere. Returns 204.     |
+| `POST /api/v1/users/:id/capabilities`    | Grant an approved capability.                  |
+| `DELETE /api/v1/users/:id/capabilities`  | Revoke a capability.                           |
+
+Every mutation above writes an audit log. For request bodies and a step-by-step
+testing walkthrough, see `docs/api-testing-guide.md`.
 
 ## Route naming
 
@@ -149,12 +193,20 @@ Express 5 makes `req.query` read-only, so validated query values are read with
 - Security headers come from Helmet with a restrictive policy, since this API
   serves JSON only.
 - The general rate limiter is applied to all routes. Authentication endpoints
-  receive a stricter limiter in Phase 2.
-- CSRF uses the double-submit pattern: a readable cookie plus a matching
-  `X-CSRF-Token` header on every unsafe method. A failed check returns 403
-  `PERMISSION_DENIED`.
+  are rate limited by Better Auth.
+- CSRF uses the double-submit pattern on `/api/v1`: a readable cookie plus a
+  matching `X-CSRF-Token` header on every unsafe method. A failed check returns
+  403 `PERMISSION_DENIED`. Better Auth protects `/api/auth/*` itself, using
+  same-site cookies and origin checks.
+
+## Middleware order
+
+The Better Auth handler must be mounted **before** `express.json()`. Better Auth
+reads the raw request body; parsing it first makes its requests hang rather than
+fail, which is difficult to diagnose. `express.json()` is mounted after the auth
+handler, so it only ever sees Greenstone routes.
 
 ## Not yet implemented
 
-Authentication, permissions and idempotency keys for sensitive actions arrive
-with the phases that own them. See `docs/implementation-plan.md`.
+Idempotency keys for sensitive actions arrive with the phase that owns them.
+See `docs/implementation-plan.md`.

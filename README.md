@@ -60,6 +60,7 @@ The MVP will manage:
 - TanStack Query
 - React Hook Form
 - Zod
+- Better Auth client
 - Lucide React
 - Recharts
 - Sonner
@@ -72,10 +73,14 @@ The MVP will manage:
 - TypeScript
 - Prisma ORM
 - MySQL
+- Redis (caching)
 - Zod
-- JWT access tokens
-- Refresh tokens
+- Better Auth
 - Secure HTTP-only cookies
+
+Better Auth is the only authentication framework. The project does not build
+custom JWT access tokens, refresh tokens, password hashing, session tables, or
+authentication endpoints.
 
 ## Architecture
 
@@ -175,6 +180,12 @@ The approved project documents are stored in:
 - `docs/implementation-plan.md`
 
 These documents are the main source of truth.
+
+Practical guides:
+
+- `docs/api-testing-guide.md` — how to test the API with Postman or curl
+- `docs/api-conventions.md` — response formats, error codes, status codes
+- `docs/permissions-matrix.md` — roles, permissions, and capabilities
 
 The following documents are placeholders and are written in the phase that owns them:
 

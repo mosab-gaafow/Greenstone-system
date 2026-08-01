@@ -28,8 +28,9 @@ The system must remain:
 The MVP includes:
 
 - Secure login and logout.
-- JWT access tokens.
-- Refresh tokens.
+- Better Auth as the only authentication framework.
+- Email and password login.
+- Database-backed sessions.
 - Secure HTTP-only cookies.
 - Role-based access control.
 - User activation and deactivation.

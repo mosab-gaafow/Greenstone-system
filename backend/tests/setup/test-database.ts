@@ -30,19 +30,36 @@ export async function disconnectTestPrisma(): Promise<void> {
 }
 
 /**
- * Removes all rows from the infrastructure tables.
+ * Every table the test suite clears, in no particular order.
  *
- * Truncation is faster than delete and resets nothing the tests rely on.
- * Foreign key checks are disabled around it so table order does not matter as
- * business tables are added in later phases.
+ * Add new tables here as later phases introduce them.
+ */
+const TABLES = [
+  'document_sequences',
+  'audit_logs',
+  'user_capability_grants',
+  'session',
+  'account',
+  'verification',
+  'user',
+] as const;
+
+/**
+ * Removes all rows from every table.
+ *
+ * `DELETE` rather than `TRUNCATE`: MySQL refuses to truncate a table that is
+ * referenced by a foreign key, even with `FOREIGN_KEY_CHECKS = 0`, and `user` is
+ * referenced by `audit_logs`. Disabling the checks still lets the deletes run in
+ * any order.
  */
 export async function truncateAll(): Promise<void> {
   const prisma = getTestPrisma();
 
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
   try {
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE `document_sequences`');
-    await prisma.$executeRawUnsafe('TRUNCATE TABLE `audit_logs`');
+    for (const table of TABLES) {
+      await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
+    }
   } finally {
     await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
   }

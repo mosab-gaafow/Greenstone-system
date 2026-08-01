@@ -1,3 +1,7 @@
+// Must stay first: it populates the environment before any module that reads
+// configuration at import time is evaluated.
+import './config/load-env.js';
+
 import process from 'node:process';
 import { createApp } from './app.js';
 import { getEnv } from './config/env.js';
@@ -10,15 +14,6 @@ import { getLogger } from './shared/utils/logger.js';
  * Configuration is validated before anything else, so a misconfigured process
  * fails immediately with a clear message instead of failing per request.
  */
-
-// Prisma 7 does not load .env automatically, and Node's own loader is used to
-// avoid a dotenv dependency. In deployed environments the variables are already
-// present, so a missing file is not an error.
-try {
-  process.loadEnvFile('.env');
-} catch {
-  // No .env file — rely on the ambient environment.
-}
 
 async function start(): Promise<void> {
   const env = getEnv();

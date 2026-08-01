@@ -33,6 +33,19 @@ const envSchema = z
     // Secret used to sign CSRF tokens. Must be long and random in production.
     CSRF_SECRET: z.string().min(32, 'CSRF_SECRET must be at least 32 characters'),
 
+    // Better Auth. Signs session tokens; rotating it invalidates every session.
+    BETTER_AUTH_SECRET: z.string().min(32, 'BETTER_AUTH_SECRET must be at least 32 characters'),
+
+    // Public base URL of this API, used by Better Auth to build absolute URLs.
+    BETTER_AUTH_URL: z.url(),
+
+    // Session lifetime in seconds. Default is 7 days.
+    SESSION_EXPIRES_IN_SECONDS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(60 * 60 * 24 * 7),
+
     // Storage. Only the local provider exists in Phase 1.
     STORAGE_PROVIDER: z.enum(['local']).default('local'),
     STORAGE_LOCAL_PATH: z.string().min(1).default('./storage'),
@@ -53,6 +66,11 @@ const envSchema = z
       .positive()
       .default(15 * 60 * 1000),
     RATE_LIMIT_MAX: z.coerce.number().int().positive().default(300),
+
+    // Sign-in throttling, in seconds and attempts per window.
+    // Raised in the test environment so the suite is not throttled by itself.
+    AUTH_RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+    AUTH_SIGN_IN_MAX_ATTEMPTS: z.coerce.number().int().positive().default(5),
   })
   .transform((value) => ({
     ...value,

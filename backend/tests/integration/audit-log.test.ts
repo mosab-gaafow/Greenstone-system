@@ -7,6 +7,7 @@ import {
 } from '../../src/shared/audit/audit.service.js';
 import { runInTransaction } from '../../src/shared/database/transaction.js';
 import { allocateNumberInTransaction } from '../../src/shared/numbering/numbering.service.js';
+import { createTestUser } from '../setup/auth-helpers.js';
 import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-database.js';
 
 describe('audit log infrastructure', () => {
@@ -19,8 +20,13 @@ describe('audit log infrastructure', () => {
   });
 
   it('stores every approved audit field', async () => {
+    // `userId` is a real foreign key from Phase 2 onward, so the actor must
+    // exist. That constraint is what stops an audit row naming a user who was
+    // never in the system.
+    const actor = await createTestUser('admin');
+
     const id = await recordAuditStandalone({
-      userId: 'user-1',
+      userId: actor.id,
       userName: 'Test User',
       userRole: 'ADMIN',
       action: 'CREATE',
@@ -39,7 +45,7 @@ describe('audit log infrastructure', () => {
     const stored = await getTestPrisma().auditLog.findUniqueOrThrow({ where: { id } });
 
     expect(stored).toMatchObject({
-      userId: 'user-1',
+      userId: actor.id,
       userName: 'Test User',
       userRole: 'ADMIN',
       action: 'CREATE',

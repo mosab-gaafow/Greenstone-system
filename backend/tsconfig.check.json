@@ -1,0 +1,12 @@
+{
+  // Type checking covers everything, including tests and scripts.
+  // The build config (tsconfig.json) compiles only src/, because that is all
+  // that ships to dist/.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts", "scripts/**/*.ts", "*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

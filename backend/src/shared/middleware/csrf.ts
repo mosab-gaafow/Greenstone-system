@@ -36,10 +36,10 @@ export function getCsrfUtilities(): CsrfUtilities {
 
     const { doubleCsrfProtection, generateCsrfToken } = doubleCsrf({
       getSecret: () => env.CSRF_SECRET,
-      // Until sessions exist there is no per-user identifier to bind to. Phase 2
-      // replaces this with the authenticated session id, which is what stops one
-      // signed-in user's token being valid for another.
-      getSessionIdentifier: (req: Request) => req.ip ?? 'anonymous',
+      // Binds the token to the caller's Better Auth session cookie, so one
+      // signed-in user's token is not valid for another. Falls back to the IP
+      // for unauthenticated requests, which have no session to bind to.
+      getSessionIdentifier: (req: Request) => getSessionIdentifier(req),
       cookieName: CSRF_COOKIE_NAME,
       cookieOptions: {
         ...baseCookie,
@@ -74,4 +74,26 @@ export function csrfProtection(): RequestHandler {
   return (req, res, next) => {
     getCsrfUtilities().csrfProtection(req, res, next);
   };
+}
+
+/**
+ * Identifies the caller for CSRF token binding.
+ *
+ * Better Auth's session cookie is read directly rather than through a session
+ * lookup, because this runs on every mutation and only needs a stable value to
+ * bind the token to, not a verified identity. Authentication itself is enforced
+ * separately by `requireAuth()`.
+ */
+function getSessionIdentifier(req: Request): string {
+  const cookieHeader = req.headers.cookie;
+
+  if (cookieHeader) {
+    const match = /(?:^|;\s*)(?:__Secure-)?better-auth\.session_token=([^;]+)/.exec(cookieHeader);
+
+    if (match?.[1]) {
+      return match[1];
+    }
+  }
+
+  return req.ip ?? 'anonymous';
 }

@@ -11,6 +11,7 @@ Use:
 - TanStack Query
 - React Hook Form
 - Zod
+- Better Auth client
 - Lucide React
 - Recharts
 - Sonner
@@ -69,13 +70,22 @@ Do not invent pages, fields, workflows, permissions, or business rules.
 
 ## Authentication
 
+Authentication uses the Better Auth client. Do not build custom authentication
+logic in the frontend.
+
+- Use the Better Auth client for sign-in and sign-out.
+- Use email and password on the login page.
+- Use Better Auth session APIs for current-user state.
 - Authentication uses secure HTTP-only cookies.
-- Do not store tokens in localStorage or sessionStorage.
-- Do not try to read refresh tokens in browser code.
-- Send credentials through the central API client.
-- Prevent multiple simultaneous refresh requests.
-- Redirect to login when refresh fails.
+- Do not store tokens or authentication data in localStorage or sessionStorage.
+- Do not create custom token-refresh logic.
+- Do not create a custom session store.
+- Send credentials with API requests through the central API client.
+- Redirect to login when there is no valid session.
 - Show a clear session-expired message.
+
+Greenstone business data still goes through the central API client and TanStack
+Query. Only authentication goes through the Better Auth client.
 
 ## Permissions
 
