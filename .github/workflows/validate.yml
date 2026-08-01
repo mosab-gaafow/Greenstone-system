@@ -87,7 +87,7 @@ jobs:
         run: pnpm typecheck
 
       - name: Test
-        run: pnpm --filter backend test
+        run: pnpm test
 
       - name: Build
         run: pnpm build

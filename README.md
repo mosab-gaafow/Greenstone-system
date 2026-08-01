@@ -367,13 +367,30 @@ Phase 2 onward.
 ### Tests
 
 ```bash
-pnpm --filter backend test         # full suite
+pnpm test                          # both applications
+pnpm --filter backend test         # backend suite
 pnpm --filter backend test:unit    # unit tests only, no database needed
-pnpm --filter backend test:watch   # watch mode
+pnpm --filter frontend test        # frontend suite
 ```
 
-Unit tests need no database. Integration and API tests use `TEST_DATABASE_URL`.
-Test files run serially because they share one database.
+Backend unit tests need no database. Integration and API tests use
+`TEST_DATABASE_URL`, and run serially because they share one database.
+
+Frontend test coverage is deliberately minimal for now. The runner is
+configured and the permission helpers are covered; broader UI tests are added
+in a later phase.
+
+### Design system
+
+The frontend uses the same brand palette, typography and radii as the
+Greenstone marketing website, so the two read as one product.
+
+- Brand green `#285030`, with a 50–900 scale
+- Inter for body text, Manrope for headings
+- shadcn/ui components, light and dark mode
+- Tokens live in `frontend/app/globals.css`
+
+Change a token in the marketing website first, then copy it across.
 
 ### Seeds
 

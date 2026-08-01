@@ -17,3 +17,7 @@ allowBuilds:
   sharp: true
   # Installs the native resolver binary used by eslint-config-next.
   unrs-resolver: true
+
+minimumReleaseAgeExclude:
+  - "@hookform/resolvers@5.6.0"
+  - react-hook-form@7.84.0
