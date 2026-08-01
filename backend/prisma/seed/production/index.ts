@@ -1,12 +1,43 @@
 /**
- * Production system seed — placeholder.
+ * Production system seed.
  *
- * Implemented in Phase 2 (roles and permissions) and extended in Phase 4 with
- * the confirmed initial product definitions.
+ * Creates only required system data. It must never create demo customers,
+ * employees, suppliers, drivers, vehicles, balances, stock, payments or
+ * expenses — see business-blueprint section 4.2.
  *
- * It may create only required system data. It must never create demo business
- * records. See backend/prisma/seed/README.md.
+ * Safe to run more than once: everything here is idempotent.
+ *
+ * Currently seeds the confirmed initial product definitions. Roles and
+ * permissions need no rows, because they live in code as Better Auth access
+ * control. The initial Super Admin is created separately and interactively by
+ * `pnpm --filter backend create-super-admin`, so no password ever passes
+ * through a seed.
  */
-throw new Error(
-  'Production seed is not implemented yet. It is added in Phase 2 (roles and permissions).',
-);
+
+// Must stay first: it populates the environment before any module that reads
+// configuration at import time is evaluated.
+import '../../../src/config/load-env.js';
+
+import process from 'node:process';
+import { disconnectPrisma, getPrisma } from '../../../src/shared/database/prisma.js';
+import { seedInitialProducts } from './products.js';
+
+async function main(): Promise<void> {
+  const prisma = getPrisma();
+
+  const products = await seedInitialProducts(prisma);
+
+  console.log('Production seed complete.');
+  console.log(
+    `  Products: ${String(products.created)} created, ${String(products.skipped)} already present.`,
+  );
+}
+
+void main()
+  .catch((error: unknown) => {
+    console.error('Production seed failed:', error);
+    process.exitCode = 1;
+  })
+  .finally(() => {
+    void disconnectPrisma();
+  });

@@ -6,6 +6,7 @@ import {
   Factory,
   Home,
   Layers,
+  Package,
   Receipt,
   Settings,
   ShieldCheck,
@@ -45,6 +46,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Overview',
     items: [{ label: 'Home', href: '/', icon: Home, available: true }],
+  },
+  {
+    label: 'Master data',
+    items: [{ label: 'Products', href: '/products', icon: Package, available: true }],
   },
   {
     label: 'Sales',

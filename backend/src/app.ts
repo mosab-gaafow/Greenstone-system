@@ -4,6 +4,7 @@ import { toNodeHandler } from 'better-auth/node';
 import { auth } from './shared/auth/auth.js';
 import { healthRoutes } from './health/health.routes.js';
 import { usersRoutes } from './modules/users/users.routes.js';
+import { productsRoutes } from './modules/products/products.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -57,6 +58,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/health`, healthRoutes());
   app.use(`${API_BASE_PATH}/csrf-token`, csrfRoutes());
   app.use(`${API_BASE_PATH}/users`, usersRoutes());
+  app.use(`${API_BASE_PATH}/products`, productsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());
