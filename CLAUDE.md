@@ -4,12 +4,13 @@
 
 This repository contains the Greenstone Management System.
 
-The approved business blueprint and technical blueprint are the main source of truth.
+The approved business blueprint, technical blueprint, and implementation plan are the source of truth.
 
 Before making changes, read:
 
 - `docs/business-blueprint.md`
 - `docs/technical-blueprint.md`
+- `docs/implementation-plan.md`
 - `frontend/CLAUDE.md` when working in the frontend
 - `backend/CLAUDE.md` when working in the backend
 
@@ -37,6 +38,37 @@ Before making changes, read:
 - Update documentation when an approved technical decision changes.
 - Do not add unnecessary libraries.
 - Prefer simple and maintainable solutions.
+
+## Phase Control
+
+- Follow `docs/implementation-plan.md`.
+- Inspect the repository before planning.
+- Prepare a plan before large changes.
+- Wait for approval before implementing a phase.
+- Implement only the approved phase.
+- Do not start the next phase automatically.
+- Report all created and changed files.
+- Report tests, builds, warnings, and unfinished work honestly.
+
+## Terminal Process Rules
+
+- Do not stop, kill, restart, or replace an existing frontend terminal process unless explicitly instructed.
+- Do not stop, kill, restart, or replace an existing backend terminal process unless explicitly instructed.
+- Do not use commands such as `kill`, `killall`, `pkill`, or forced port termination.
+- Do not automatically terminate a process because a port is already in use.
+- Use separate terminal sessions for frontend and backend.
+- Keep long-running frontend and backend development processes running.
+- When a process must be restarted because of an approved configuration change, explain the reason before doing it.
+- Do not close the user's terminal sessions.
+
+## Browser Rules
+
+- Do not use browser automation.
+- Do not launch, open, control, or close browser windows or tabs automatically.
+- Do not use automated browser agents to inspect the application.
+- Do not use Playwright, Puppeteer, Selenium, or similar tools to control a browser unless the user explicitly approves it for a later testing task.
+- Use command-line validation, unit tests, integration tests, type checking, linting, and builds during normal implementation.
+- When visual checking is required, ask the user to open the page and share a screenshot.
 
 ## Approved Technology
 
@@ -118,7 +150,9 @@ Production seeds may create only required system data such as:
 - Clearly report database migrations.
 - Report warnings and unfinished items honestly.
 - Never run destructive production commands automatically.
-- Never force-push unless explicitly instructed.
+- Never use `git push --force`.
+- Never reset or discard user changes without explicit permission.
+- Do not commit or push unless explicitly instructed.
 
 ## Current Development Process
 
@@ -126,8 +160,10 @@ For every phase:
 
 1. Read the approved documentation.
 2. Inspect the current repository.
-3. Prepare a clear plan.
-4. Wait for approval before making large changes.
-5. Implement only the approved scope.
-6. Run validation commands.
-7. Report changed files, results, warnings, and next steps.
+3. Check Git status.
+4. Prepare a clear plan.
+5. Wait for approval before large changes.
+6. Implement only the approved scope.
+7. Run validation commands.
+8. Report changed files, results, warnings, and next steps.
+9. Stop and wait for the next instruction.
