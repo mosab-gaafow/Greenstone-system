@@ -88,6 +88,18 @@ export class CustomerCreditBlockedError extends AppError {
   }
 }
 
+export class InsufficientRawMaterialError extends AppError {
+  constructor(message: string) {
+    super(ERROR_CODES.INSUFFICIENT_RAW_MATERIAL, 422, message);
+  }
+}
+
+export class InsufficientFinishedStockError extends AppError {
+  constructor(message: string) {
+    super(ERROR_CODES.INSUFFICIENT_FINISHED_STOCK, 422, message);
+  }
+}
+
 export class DuplicateDocumentError extends AppError {
   constructor(message = 'A record with these details already exists.') {
     super(ERROR_CODES.DUPLICATE_DOCUMENT, 409, message);

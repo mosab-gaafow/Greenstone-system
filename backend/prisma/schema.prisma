@@ -9,11 +9,17 @@
 // Phase 4D: Supplier, CompanySettings.
 // Phase 5A: StoredFile, GeneratedDocument, Quotation, QuotationItem.
 // Phase 5B: Order, OrderItem, CustomerOpeningBalance, CustomerCreditOverride.
+// Phase 6A: MeasurementUnit, RawMaterial, RawMaterialStockBalance,
+//           RawMaterialMovement, FinishedStockBalance, FinishedStockMovement,
+//           BrokenProductRecord.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
-// Deferred: RawMaterial and MeasurementUnit. Both remain in the approved scope
-// and return with raw-material stock. See docs/implementation-plan.md.
+// Deferred: Purchases and Supplier balances (Phase 7 — will add a
+// PURCHASE_RECEIPT writer on top of the raw-material ledger already built in
+// Phase 6A). Stock reservation and delivery dispatch (Phase 8 — will add a
+// DELIVERY_DISPATCH writer on top of the finished-stock ledger already built
+// in Phase 6A). See docs/implementation-plan.md.
 //
 // The Better Auth models are regenerated with:
 //   pnpm --filter backend auth:generate
@@ -199,6 +205,9 @@ model User {
   storedFiles             StoredFile[]
   openingBalancesEntered  CustomerOpeningBalance[]
   creditOverridesApproved CustomerCreditOverride[]
+  rawMaterialMovements    RawMaterialMovement[]
+  finishedStockMovements  FinishedStockMovement[]
+  brokenProductRecords    BrokenProductRecord[]
 
   @@unique([email])
   @@map("user")
@@ -263,8 +272,11 @@ model Product {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  quotationItems QuotationItem[]
-  orderItems     OrderItem[]
+  quotationItems         QuotationItem[]
+  orderItems             OrderItem[]
+  finishedStockBalance   FinishedStockBalance?
+  finishedStockMovements FinishedStockMovement[]
+  brokenProductRecords   BrokenProductRecord[]
 
   @@index([isActive])
   @@index([category])
@@ -718,6 +730,201 @@ model CustomerCreditOverride {
   @@index([customerId])
   @@index([relatedOrderId])
   @@map("customer_credit_overrides")
+}
+
+/// Configurable raw-material measurement unit (bag, kilogram, tonne, load,
+/// cubic metre, ...). See business-blueprint section 2.13.
+model MeasurementUnit {
+  id             String   @id @default(uuid())
+  name           String   @unique
+  /// Lowercased, whitespace-collapsed — same normalisation as Product.name.
+  nameNormalized String   @unique
+  symbol         String?
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  rawMaterials RawMaterial[]
+
+  @@index([isActive])
+  @@map("measurement_units")
+}
+
+/// Raw-material master record (cement, dust, pumice, ...). See
+/// business-blueprint sections 2.12–2.14.
+///
+/// `reorderLevel` is optional and configurable — a low-stock alert (Phase 11)
+/// only activates when it is set. Leaving it empty never blocks usage or
+/// stock tracking.
+model RawMaterial {
+  id                String          @id @default(uuid())
+  name              String          @unique
+  nameNormalized    String          @unique
+  measurementUnitId String
+  measurementUnit   MeasurementUnit @relation(fields: [measurementUnitId], references: [id], onDelete: Restrict)
+  reorderLevel      Decimal?        @db.Decimal(14, 3)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  stockBalance RawMaterialStockBalance?
+  movements    RawMaterialMovement[]
+
+  @@index([isActive])
+  @@index([measurementUnitId])
+  @@map("raw_materials")
+}
+
+/// One current balance per raw material. See technical-blueprint section 4.9.
+///
+/// Updated only inside a transaction holding `lockRowsForUpdate` on this row
+/// — the same pessimistic-locking pattern `DocumentSequence` uses for numbering
+/// — never by a bare read-then-write. `version` still increments on every
+/// change, for traceability alongside the lock.
+model RawMaterialStockBalance {
+  id            String      @id @default(uuid())
+  rawMaterialId String      @unique
+  rawMaterial   RawMaterial @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  quantity      Decimal     @db.Decimal(14, 3)
+  version       Int         @default(0)
+  updatedAt     DateTime    @updatedAt
+
+  @@map("raw_material_stock_balances")
+}
+
+/// See business-blueprint section 2.12: "must not calculate material usage
+/// using a fixed product formula" — every quantity here is entered, not
+/// derived. `PURCHASE_RECEIPT` is written starting in Phase 7;
+/// `PRODUCTION_USAGE` starts in Phase 6B. Both values exist now so neither
+/// phase needs another migration on this table.
+enum RawMaterialMovementType {
+  OPENING
+  PRODUCTION_USAGE
+  PURCHASE_RECEIPT
+  POSITIVE_ADJUSTMENT
+  NEGATIVE_ADJUSTMENT
+  CORRECTION
+}
+
+/// The raw-material stock ledger — the main history, per technical-blueprint
+/// section 4.9.
+///
+/// `quantity` is signed: positive for movements that increase stock (opening,
+/// purchase receipt, positive adjustment), negative for movements that
+/// decrease it (production usage, negative adjustment). `correction` may be
+/// either sign. `relatedEntityId` is a plain id, not a foreign key — it may
+/// point at a production batch, a purchase, or nothing at all for a manual
+/// adjustment, and Prisma cannot express a polymorphic relation across
+/// several tables (the same reasoning as `GeneratedDocument.relatedEntityId`).
+model RawMaterialMovement {
+  id              String                  @id @default(uuid())
+  rawMaterialId   String
+  rawMaterial     RawMaterial             @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  movementType    RawMaterialMovementType
+  quantity        Decimal                 @db.Decimal(14, 3)
+  balanceAfter    Decimal                 @db.Decimal(14, 3)
+  relatedEntityId String?
+  /// Required for POSITIVE_ADJUSTMENT, NEGATIVE_ADJUSTMENT and CORRECTION.
+  reason          String?                 @db.Text
+  createdByUserId String?
+  createdByUser   User?                   @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                @default(now())
+
+  @@index([rawMaterialId])
+  @@index([movementType])
+  @@map("raw_material_movements")
+}
+
+/// One current balance per product. See business-blueprint section 2.9 and
+/// technical-blueprint section 4.7.
+///
+/// `availableQuantity` is stored, not computed on read — kept equal to
+/// `physicalQuantity - reservedQuantity` by the service layer on every write,
+/// inside the same locked transaction, per the technical blueprint's explicit
+/// field list. `reservedQuantity` is written starting in Phase 8 (Stock
+/// Reservation, tied to Delivery) — the column exists now so that phase needs
+/// no migration of its own.
+model FinishedStockBalance {
+  id                String   @id @default(uuid())
+  productId         String   @unique
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  physicalQuantity  Int      @default(0)
+  reservedQuantity  Int      @default(0)
+  availableQuantity Int      @default(0)
+  version           Int      @default(0)
+  updatedAt         DateTime @updatedAt
+
+  @@map("finished_stock_balances")
+}
+
+/// `CURING_RELEASE`/`GENERAL_STOCK_RELEASE` are written starting in Phase 6B;
+/// `DELIVERY_DISPATCH` starts in Phase 8. All three exist now so neither phase
+/// needs another migration on this table.
+enum FinishedStockMovementType {
+  OPENING
+  CURING_RELEASE
+  GENERAL_STOCK_RELEASE
+  DELIVERY_DISPATCH
+  BROKEN
+  POSITIVE_ADJUSTMENT
+  NEGATIVE_ADJUSTMENT
+  CORRECTION
+}
+
+/// The finished-stock ledger — the main history, per technical-blueprint
+/// section 4.7. Same signed-quantity and polymorphic `relatedEntityId`
+/// reasoning as `RawMaterialMovement`.
+model FinishedStockMovement {
+  id              String                    @id @default(uuid())
+  productId       String
+  product         Product                   @relation(fields: [productId], references: [id], onDelete: Restrict)
+  movementType    FinishedStockMovementType
+  quantity        Int
+  balanceAfter    Int
+  relatedEntityId String?
+  /// Required for POSITIVE_ADJUSTMENT, NEGATIVE_ADJUSTMENT and CORRECTION.
+  reason          String?                   @db.Text
+  createdByUserId String?
+  createdByUser   User?                     @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime                  @default(now())
+
+  @@index([productId])
+  @@index([movementType])
+  @@map("finished_stock_movements")
+}
+
+/// See business-blueprint section 2.11: broken products are recorded during
+/// production, curing, finished-stock handling, and delivery handling.
+/// `FINISHED_STOCK` recording ships now (broken-stock adjustments);
+/// `PRODUCTION`/`CURING` writers start in Phase 6B; `DELIVERY` starts in
+/// Phase 8. All four values exist now so no later phase needs a migration
+/// just to add its own stage.
+enum BrokenProductStage {
+  PRODUCTION
+  CURING
+  FINISHED_STOCK
+  DELIVERY
+}
+
+/// Broken-product record. `relatedEntityId` is a plain id, not a foreign key
+/// — it may point at a production item, a curing record, a stock movement,
+/// or a delivery, depending on `stage` (the same polymorphic-id reasoning as
+/// `RawMaterialMovement.relatedEntityId`).
+model BrokenProductRecord {
+  id               String             @id @default(uuid())
+  productId        String
+  product          Product            @relation(fields: [productId], references: [id], onDelete: Restrict)
+  quantity         Int
+  stage            BrokenProductStage
+  relatedEntityId  String?
+  reason           String?            @db.Text
+  recordedByUserId String?
+  recordedByUser   User?              @relation(fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime           @default(now())
+
+  @@index([productId])
+  @@index([stage])
+  @@map("broken_product_records")
 }
 
 model Session {

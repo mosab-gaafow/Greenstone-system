@@ -64,6 +64,19 @@ export function canSetOpeningBalance(user: Pick<CurrentUser, 'role'> | null | un
   return isAdministrator(user);
 }
 
+/**
+ * May set opening raw-material or finished stock. Admin/Super Admin only —
+ * the Accountant may adjust stock but not set its opening quantity.
+ */
+export function canSetStockOpening(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
+  return isAdministrator(user);
+}
+
+/** May adjust raw-material or finished stock. Every role holds this. */
+export function canAdjustStock(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
+  return isRole(user?.role);
+}
+
 /** May view audit logs. */
 export function canViewAuditLogs(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
   return isAdministrator(user);

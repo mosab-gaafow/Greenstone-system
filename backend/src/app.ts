@@ -14,6 +14,10 @@ import { settingsRoutes } from './modules/settings/settings.routes.js';
 import { quotationsRoutes } from './modules/quotations/quotations.routes.js';
 import { ordersRoutes } from './modules/orders/orders.routes.js';
 import { customerCreditRoutes } from './modules/customer-credit/customer-credit.routes.js';
+import { measurementUnitsRoutes } from './modules/measurement-units/measurement-units.routes.js';
+import { rawMaterialsRoutes } from './modules/raw-materials/raw-materials.routes.js';
+import { finishedStockRoutes } from './modules/finished-stock/finished-stock.routes.js';
+import { brokenProductsRoutes } from './modules/broken-products/broken-products.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -68,6 +72,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/csrf-token`, csrfRoutes());
   app.use(`${API_BASE_PATH}/users`, usersRoutes());
   app.use(`${API_BASE_PATH}/products`, productsRoutes());
+  app.use(`${API_BASE_PATH}/products`, finishedStockRoutes());
   app.use(`${API_BASE_PATH}/customers`, customersRoutes());
   app.use(`${API_BASE_PATH}/customers`, customerCreditRoutes());
   app.use(`${API_BASE_PATH}/employees`, employeesRoutes());
@@ -77,6 +82,9 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/settings`, settingsRoutes());
   app.use(`${API_BASE_PATH}/quotations`, quotationsRoutes());
   app.use(`${API_BASE_PATH}/orders`, ordersRoutes());
+  app.use(`${API_BASE_PATH}/measurement-units`, measurementUnitsRoutes());
+  app.use(`${API_BASE_PATH}/raw-materials`, rawMaterialsRoutes());
+  app.use(`${API_BASE_PATH}/broken-products`, brokenProductsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

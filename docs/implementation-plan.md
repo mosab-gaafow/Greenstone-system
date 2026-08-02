@@ -70,10 +70,11 @@ Claude must not:
 | 4C | Master data — Employees, Drivers, and Vehicles | COMPLETED |
 | 4D | Master data — Suppliers, Company Settings, and development demo seed | COMPLETED |
 | 5A | Quotations | COMPLETED |
-| 5B | Orders and customer credit | NOT_STARTED |
-| 6 | Production and curing | NOT_STARTED |
-| 7 | Raw materials, purchases, and supplier balances | NOT_STARTED |
-| 8 | Finished stock and deliveries | NOT_STARTED |
+| 5B | Orders and customer credit | COMPLETED |
+| 6A | Raw-material and finished-stock foundations | COMPLETED |
+| 6B | Production and curing | NOT_STARTED |
+| 7 | Purchases and supplier balances | NOT_STARTED |
+| 8 | Finished stock (deliveries) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
 | 10 | Expenses and salaries | NOT_STARTED |
 | 11 | Dashboard, reports, and alerts | NOT_STARTED |
@@ -840,11 +841,84 @@ Per sub-phase:
 
 ---
 
-# 10. Phase 6 — Production and Curing
+# 10. Phase 6 — Raw Materials, Finished Stock, Production, and Curing
 
 ## Goal
 
 Implement production output, allocation, raw-material usage, and curing.
+
+Split into two approved sub-phases — the same A/B pattern Phases 4 and 5
+used — because Production/Curing cannot honestly satisfy business-blueprint
+2.7/2.8 without a real raw-material ledger and a real finished-stock ledger
+already existing:
+
+- **Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED).**
+- **Phase 6B — Production and Curing (not started).**
+
+## Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED)
+
+Pulled forward from their nominally-numbered phases (Raw Materials from
+Phase 7, Finished Stock from Phase 8) — the pre-declared `raw-material`,
+`raw-material-stock`, and `finished-stock` permission resources already
+anticipated this, the same way `customer-credit` was pre-declared ahead of
+Phase 5B. See docs/database-notes.md for the table-level design notes.
+
+Backend modules: `measurement-units`, `raw-materials` (master data + its own
+stock balance/movement ledger — one module, per technical-blueprint 3.3),
+`finished-stock` (balance/movement ledger, keyed by product), and
+`broken-products` (append-only, decrements finished stock automatically at
+the `FINISHED_STOCK` stage).
+
+### Raw materials and their stock ledger
+
+`MeasurementUnit` and `RawMaterial` master data (business-blueprint
+2.12–2.14), each raw material getting a zero-balance `RawMaterialStockBalance`
+row at creation. `RawMaterialMovement` is the ledger — `OPENING`,
+`POSITIVE_ADJUSTMENT`, `NEGATIVE_ADJUSTMENT` write today;
+`PRODUCTION_USAGE` (Phase 6B) and `PURCHASE_RECEIPT` (Phase 7) reuse the same
+enum and table without a migration of their own. Quantities allow up to
+three decimal places — raw materials are frequently fractional, unlike
+finished-product pieces. Balance updates always run inside a transaction
+holding a row lock (`lockRowsForUpdate`, built in Phase 1 for exactly this).
+
+### Finished stock and its ledger
+
+`FinishedStockBalance` (physical/reserved/available, all three stored per
+technical-blueprint 4.7), created lazily per product the same way
+`company_settings`' singleton row is. `FinishedStockMovement` is the ledger
+— `OPENING`, `POSITIVE_ADJUSTMENT`, `NEGATIVE_ADJUSTMENT`, `BROKEN` write
+today; `CURING_RELEASE`/`GENERAL_STOCK_RELEASE` (Phase 6B) and
+`DELIVERY_DISPATCH` (Phase 8) reuse the same table. `reservedQuantity` stays
+at 0 until Phase 8's Stock Reservation exists.
+
+### Broken products
+
+`BrokenProductRecord` across all four approved stages
+(`PRODUCTION`/`CURING`/`FINISHED_STOCK`/`DELIVERY`), but only
+`FINISHED_STOCK` has a real ledger effect today — recording one also
+decrements physical finished stock in the same transaction. The other three
+stages are recorded structurally now; Phase 6B and Phase 8 will call the
+same insert function from inside their own transactions once production
+batches, curing records, and deliveries exist to reference.
+
+### Never cached
+
+Raw-material and finished-stock availability are read from MySQL on every
+request, per docs/technical-blueprint.md section 4A.3 — only the
+`raw-materials`/`measurement-units` master-data lists are cached.
+
+### Excluded from 6A
+
+Purchases, purchase payments, supplier balances (Phase 7 — will add the
+`PURCHASE_RECEIPT` writer on top of this ledger). Stock reservation,
+delivery dispatch (Phase 8 — will add the `DELIVERY_DISPATCH` writer and
+reservation logic on top of this ledger). Low-stock/curing-completion
+alerts, any notification persistence (Phase 11 — `reorderLevel` is stored
+now, but nothing reads it yet). Production and Curing themselves (Phase 6B).
+
+## Phase 6B — Production and Curing (not started)
+
+Not yet detailed. Plan this sub-phase on its own when it is next.
 
 ## Modules
 
@@ -893,17 +967,24 @@ Implement:
 
 ---
 
-# 11. Phase 7 — Raw Materials, Purchases, and Supplier Balances
+# 11. Phase 7 — Purchases and Supplier Balances
 
 ## Goal
 
-Implement raw-material stock and supplier financial tracking.
+Implement supplier financial tracking on top of the raw-material ledger
+Phase 6A already built.
+
+`RawMaterial` master data, `RawMaterialStockBalance`, and
+`RawMaterialMovement` already exist (Phase 6A) — this phase only adds the
+`PURCHASE_RECEIPT` movement writer and the purchase/payment workflow around
+it, and the real "opening raw-material quantity" endpoint (Phase 6A's
+`set-opening` action exists; this phase is where an authorised user actually
+uses it during production setup, per business-blueprint 2.15).
 
 ## Modules
 
 Implement:
 
-- Raw materials.
 - Purchases.
 - Purchase payments.
 - Suppliers where remaining functions are needed.
@@ -912,12 +993,10 @@ Implement:
 
 Implement:
 
-- Raw-material stock balance.
-- Raw-material movement ledger.
-- Opening raw-material quantity.
 - Purchase numbering.
 - Purchase items.
-- Purchase receipt into stock.
+- Purchase receipt into stock (writes a `PURCHASE_RECEIPT` raw-material
+  movement using the Phase 6A ledger).
 - Supplier opening balances.
 - Purchase-payment numbering.
 - Purchase-payment records.

@@ -27,6 +27,7 @@ records what exists in code and why.
 | `20260802113702_phase5a_quotations`                 | 5A    | `stored_files`, `generated_documents`, `quotations`, `quotation_items` |
 | `20260802114739_phase5a_quotation_item_sort_order`  | 5A    | `quotation_items.sortOrder`         |
 | `20260802130000_phase5b_orders_customer_credit`     | 5B    | `orders`, `order_items`, `customer_opening_balances`, `customer_credit_overrides` |
+| `20260802140000_phase6a_raw_materials_finished_stock` | 6A  | `measurement_units`, `raw_materials`, `raw_material_stock_balances`, `raw_material_movements`, `finished_stock_balances`, `finished_stock_movements`, `broken_product_records` |
 
 Commands:
 
@@ -185,6 +186,71 @@ the `orders` module's service — this is what keeps the dependency
 one-directional (`orders` depends on `customer-credit` for its check;
 `customer-credit` never depends back on `orders`), avoiding a circular
 module dependency.
+
+### `measurement_units` and `raw_materials`
+
+See business-blueprint sections 2.12–2.14. `raw_materials.reorderLevel` is
+optional — a low-stock alert (Phase 11, not built yet) only activates once
+it is set. Both are simple master-data tables, activated/deactivated like
+every other master record, never deleted.
+
+### `raw_material_stock_balances` and `raw_material_movements`
+
+See business-blueprint section 2.12: "must not calculate material usage
+using a fixed product formula" — every quantity here is entered, not
+derived. One balance row per raw material, created automatically alongside
+the raw material itself so "no balance yet" is never a state the rest of
+the system has to handle. Quantities allow up to three decimal places
+(`Decimal(14, 3)`) — unlike finished-product pieces, raw materials are
+frequently fractional (kilograms, cubic metres, ...).
+
+`raw_material_movements.quantity` is signed: positive for movements that
+increase stock (opening, purchase receipt, positive adjustment), negative
+for movements that decrease it (production usage, negative adjustment).
+`PURCHASE_RECEIPT` is written starting in Phase 7; `PRODUCTION_USAGE` starts
+in Phase 6B — both values already exist in the enum so neither phase needs
+its own migration.
+
+Balance updates always run inside a transaction holding `lockRowsForUpdate`
+on the balance row (the same pessimistic-locking helper built in Phase 1
+specifically "for stock, balances and other counters in later phases") —
+never a bare read-then-write. `version` still increments on every change,
+for traceability alongside the lock.
+
+**Never cached** — raw-material availability is read from MySQL on every
+request, per docs/technical-blueprint.md section 4A.3.
+
+### `finished_stock_balances` and `finished_stock_movements`
+
+See business-blueprint section 2.9 and technical-blueprint section 4.7. One
+balance row per product (`physicalQuantity`/`reservedQuantity`/
+`availableQuantity`, all three stored, not derived on read — matching the
+technical blueprint's explicit field list), created lazily on first access
+the same way `company_settings`' singleton row is.
+
+`reservedQuantity` is written starting in Phase 8 (Stock Reservation, tied
+to Delivery) — this phase only ever moves `physicalQuantity`, recomputing
+`availableQuantity` alongside it in the same locked update.
+`CURING_RELEASE`/`GENERAL_STOCK_RELEASE` movement types are written starting
+in Phase 6B; `DELIVERY_DISPATCH` starts in Phase 8. **Never cached**, same
+reasoning as raw-material stock.
+
+### `broken_product_records`
+
+See business-blueprint section 2.11. Append-only, across four stages
+(`PRODUCTION`, `CURING`, `FINISHED_STOCK`, `DELIVERY`), only one of which has
+a real effect on a stock ledger today: recording a `FINISHED_STOCK`-stage
+break also decrements `finished_stock_balances.physicalQuantity` and writes
+a `BROKEN` movement, in the same transaction as the record itself. The other
+three stages are recorded but have no ledger to affect yet — Phase 6B and
+Phase 8 will call the same insert function from inside their own
+transactions when they discover breakage during production, curing, or
+delivery, rather than inventing a second recording path.
+
+`relatedEntityId`, like `GeneratedDocument.relatedEntityId`, is a plain id,
+not a foreign key — it may point at a production item, a curing record, a
+stock movement, or a delivery depending on `stage`, and Prisma cannot
+express a polymorphic relation across several tables.
 
 ### `stored_files` and `generated_documents`
 

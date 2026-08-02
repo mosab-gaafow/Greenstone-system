@@ -12,8 +12,9 @@ import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { useProduct } from '@/features/products/hooks/use-products';
 import { categoryLabel } from '@/features/products/types/product.types';
+import { FinishedStockCard } from '@/features/products/components/finished-stock-card';
 import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
-import { canManageUsers } from '@/lib/permissions';
+import { canAdjustStock, canManageUsers, canSetStockOpening } from '@/lib/permissions';
 
 export default function ProductDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -81,20 +82,28 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
         }
       />
 
-      <Card className="max-w-2xl">
-        <CardContent className="space-y-4">
-          <DetailRow label="Category">{categoryLabel(product.category)}</DetailRow>
-          <DetailRow label="Size">{product.size}</DetailRow>
-          <DetailRow label="Description">
-            {product.description ?? <span className="text-muted-foreground">None</span>}
-          </DetailRow>
-          <DetailRow label="Price">
-            {/* Stated explicitly, so nobody goes looking for a field that
-                deliberately does not exist. */}
-            <span className="text-muted-foreground">Agreed on each quotation and order</span>
-          </DetailRow>
-        </CardContent>
-      </Card>
+      <div className="max-w-2xl space-y-6">
+        <Card>
+          <CardContent className="space-y-4">
+            <DetailRow label="Category">{categoryLabel(product.category)}</DetailRow>
+            <DetailRow label="Size">{product.size}</DetailRow>
+            <DetailRow label="Description">
+              {product.description ?? <span className="text-muted-foreground">None</span>}
+            </DetailRow>
+            <DetailRow label="Price">
+              {/* Stated explicitly, so nobody goes looking for a field that
+                  deliberately does not exist. */}
+              <span className="text-muted-foreground">Agreed on each quotation and order</span>
+            </DetailRow>
+          </CardContent>
+        </Card>
+
+        <FinishedStockCard
+          productId={product.id}
+          canSetOpening={canSetStockOpening(user)}
+          canAdjust={canAdjustStock(user)}
+        />
+      </div>
     </div>
   );
 }
