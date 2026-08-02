@@ -59,6 +59,11 @@ export function canOverrideCredit(user: Pick<CurrentUser, 'role'> | null | undef
   return isAdministrator(user);
 }
 
+/** May set or correct a customer's opening balance. */
+export function canSetOpeningBalance(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
+  return isAdministrator(user);
+}
+
 /** May view audit logs. */
 export function canViewAuditLogs(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
   return isAdministrator(user);

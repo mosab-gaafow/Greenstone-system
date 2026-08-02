@@ -37,6 +37,10 @@ export async function disconnectTestPrisma(): Promise<void> {
 const TABLES = [
   'document_sequences',
   'audit_logs',
+  'customer_credit_overrides',
+  'customer_opening_balances',
+  'order_items',
+  'orders',
   'products',
   'customer_addresses',
   'customers',

@@ -26,6 +26,7 @@ records what exists in code and why.
 | `20260802105011_phase4d_suppliers_settings`         | 4D    | `suppliers`, `company_settings`     |
 | `20260802113702_phase5a_quotations`                 | 5A    | `stored_files`, `generated_documents`, `quotations`, `quotation_items` |
 | `20260802114739_phase5a_quotation_item_sort_order`  | 5A    | `quotation_items.sortOrder`         |
+| `20260802130000_phase5b_orders_customer_credit`     | 5B    | `orders`, `order_items`, `customer_opening_balances`, `customer_credit_overrides` |
 
 Commands:
 
@@ -129,6 +130,61 @@ repository orders by.
 `totalAmount` and every `lineTotal` are calculated by the backend
 (`quotations.service.ts`) using `Prisma.Decimal`, never trusted from a
 request and never JavaScript floating-point arithmetic.
+
+### `orders` and `order_items`
+
+See business-blueprint section 2.6 and docs/implementation-plan.md Phase 5B.
+An order is created either directly, or by converting one `ACCEPTED`
+quotation — never both, and never more than once per quotation:
+`orders.sourceQuotationId` is unique. Unlike quotations, an order has no
+status lifecycle in this phase — the `order` permission resource only grants
+`create`/`read`/`update`, and neither blueprint document describes an
+order-level accept/reject/cancel transition.
+
+The delivery address is stored twice on purpose: `customerAddressId` is a
+live FK (`onDelete: Restrict`, so a referenced address can never be deleted),
+and `addressLabel`/`addressLine`/`addressDirections` are a text snapshot
+captured at creation — the same "snapshot alongside the FK" pattern used for
+item prices, so editing a site later never rewrites where an existing order
+was sent.
+
+`order_items.producedQuantity`/`allocatedQuantity`/`deliveredQuantity`/
+`remainingQuantity` are part of the approved entity (technical-blueprint
+section 4.4) but are only written by later phases (Production: Phase 6,
+Delivery: Phase 8) — added now, defaulted (`remainingQuantity` starts equal
+to `quantity`), so those phases need no further migration on this table. Same
+approach as `Vehicle.ownershipType` in Phase 4C.
+
+`totalAmount` and every `lineTotal` are backend-calculated with
+`Prisma.Decimal`, the same as quotations — including when converting from a
+quotation: the source item's price is trusted as an input, not copied as an
+already-final total.
+
+### `customer_opening_balances` and `customer_credit_overrides`
+
+See business-blueprint sections 2.24 and 2.25.
+
+`customer_opening_balances` is one row per customer (`UNIQUE customerId`),
+corrected in place rather than accumulated as history rows — the blueprint
+describes entering "the" opening balance, not a running ledger of several.
+Full before/after history lives in the audit log (`SET_CUSTOMER_OPENING_BALANCE`),
+the same pattern `company_settings` uses for its own singleton corrections.
+
+`customer_credit_overrides` is append-only: a `BLOCKED` customer's new
+`CREDIT` order can proceed only with an Admin/Super Admin's written reason,
+recorded here alongside the previous credit status and the related order,
+and always audited (`OVERRIDE_CUSTOMER_CREDIT`).
+
+**Credit status is never persisted on `Customer`.** It is computed live on
+every read: `opening balance + the customer's CREDIT orders`. This is the
+interim formula until Invoices exist (Phase 9) — every order counts as
+"not-yet-invoiced" today because there is nothing to invoice against yet.
+The sum is read directly from the `orders` table by the `customer-credit`
+module's own repository (a plain aggregate query), not through a call into
+the `orders` module's service — this is what keeps the dependency
+one-directional (`orders` depends on `customer-credit` for its check;
+`customer-credit` never depends back on `orders`), avoiding a circular
+module dependency.
 
 ### `stored_files` and `generated_documents`
 

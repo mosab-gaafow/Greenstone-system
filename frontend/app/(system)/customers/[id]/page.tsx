@@ -11,6 +11,7 @@ import { DetailRow } from '@/components/data-display/detail-row';
 import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { AddressManager } from '@/features/customers/components/address-manager';
+import { CreditStatusCard } from '@/features/customers/components/credit-status-card';
 import { useCustomer } from '@/features/customers/hooks/use-customers';
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -86,6 +87,8 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             </DetailRow>
           </CardContent>
         </Card>
+
+        <CreditStatusCard customerId={customer.id} />
 
         <AddressManager customerId={customer.id} addresses={customer.addresses} canEdit />
       </div>

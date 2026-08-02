@@ -617,7 +617,7 @@ Split into two approved sub-phases, mirroring Phase 4's A–D split, so each
 ships and is reviewed as a focused, independent change:
 
 - **Phase 5A — Quotations (COMPLETED).**
-- **Phase 5B — Orders and Customer Credit (not started).**
+- **Phase 5B — Orders and Customer Credit (COMPLETED).**
 
 ## Phase 5A — Quotations (COMPLETED)
 
@@ -703,24 +703,121 @@ is what gets saved.
 Orders, customer credit, customer opening balances, credit overrides,
 invoices, customer payments, receipts, discounts, VAT, taxes.
 
-## Phase 5B — Orders and Customer Credit (not started)
+## Phase 5B — Orders and Customer Credit (COMPLETED)
 
-Not yet detailed. Plan this sub-phase on its own when it is next, per the
-already-agreed corrections from planning:
+Backend modules: `orders` and `customer-credit` (a separate module from
+`customers`, matching the separately-declared `customer-credit` permission
+resource). See business-blueprint sections 2.6, 2.24, 2.25, and
+docs/database-notes.md for the table-level design notes.
 
-- Order gets an explicit `paymentType` (`CREDIT`/`CASH`); `CASH` orders skip
-  the credit check entirely, since a fully paid order may proceed even when
-  the customer is credit-blocked (business-blueprint section 2.24).
-- Until Invoices exist (Phase 9), outstanding balance for the credit check is
-  opening balance plus the customer's not-yet-invoiced `CREDIT` orders — not
-  opening balance alone, or blocking would never actually trigger before
-  Phase 9 ships. This switches to the real
-  `opening balance + issued invoices − payments` formula once Invoices
-  exist.
-- Credit thresholds: NORMAL below KES 800,000; WARNING KES 800,000–899,999;
-  STRONG_WARNING KES 900,000–999,999; BLOCKED at KES 1,000,000 or above.
-  WARNING/STRONG_WARNING are informational only — they do not block an order.
-- Order creation from an accepted quotation belongs here, not 5A.
+Migration `20260802130000_phase5b_orders_customer_credit` applied to
+`greenstone_dev` via `prisma migrate deploy` (confirmed via `prisma migrate
+status` → "Database schema is up to date!"). Full backend suite —
+**423/423 tests passing**, re-run twice to confirm stability — no flakes.
+Frontend `typecheck`/`lint`/`build` all clean.
+
+A real bug was found and fixed via live testing after this phase was first
+written up: order creation returned a 500 because the migration had not yet
+been applied to the dev database (MySQL was unreachable during the original
+implementation session; this session confirmed it was up and ran the
+deferred `prisma migrate deploy` and test suite).
+
+### Order and OrderItem
+
+Fields: order number (from the pre-existing `ORDER` numbering sequence),
+customer, customer address (both a live FK and a text snapshot —
+`addressLabel`/`addressLine`/`addressDirections` — captured at creation, per
+schema.prisma's existing Phase 5 note that an order must snapshot the
+address text), optional source quotation (unique — enforces "one quotation
+may create at most one order"), `paymentType` (`CASH`/`CREDIT`), total
+amount. Items: product, quantity, agreed unit price, line total, plus
+`producedQuantity`/`allocatedQuantity`/`deliveredQuantity`/
+`remainingQuantity` — part of the approved entity but only written by later
+phases (Production: Phase 6, Delivery: Phase 8), added now and defaulted so
+those phases need no further migration.
+
+Orders have **no status lifecycle** in this phase — the `order` permission
+resource only grants `create`/`read`/`update`, and neither blueprint document
+describes an order-level accept/reject/cancel transition. Orders are never
+deleted.
+
+The backend calculates every `lineTotal` and `totalAmount` using
+`Prisma.Decimal`, the same as quotations — including when converting from a
+quotation, where the source item's price is trusted as an input, not copied
+as an already-final total.
+
+### Creating an order
+
+One endpoint, two shapes, confirmed with you during planning:
+`POST /orders` accepts either `{ sourceQuotationId, customerAddressId,
+paymentType, creditOverrideReason? }` (conversion — items are copied from the
+quotation) or `{ customerId, customerAddressId, paymentType, items,
+creditOverrideReason? }` (direct). The source quotation must be `ACCEPTED`
+and not already converted. Before create, the service confirms the customer
+exists and is active, every product exists and is active, and the address
+belongs to that customer and is active — the same integrity checks Phase 5A
+established for quotations.
+
+### Customer credit
+
+`CustomerOpeningBalance`: one row per customer (unique `customerId`),
+corrected in place — confirmed with you during planning — rather than
+accumulated as history rows, with full before/after history in the audit
+log, the same pattern `CompanySettings` uses for its own singleton
+corrections. `PATCH /customers/:id/opening-balance`
+(`customer-credit:set-opening-balance`, Admin/Super Admin only).
+
+`GET /customers/:id/credit-status` (`customer-credit:read`) computes credit
+status live — **never cached, never stored on `Customer`** — using the
+interim formula agreed during Phase 5A planning: `opening balance + the
+customer's CREDIT orders`. Every order counts as "not-yet-invoiced" today
+because Invoices do not exist yet (Phase 9); this switches to the real
+`opening balance + issued invoices − approved payments` formula once they
+do. The sum is read directly from the `orders` table by the `customer-credit`
+module's own repository (a plain aggregate query) rather than through a
+cross-module call into `orders` — this keeps the dependency one-directional
+(`orders` depends on `customer-credit` for its check; `customer-credit` never
+depends back), avoiding a circular module dependency that a
+call-the-other-module's-service design would have created.
+
+Credit thresholds: NORMAL below KES 800,000; WARNING KES 800,000–899,999;
+STRONG_WARNING KES 900,000–999,999; BLOCKED at KES 1,000,000 or above.
+WARNING/STRONG_WARNING are informational only — they never block an order.
+`CASH` orders skip the credit check entirely, since a fully paid order may
+proceed even when the customer is credit-blocked. The check reads the
+customer's *current* status, not a hypothetical status including the new
+order's own amount.
+
+`CustomerCreditOverride`: append-only. When a `CREDIT` order would be blocked,
+the caller may resubmit `POST /orders` with `creditOverrideReason` set; the
+service checks `customer-credit:override` (Admin/Super Admin only), and if
+allowed, writes the order, the override record, and its own audit entry
+(`OVERRIDE_CUSTOMER_CREDIT`) in the same transaction as the order.
+
+### Frontend
+
+`features/orders/` follows the Phase 5A Quotations pattern — a full page for
+`/orders/new`, reusing `SearchableSelect` and `components/forms/
+item-row-list.tsx`. One form component handles both creation shapes: when
+opened with `?sourceQuotationId=`, it fixes the customer, shows the copied
+items read-only, and hides item entry; otherwise it behaves like the
+quotation form. A "Convert to order" button appears on an `ACCEPTED`
+quotation's detail page. `features/customers/` gained a credit-status card
+and an opening-balance dialog on the customer detail page, and
+`lib/permissions.ts` gained `canSetOpeningBalance` alongside the existing
+`canOverrideCredit`. `Orders` is flipped to `available: true` in
+`nav-items.ts`.
+
+### Excluded from 5B
+
+Invoices, customer payments, receipts (Phase 9). Purchases, purchase
+payments, raw materials (Phase 7). Production, curing, finished-stock
+reservation (Phase 6). Deliveries, driver/vehicle pairing (Phase 8) —
+Driver/Vehicle remain independent master records, as already decided in
+Phase 4C. Discounts, VAT, taxes, fixed product pricing (never). The real
+invoice-based credit formula (the Phase 9 switch-over noted above). Any
+order-level status lifecycle (cancel, void) — not described by either
+blueprint document for this phase.
 
 ## Do not add (either sub-phase)
 

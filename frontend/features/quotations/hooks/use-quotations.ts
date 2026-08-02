@@ -21,10 +21,11 @@ export function useQuotations(filters: QuotationFilters) {
   });
 }
 
-export function useQuotation(id: string) {
+export function useQuotation(id: string | undefined) {
   return useQuery({
-    queryKey: quotationKeys.detail(id),
-    queryFn: () => quotationsApi.fetchQuotation(id),
+    queryKey: quotationKeys.detail(id ?? ''),
+    queryFn: () => quotationsApi.fetchQuotation(id as string),
+    enabled: Boolean(id),
   });
 }
 

@@ -82,6 +82,12 @@ export class InvalidDocumentStatusError extends AppError {
   }
 }
 
+export class CustomerCreditBlockedError extends AppError {
+  constructor(message = 'This customer is blocked and cannot place a new credit order.') {
+    super(ERROR_CODES.CUSTOMER_CREDIT_BLOCKED, 422, message);
+  }
+}
+
 export class DuplicateDocumentError extends AppError {
   constructor(message = 'A record with these details already exists.') {
     super(ERROR_CODES.DUPLICATE_DOCUMENT, 409, message);

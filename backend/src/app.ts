@@ -12,6 +12,8 @@ import { vehiclesRoutes } from './modules/vehicles/vehicles.routes.js';
 import { suppliersRoutes } from './modules/suppliers/suppliers.routes.js';
 import { settingsRoutes } from './modules/settings/settings.routes.js';
 import { quotationsRoutes } from './modules/quotations/quotations.routes.js';
+import { ordersRoutes } from './modules/orders/orders.routes.js';
+import { customerCreditRoutes } from './modules/customer-credit/customer-credit.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -67,12 +69,14 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/users`, usersRoutes());
   app.use(`${API_BASE_PATH}/products`, productsRoutes());
   app.use(`${API_BASE_PATH}/customers`, customersRoutes());
+  app.use(`${API_BASE_PATH}/customers`, customerCreditRoutes());
   app.use(`${API_BASE_PATH}/employees`, employeesRoutes());
   app.use(`${API_BASE_PATH}/drivers`, driversRoutes());
   app.use(`${API_BASE_PATH}/vehicles`, vehiclesRoutes());
   app.use(`${API_BASE_PATH}/suppliers`, suppliersRoutes());
   app.use(`${API_BASE_PATH}/settings`, settingsRoutes());
   app.use(`${API_BASE_PATH}/quotations`, quotationsRoutes());
+  app.use(`${API_BASE_PATH}/orders`, ordersRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

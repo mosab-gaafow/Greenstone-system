@@ -2,7 +2,7 @@
 
 import { use, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Ban, Check, Download, FileText, PencilLine, X } from 'lucide-react';
+import { ArrowLeft, Ban, Check, Download, FileText, PencilLine, ShoppingCart, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -122,6 +122,12 @@ export default function QuotationDetailPage({ params }: { params: Promise<{ id: 
       />
 
       <div className="flex flex-wrap gap-2">
+        {quotation.status === 'ACCEPTED' && (
+          <Button render={<Link href={`/orders/new?sourceQuotationId=${quotation.id}`} />}>
+            <ShoppingCart className="size-4" aria-hidden />
+            Convert to order
+          </Button>
+        )}
         {quotation.status === 'DRAFT' && (
           <Button
             variant="outline"

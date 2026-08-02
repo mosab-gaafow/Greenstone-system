@@ -8,6 +8,7 @@
 // Phase 4C: Employee, Driver, Vehicle.
 // Phase 4D: Supplier, CompanySettings.
 // Phase 5A: StoredFile, GeneratedDocument, Quotation, QuotationItem.
+// Phase 5B: Order, OrderItem, CustomerOpeningBalance, CustomerCreditOverride.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
@@ -157,14 +158,14 @@ enum GeneratedDocumentType {
 /// deleted, so a past document remains traceable even after a later edit
 /// produces a new one (business-blueprint section 9.6).
 model GeneratedDocument {
-  id             String                @id @default(uuid())
-  documentType   GeneratedDocumentType
+  id              String                @id @default(uuid())
+  documentType    GeneratedDocumentType
   relatedEntityId String
-  documentNumber String
-  version        Int
-  storedFileId   String                @unique
-  storedFile     StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
-  generatedAt    DateTime              @default(now())
+  documentNumber  String
+  version         Int
+  storedFileId    String                @unique
+  storedFile      StoredFile            @relation(fields: [storedFileId], references: [id], onDelete: Restrict)
+  generatedAt     DateTime              @default(now())
 
   @@unique([documentType, relatedEntityId, version])
   @@index([documentType, relatedEntityId])
@@ -192,10 +193,12 @@ model User {
   accounts      Account[]
 
   // Greenstone relations
-  auditLogs           AuditLog[]
-  capabilityGrants    UserCapabilityGrant[] @relation("CapabilityHolder")
-  capabilitiesGranted UserCapabilityGrant[] @relation("CapabilityGranter")
-  storedFiles         StoredFile[]
+  auditLogs               AuditLog[]
+  capabilityGrants        UserCapabilityGrant[]    @relation("CapabilityHolder")
+  capabilitiesGranted     UserCapabilityGrant[]    @relation("CapabilityGranter")
+  storedFiles             StoredFile[]
+  openingBalancesEntered  CustomerOpeningBalance[]
+  creditOverridesApproved CustomerCreditOverride[]
 
   @@unique([email])
   @@map("user")
@@ -261,6 +264,7 @@ model Product {
   updatedAt      DateTime        @updatedAt
 
   quotationItems QuotationItem[]
+  orderItems     OrderItem[]
 
   @@index([isActive])
   @@index([category])
@@ -287,8 +291,11 @@ model Customer {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  addresses  CustomerAddress[]
-  quotations Quotation[]
+  addresses       CustomerAddress[]
+  quotations      Quotation[]
+  orders          Order[]
+  openingBalance  CustomerOpeningBalance?
+  creditOverrides CustomerCreditOverride[]
 
   @@index([isActive])
   @@index([name])
@@ -305,9 +312,9 @@ model Customer {
 /// `onDelete: Restrict` because a customer with addresses must never be
 /// removed. Customers are deactivated, never deleted.
 ///
-/// Note for Phase 5: an order must **snapshot** the address text at the time it
-/// is placed. Editing a site later must not silently rewrite the address a
-/// delivered order was sent to.
+/// Phase 5B: an order **snapshots** the address text (`Order.addressLabel`
+/// etc.) at the time it is placed, alongside this FK. Editing a site later
+/// must not silently rewrite the address an existing order was sent to.
 model CustomerAddress {
   id              String   @id @default(uuid())
   customerId      String
@@ -323,6 +330,8 @@ model CustomerAddress {
   isActive        Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+
+  orders Order[]
 
   @@unique([customerId, labelNormalized])
   @@index([customerId, isActive])
@@ -382,9 +391,9 @@ model Employee {
 /// Not automatically a Greenstone employee — Driver and Employee are separate
 /// master-data modules, and a driver never gains salary/employee fields.
 model Driver {
-  id   String @id @default(uuid())
-  name String
-  phone String
+  id                   String   @id @default(uuid())
+  name                 String
+  phone                String
   /// Readable, as entered (trimmed only).
   nationalId           String
   /// Trimmed, uppercased, internal whitespace collapsed. This is the column
@@ -450,21 +459,21 @@ model Vehicle {
 /// (business-blueprint sections 2.17–2.18) belong to Phase 7, once
 /// raw-material stock exists for a purchase to receive into.
 model Supplier {
-  id    String  @id @default(uuid())
-  name  String
-  phone String
+  id              String   @id @default(uuid())
+  name            String
+  phone           String
   /// Digits only, in international form — same normalisation as Customer
   /// phone, so the same number entered two different ways is one supplier.
-  phoneNormalized String  @unique
+  phoneNormalized String   @unique
   email           String?
   /// Lowercased. Unique when present; MySQL allows many NULLs in a unique
   /// index, so suppliers without an email are unaffected.
-  emailNormalized String? @unique
+  emailNormalized String?  @unique
   /// Free text. Not normalised or unique — descriptive, not an identity field.
-  address   String? @db.Text
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  address         String?  @db.Text
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   @@index([isActive])
   @@index([name])
@@ -520,6 +529,9 @@ model Quotation {
   updatedAt       DateTime        @updatedAt
 
   items QuotationItem[]
+  /// A quotation may create at most one order (business-blueprint section
+  /// 4.5). Enforced by the unique constraint on `Order.sourceQuotationId`.
+  order Order?
 
   @@index([customerId])
   @@index([status])
@@ -549,6 +561,163 @@ model QuotationItem {
 
   @@index([quotationId])
   @@map("quotation_items")
+}
+
+/// See business-blueprint section 2.6. `CASH` orders skip the credit check
+/// entirely — a fully paid order may proceed even when the customer is
+/// credit-blocked. `CREDIT` orders are checked against the customer's credit
+/// status. This field does not exist in the original technical-blueprint
+/// Order entity; it was added during Phase 5A/5B planning because the
+/// blueprint describes "credit orders" vs "fully paid orders" without ever
+/// naming the mechanism. See docs/implementation-plan.md Phase 5B.
+enum OrderPaymentType {
+  CASH
+  CREDIT
+}
+
+/// Customer credit status. See business-blueprint section 2.24. Persisted
+/// only as a snapshot on `CustomerCreditOverride.previousCreditStatus` — the
+/// live status is always computed, never cached or stored on `Customer`
+/// (technical-blueprint section 4A.3).
+enum CreditStatus {
+  NORMAL
+  WARNING
+  STRONG_WARNING
+  BLOCKED
+}
+
+/// Order master. Created either directly, or by converting one `ACCEPTED`
+/// quotation (never both — `sourceQuotationId` is unique). See
+/// business-blueprint section 2.6 and docs/implementation-plan.md Phase 5B.
+///
+/// Unlike Quotation, an order has no status lifecycle of its own in this
+/// phase: `order` only grants create/read/update permission, and neither
+/// blueprint document describes an order-level accept/reject/cancel
+/// transition. The quantity fields on `OrderItem` (produced/allocated/
+/// delivered/remaining) are what later phases (Production, Delivery) update.
+///
+/// The customer address is both a live FK (`customerAddressId`, restricted
+/// so a referenced address can never be deleted) and a text snapshot
+/// (`addressLabel`/`addressLine`/`addressDirections`) captured at creation —
+/// editing the site later must not rewrite where an existing order was sent.
+model Order {
+  id                String           @id @default(uuid())
+  orderNumber       String           @unique
+  customerId        String
+  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerAddressId String
+  customerAddress   CustomerAddress  @relation(fields: [customerAddressId], references: [id], onDelete: Restrict)
+  /// Snapshot of the address at order time. See the model doc comment.
+  addressLabel      String
+  addressLine       String
+  addressDirections String?          @db.Text
+  /// The accepted quotation this order was converted from, if any. Unique:
+  /// one quotation may create at most one order (business-blueprint 4.5).
+  sourceQuotationId String?          @unique
+  sourceQuotation   Quotation?       @relation(fields: [sourceQuotationId], references: [id], onDelete: Restrict)
+  paymentType       OrderPaymentType
+  /// Sum of all item line totals. Backend-calculated, never trusted from a
+  /// request, never JavaScript floating-point arithmetic.
+  totalAmount       Decimal          @db.Decimal(14, 2)
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  items           OrderItem[]
+  creditOverrides CustomerCreditOverride[]
+
+  @@index([customerId])
+  @@index([customerAddressId])
+  @@map("orders")
+}
+
+/// One line of an order: one product, a quantity, and the price agreed for
+/// this order specifically. For a direct order the price is entered at
+/// creation; for a quotation conversion it is copied from the source
+/// quotation item, preserving that snapshot. See business-blueprint sections
+/// 2.6 and 4.4.
+///
+/// `producedQuantity`/`allocatedQuantity`/`deliveredQuantity`/
+/// `remainingQuantity` are part of the approved entity (technical-blueprint
+/// section 4.4) but are only written by later phases (Production: Phase 6,
+/// Delivery: Phase 8) — added now, defaulted, so those phases need no further
+/// migration on this table, the same approach already used for
+/// `Vehicle.ownershipType`.
+model OrderItem {
+  id                    String   @id @default(uuid())
+  orderId               String
+  order                 Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId             String
+  product               Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
+  /// The quotation item this line was copied from, if this order was
+  /// converted from a quotation.
+  sourceQuotationItemId String?
+  /// Whole units — product pieces are never fractional.
+  quantity              Int
+  agreedUnitPrice       Decimal  @db.Decimal(12, 2)
+  lineTotal             Decimal  @db.Decimal(14, 2)
+  producedQuantity      Int      @default(0)
+  allocatedQuantity     Int      @default(0)
+  deliveredQuantity     Int      @default(0)
+  /// Defaults to `quantity` — nothing has been delivered yet at creation.
+  remainingQuantity     Int
+  /// Position on the order, in the order the items were entered. Same reason
+  /// as `QuotationItem.sortOrder`: `createdAt` cannot order items reliably
+  /// when several are created together in one nested write.
+  sortOrder             Int
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+/// The customer's opening balance, corrected in place rather than
+/// accumulated as history rows — the blueprint describes entering "the"
+/// opening balance (business-blueprint section 2.25), not a running ledger
+/// of several. Full before/after history lives in the audit log via
+/// `previousData`/`updatedData`, the same pattern `CompanySettings` uses for
+/// its own singleton corrections.
+///
+/// Not an invoice. Recalculating the customer's credit status after a change
+/// is implicit: credit status is always computed live from this value, never
+/// cached or stored (technical-blueprint section 4A.3).
+model CustomerOpeningBalance {
+  id              String   @id @default(uuid())
+  customerId      String   @unique
+  customer        Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount          Decimal  @db.Decimal(14, 2)
+  effectiveDate   DateTime
+  reason          String   @db.Text
+  enteredByUserId String?
+  enteredByUser   User?    @relation(fields: [enteredByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("customer_opening_balances")
+}
+
+/// Lets a `BLOCKED` customer's new `CREDIT` order proceed anyway. Only
+/// Admin/Super Admin may create one (`customer-credit:override`), always with
+/// a written reason, always audited. See business-blueprint section 2.24 and
+/// docs/technical-blueprint.md section 4.3.
+///
+/// Append-only: an override is never edited or deleted once written.
+model CustomerCreditOverride {
+  id                   String       @id @default(uuid())
+  customerId           String
+  customer             Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  relatedOrderId       String
+  relatedOrder         Order        @relation(fields: [relatedOrderId], references: [id], onDelete: Restrict)
+  /// Snapshot of the customer's credit status at the moment of the override.
+  previousCreditStatus CreditStatus
+  reason               String       @db.Text
+  approvedByUserId     String?
+  approvedByUser       User?        @relation(fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime     @default(now())
+
+  @@index([customerId])
+  @@index([relatedOrderId])
+  @@map("customer_credit_overrides")
 }
 
 model Session {
