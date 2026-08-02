@@ -8,10 +8,14 @@
 // Phase 4C: Employee, Driver, Vehicle.
 // Phase 4D: Supplier, CompanySettings.
 // Phase 5A: StoredFile, GeneratedDocument, Quotation, QuotationItem.
+//           Quotation and QuotationItem removed in Phase 6C-3 (2026-08-02) —
+//           see docs/decisions/business-workflow-update-2026-08-02.md.
 // Phase 5B: Order, OrderItem, CustomerOpeningBalance, CustomerCreditOverride.
 // Phase 6A: MeasurementUnit, RawMaterial, RawMaterialStockBalance,
 //           RawMaterialMovement, FinishedStockBalance, FinishedStockMovement,
 //           BrokenProductRecord.
+// Phase 6B: ProductionBatch, ProductionItem, ProductionOrderAllocation,
+//           RawMaterialUsage, CuringRecord.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
@@ -43,7 +47,14 @@ datasource db {
 
 /// Document types that receive an official backend-generated number.
 /// Values come from the approved numbering table (business-blueprint section 3).
-
+///
+/// `QUOTATION` is no longer issued (Quotations removed, Phase 6C-3,
+/// 2026-08-02) but is deliberately kept here: `document_sequences` has a real
+/// historical row with this value (year 2026), and issued document records
+/// must never be hard-deleted or have their historical type invalidated.
+/// Removing it from this enum would force a destructive rewrite of that row
+/// or fail the migration outright. No code path allocates a new `QUOTATION`
+/// number — the `quotations` module that did so is gone.
 enum DocumentType {
   QUOTATION
   ORDER
@@ -143,8 +154,11 @@ model StoredFile {
 /// see docs/business-blueprint.md section 9.1: "Other PDFs must not be added
 /// unless approved." Deliberately a separate, narrower enum from
 /// `DocumentType`, which covers every numbered document, not just PDFs.
+///
+/// `QUOTATION` was removed (Phase 6C-3, 2026-08-02) along with its one
+/// generated PDF record — unlike `DocumentType`, no historical row keeps this
+/// value, so narrowing the enum is safe here.
 enum GeneratedDocumentType {
-  QUOTATION
   INVOICE
   RECEIPT
 }
@@ -153,10 +167,11 @@ enum GeneratedDocumentType {
 /// PDF — see docs/technical-blueprint.md section 4.14 ("Generated Document"
 /// serves as the explicit relation table for "Generated PDF documents").
 ///
-/// `relatedEntityId` is a plain id, not a foreign key: the same table serves
-/// Quotations now and Invoices/Receipts later, and Prisma cannot express a
+/// `relatedEntityId` is a plain id, not a foreign key: the same table will
+/// serve Invoices/Receipts (Phase 9), and Prisma cannot express a
 /// polymorphic relation. The service layer is responsible for loading the
-/// right record for `documentType`.
+/// right record for `documentType`. It previously also served Quotations
+/// (Phase 5A), removed in Phase 6C-3.
 ///
 /// A new version is created only when the rendered content actually changes
 /// (compared by checksum) — repeat downloads of an unchanged draft reuse the
@@ -199,15 +214,19 @@ model User {
   accounts      Account[]
 
   // Greenstone relations
-  auditLogs               AuditLog[]
-  capabilityGrants        UserCapabilityGrant[]    @relation("CapabilityHolder")
-  capabilitiesGranted     UserCapabilityGrant[]    @relation("CapabilityGranter")
-  storedFiles             StoredFile[]
-  openingBalancesEntered  CustomerOpeningBalance[]
-  creditOverridesApproved CustomerCreditOverride[]
-  rawMaterialMovements    RawMaterialMovement[]
-  finishedStockMovements  FinishedStockMovement[]
-  brokenProductRecords    BrokenProductRecord[]
+  auditLogs                AuditLog[]
+  capabilityGrants         UserCapabilityGrant[]    @relation("CapabilityHolder")
+  capabilitiesGranted      UserCapabilityGrant[]    @relation("CapabilityGranter")
+  storedFiles              StoredFile[]
+  openingBalancesEntered   CustomerOpeningBalance[]
+  creditOverridesApproved  CustomerCreditOverride[]
+  rawMaterialMovements     RawMaterialMovement[]
+  finishedStockMovements   FinishedStockMovement[]
+  brokenProductRecords     BrokenProductRecord[]
+  productionBatchesCreated ProductionBatch[]
+  curingRecordsCreated     CuringRecord[]           @relation("CuringCreatedBy")
+  curingRecordsChanged     CuringRecord[]           @relation("CuringDurationChangedBy")
+  curingRecordsReleased    CuringRecord[]           @relation("CuringReleasedBy")
 
   @@unique([email])
   @@map("user")
@@ -272,11 +291,11 @@ model Product {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
 
-  quotationItems         QuotationItem[]
   orderItems             OrderItem[]
   finishedStockBalance   FinishedStockBalance?
   finishedStockMovements FinishedStockMovement[]
   brokenProductRecords   BrokenProductRecord[]
+  productionItems        ProductionItem[]
 
   @@index([isActive])
   @@index([category])
@@ -304,7 +323,6 @@ model Customer {
   updatedAt       DateTime @updatedAt
 
   addresses       CustomerAddress[]
-  quotations      Quotation[]
   orders          Order[]
   openingBalance  CustomerOpeningBalance?
   creditOverrides CustomerCreditOverride[]
@@ -513,78 +531,32 @@ model CompanySettings {
   @@map("company_settings")
 }
 
-/// See business-blueprint section 2.5.
-enum QuotationStatus {
-  DRAFT
-  ACCEPTED
-  REJECTED
-  CANCELLED
-}
-
-/// Quotation master. Only `DRAFT` quotations may be edited — every other
-/// status is a one-way transition, made through an explicit service action
-/// (accept/reject/cancel), never a plain field update. See
-/// docs/implementation-plan.md Phase 5A.
-model Quotation {
-  id              String          @id @default(uuid())
-  quotationNumber String          @unique
-  customerId      String
-  customer        Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  status          QuotationStatus @default(DRAFT)
-  /// Sum of all item line totals. Backend-calculated from the items at
-  /// create/update time, never trusted from a request.
-  totalAmount     Decimal         @db.Decimal(14, 2)
-  /// Written reason for a rejection or cancellation. Not used for DRAFT or
-  /// ACCEPTED.
-  statusReason    String?         @db.Text
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-
-  items QuotationItem[]
-  /// A quotation may create at most one order (business-blueprint section
-  /// 4.5). Enforced by the unique constraint on `Order.sourceQuotationId`.
-  order Order?
-
-  @@index([customerId])
-  @@index([status])
-  @@map("quotations")
-}
-
-/// One line of a quotation: one product, a quantity, and the price agreed for
-/// this quotation specifically — see business-blueprint section 2.4. A later
-/// change to the product's own data must never change this saved snapshot.
-model QuotationItem {
-  id              String    @id @default(uuid())
-  quotationId     String
-  quotation       Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
-  productId       String
-  product         Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
-  /// Whole units — product pieces are never fractional.
-  quantity        Int
-  agreedUnitPrice Decimal   @db.Decimal(12, 2)
-  lineTotal       Decimal   @db.Decimal(14, 2)
-  /// Position on the quotation, in the order the items were entered.
-  /// `createdAt` cannot be used for this: several items created together in
-  /// one nested write can tie at the same millisecond, making their order
-  /// non-deterministic on read.
-  sortOrder       Int
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
-
-  @@index([quotationId])
-  @@map("quotation_items")
-}
-
-/// See business-blueprint section 2.6. `CASH` orders skip the credit check
+/// See business-blueprint section 2.6. `PREPAID` orders skip the credit check
 /// entirely — a fully paid order may proceed even when the customer is
 /// credit-blocked. `CREDIT` orders are checked against the customer's credit
-/// status. This field does not exist in the original technical-blueprint
-/// Order entity; it was added during Phase 5A/5B planning because the
-/// blueprint describes "credit orders" vs "fully paid orders" without ever
-/// naming the mechanism. See docs/implementation-plan.md Phase 5B.
-enum OrderPaymentType {
-  CASH
+/// status. Renamed from `OrderPaymentType`'s `CASH`/`CREDIT` in Phase 6C-2
+/// (2026-08-02) — cash is a payment method (business-blueprint section 2.23),
+/// not this order-level arrangement. See
+/// docs/decisions/business-workflow-update-2026-08-02.md section 5.
+enum OrderPaymentArrangement {
+  PREPAID
   CREDIT
+}
+
+/// System-controlled order status. See
+/// docs/decisions/business-workflow-update-2026-08-02.md section 12.3. Never
+/// user-writable — every order starts `PENDING` and moves only through
+/// explicit service actions (Production, Curing, Delivery modules, and the
+/// order-cancellation action added in Phase 6C-2). There is no generic
+/// status-update endpoint.
+enum OrderStatus {
+  PENDING
+  IN_PRODUCTION
+  CURING
+  READY_FOR_DELIVERY
+  PARTIALLY_DELIVERED
+  COMPLETED
+  CANCELLED
 }
 
 /// Customer credit status. See business-blueprint section 2.24. Persisted
@@ -598,44 +570,44 @@ enum CreditStatus {
   BLOCKED
 }
 
-/// Order master. Created either directly, or by converting one `ACCEPTED`
-/// quotation (never both — `sourceQuotationId` is unique). See
-/// business-blueprint section 2.6 and docs/implementation-plan.md Phase 5B.
+/// Order master. Direct creation only — quotation removed (Phase 6C-2,
+/// 2026-08-02). See business-blueprint section 2.6,
+/// docs/implementation-plan.md Phase 5B/6C-2, and
+/// docs/decisions/business-workflow-update-2026-08-02.md.
 ///
-/// Unlike Quotation, an order has no status lifecycle of its own in this
-/// phase: `order` only grants create/read/update permission, and neither
-/// blueprint document describes an order-level accept/reject/cancel
-/// transition. The quantity fields on `OrderItem` (produced/allocated/
-/// delivered/remaining) are what later phases (Production, Delivery) update.
+/// `status` is system-controlled: every order starts `PENDING` and moves
+/// only through explicit service actions, never a plain field update. The
+/// quantity fields on `OrderItem` (produced/allocated/delivered/remaining)
+/// are what later phases (Production, Delivery) update.
 ///
 /// The customer address is both a live FK (`customerAddressId`, restricted
 /// so a referenced address can never be deleted) and a text snapshot
 /// (`addressLabel`/`addressLine`/`addressDirections`) captured at creation —
 /// editing the site later must not rewrite where an existing order was sent.
 model Order {
-  id                String           @id @default(uuid())
-  orderNumber       String           @unique
-  customerId        String
-  customer          Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  customerAddressId String
-  customerAddress   CustomerAddress  @relation(fields: [customerAddressId], references: [id], onDelete: Restrict)
+  id                 String                  @id @default(uuid())
+  orderNumber        String                  @unique
+  customerId         String
+  customer           Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  customerAddressId  String
+  customerAddress    CustomerAddress         @relation(fields: [customerAddressId], references: [id], onDelete: Restrict)
   /// Snapshot of the address at order time. See the model doc comment.
-  addressLabel      String
-  addressLine       String
-  addressDirections String?          @db.Text
-  /// The accepted quotation this order was converted from, if any. Unique:
-  /// one quotation may create at most one order (business-blueprint 4.5).
-  sourceQuotationId String?          @unique
-  sourceQuotation   Quotation?       @relation(fields: [sourceQuotationId], references: [id], onDelete: Restrict)
-  paymentType       OrderPaymentType
+  addressLabel       String
+  addressLine        String
+  addressDirections  String?                 @db.Text
+  paymentArrangement OrderPaymentArrangement
+  status             OrderStatus             @default(PENDING)
+  /// Written reason for cancellation. Mirrors `Quotation.statusReason`.
+  statusReason       String?                 @db.Text
   /// Sum of all item line totals. Backend-calculated, never trusted from a
   /// request, never JavaScript floating-point arithmetic.
-  totalAmount       Decimal          @db.Decimal(14, 2)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  totalAmount        Decimal                 @db.Decimal(14, 2)
+  createdAt          DateTime                @default(now())
+  updatedAt          DateTime                @updatedAt
 
-  items           OrderItem[]
-  creditOverrides CustomerCreditOverride[]
+  items             OrderItem[]
+  creditOverrides   CustomerCreditOverride[]
+  productionBatches ProductionBatch[]
 
   @@index([customerId])
   @@index([customerAddressId])
@@ -643,10 +615,8 @@ model Order {
 }
 
 /// One line of an order: one product, a quantity, and the price agreed for
-/// this order specifically. For a direct order the price is entered at
-/// creation; for a quotation conversion it is copied from the source
-/// quotation item, preserving that snapshot. See business-blueprint sections
-/// 2.6 and 4.4.
+/// this order specifically, entered at creation. See business-blueprint
+/// sections 2.6 and 4.4.
 ///
 /// `producedQuantity`/`allocatedQuantity`/`deliveredQuantity`/
 /// `remainingQuantity` are part of the approved entity (technical-blueprint
@@ -655,29 +625,28 @@ model Order {
 /// migration on this table, the same approach already used for
 /// `Vehicle.ownershipType`.
 model OrderItem {
-  id                    String   @id @default(uuid())
-  orderId               String
-  order                 Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  productId             String
-  product               Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
-  /// The quotation item this line was copied from, if this order was
-  /// converted from a quotation.
-  sourceQuotationItemId String?
+  id                String   @id @default(uuid())
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Restrict)
   /// Whole units — product pieces are never fractional.
-  quantity              Int
-  agreedUnitPrice       Decimal  @db.Decimal(12, 2)
-  lineTotal             Decimal  @db.Decimal(14, 2)
-  producedQuantity      Int      @default(0)
-  allocatedQuantity     Int      @default(0)
-  deliveredQuantity     Int      @default(0)
+  quantity          Int
+  agreedUnitPrice   Decimal  @db.Decimal(12, 2)
+  lineTotal         Decimal  @db.Decimal(14, 2)
+  producedQuantity  Int      @default(0)
+  allocatedQuantity Int      @default(0)
+  deliveredQuantity Int      @default(0)
   /// Defaults to `quantity` — nothing has been delivered yet at creation.
-  remainingQuantity     Int
+  remainingQuantity Int
   /// Position on the order, in the order the items were entered. Same reason
   /// as `QuotationItem.sortOrder`: `createdAt` cannot order items reliably
   /// when several are created together in one nested write.
-  sortOrder             Int
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
+  sortOrder         Int
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  productionAllocations ProductionOrderAllocation[]
 
   @@index([orderId])
   @@map("order_items")
@@ -744,7 +713,8 @@ model MeasurementUnit {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  rawMaterials RawMaterial[]
+  rawMaterials      RawMaterial[]
+  rawMaterialUsages RawMaterialUsage[]
 
   @@index([isActive])
   @@map("measurement_units")
@@ -769,6 +739,7 @@ model RawMaterial {
 
   stockBalance RawMaterialStockBalance?
   movements    RawMaterialMovement[]
+  usages       RawMaterialUsage[]
 
   @@index([isActive])
   @@index([measurementUnitId])
@@ -925,6 +896,166 @@ model BrokenProductRecord {
   @@index([productId])
   @@index([stage])
   @@map("broken_product_records")
+}
+
+/// See business-blueprint section 2.7: production is created either for a
+/// specific order, or for general finished stock — never both, and never
+/// neither.
+enum ProductionPurpose {
+  ORDER
+  GENERAL_STOCK
+}
+
+/// Computed, never accepted from a request. Flips to `COMPLETED` once every
+/// item's curing has been released — see `curing.service.ts`.
+enum ProductionStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+/// Production run. See business-blueprint section 2.7 and
+/// docs/implementation-plan.md Phase 6B.
+model ProductionBatch {
+  id               String            @id @default(uuid())
+  productionNumber String            @unique
+  productionDate   DateTime
+  purpose          ProductionPurpose
+  /// Required when `purpose` is `ORDER`, absent when `GENERAL_STOCK`.
+  orderId          String?
+  order            Order?            @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  status           ProductionStatus  @default(IN_PROGRESS)
+  createdByUserId  String?
+  createdByUser    User?             @relation(fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+
+  items             ProductionItem[]
+  rawMaterialUsages RawMaterialUsage[]
+
+  @@index([orderId])
+  @@index([status])
+  @@map("production_batches")
+}
+
+/// One product's line within a production run. See business-blueprint
+/// section 2.7.
+///
+/// `allocatedQuantity`/`excessQuantity` are the **planned** split against the
+/// order, computed at production time — the split actually credited to
+/// finished stock is computed at curing release (`curing.service.ts`),
+/// because further breakage may occur during curing.
+model ProductionItem {
+  id                String          @id @default(uuid())
+  productionBatchId String
+  productionBatch   ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  pallets           Int
+  /// `pallets × 12`, backend-calculated.
+  producedQuantity  Int
+  /// Broken before curing — a separate capture point from
+  /// `CuringRecord.brokenQuantity`, which captures breakage *during* curing.
+  brokenQuantity    Int             @default(0)
+  /// `producedQuantity − brokenQuantity`. This is what enters curing.
+  usableQuantity    Int
+  allocatedQuantity Int             @default(0)
+  excessQuantity    Int             @default(0)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  allocations  ProductionOrderAllocation[]
+  curingRecord CuringRecord?
+
+  @@index([productionBatchId])
+  @@index([productId])
+  @@map("production_items")
+}
+
+/// Connects a production item to the order item it was produced for, and the
+/// exact quantity earmarked. See business-blueprint section 2.7 and
+/// technical-blueprint section 4.6.
+model ProductionOrderAllocation {
+  id               String         @id @default(uuid())
+  productionItemId String
+  productionItem   ProductionItem @relation(fields: [productionItemId], references: [id], onDelete: Cascade)
+  orderItemId      String
+  orderItem        OrderItem      @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  quantity         Int
+  createdAt        DateTime       @default(now())
+
+  @@index([productionItemId])
+  @@index([orderItemId])
+  @@map("production_order_allocations")
+}
+
+/// Actual raw-material quantity used in a production run — never a fixed
+/// formula (business-blueprint section 2.12). `measurementUnitId` snapshots
+/// the raw material's unit at the time of entry, so a later change to the
+/// raw material's configured unit never rewrites this history.
+model RawMaterialUsage {
+  id                String          @id @default(uuid())
+  productionBatchId String
+  productionBatch   ProductionBatch @relation(fields: [productionBatchId], references: [id], onDelete: Cascade)
+  rawMaterialId     String
+  rawMaterial       RawMaterial     @relation(fields: [rawMaterialId], references: [id], onDelete: Restrict)
+  measurementUnitId String
+  measurementUnit   MeasurementUnit @relation(fields: [measurementUnitId], references: [id], onDelete: Restrict)
+  quantity          Decimal         @db.Decimal(14, 3)
+  createdAt         DateTime        @default(now())
+
+  @@index([productionBatchId])
+  @@index([rawMaterialId])
+  @@map("raw_material_usages")
+}
+
+/// The only two selectable curing durations. See business-blueprint section
+/// 2.8 — deliberately just these two values: the shorter one is also the
+/// absolute floor a curing record can never release before.
+enum CuringDuration {
+  TWO_DAYS
+  THREE_DAYS
+}
+
+/// Belongs to exactly one production item. See business-blueprint section
+/// 2.8.
+///
+/// Release requires `now >= plannedCompletion` — using whichever duration is
+/// currently selected. The only way to release a `THREE_DAYS` record before
+/// the full three days is the explicit, audited change-to-`TWO_DAYS` action;
+/// there is no separate early-release override.
+model CuringRecord {
+  id                   String         @id @default(uuid())
+  productionItemId     String         @unique
+  productionItem       ProductionItem @relation(fields: [productionItemId], references: [id], onDelete: Restrict)
+  /// Denormalised from `productionItem.productionBatchId`, so a batch's
+  /// completion can be checked with a query against this table alone —
+  /// avoids `curing` needing to read `production`'s tables directly.
+  productionBatchId    String
+  quantityEntering     Int
+  originalDuration     CuringDuration
+  currentDuration      CuringDuration
+  startedAt            DateTime
+  plannedCompletion    DateTime
+  actualRelease        DateTime?
+  /// Broken during curing — set at release time, alongside `releasedQuantity`.
+  brokenQuantity       Int            @default(0)
+  /// `quantityEntering − brokenQuantity`. Null until released.
+  releasedQuantity     Int?
+  /// Required when `currentDuration` differs from `originalDuration`.
+  durationChangeReason String?        @db.Text
+  changedByUserId      String?
+  changedByUser        User?          @relation("CuringDurationChangedBy", fields: [changedByUserId], references: [id], onDelete: SetNull)
+  changedAt            DateTime?
+  releasedByUserId     String?
+  releasedByUser       User?          @relation("CuringReleasedBy", fields: [releasedByUserId], references: [id], onDelete: SetNull)
+  createdByUserId      String?
+  createdByUser        User?          @relation("CuringCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime       @default(now())
+  updatedAt            DateTime       @updatedAt
+
+  @@index([productionItemId])
+  @@index([productionBatchId])
+  @@map("curing_records")
 }
 
 model Session {

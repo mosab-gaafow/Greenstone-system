@@ -27,7 +27,7 @@ interface ProductFormProps {
  * Create and edit form for a product.
  *
  * There is no price field, by design. Prices are agreed per transaction and
- * captured on the quotation, order or invoice.
+ * captured on the order or invoice.
  */
 export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFormProps) {
   const router = useRouter();
@@ -80,7 +80,7 @@ export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFor
 
       <FormSection
         title="Product details"
-        description="Products have no fixed price. The price is agreed on each quotation and order."
+        description="Products have no fixed price. The price is agreed on each order."
         icon={Package}
       >
         <TextField
@@ -114,7 +114,7 @@ export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFor
             label="Size"
             required
             placeholder="e.g. 6 × 9"
-            hint="As written on quotations and delivery notes."
+            hint="As written on orders and delivery notes."
             error={errors.size?.message}
             {...register('size')}
           />

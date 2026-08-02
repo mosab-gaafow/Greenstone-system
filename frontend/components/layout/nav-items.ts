@@ -2,7 +2,6 @@ import {
   BadgeDollarSign,
   Boxes,
   ClipboardList,
-  FileText,
   Factory,
   FlaskConical,
   Home,
@@ -75,15 +74,14 @@ export const NAV_GROUPS: NavGroup[] = [
     label: 'Sales',
     items: [
       { label: 'Customers', href: '/customers', icon: Users, available: true },
-      { label: 'Quotations', href: '/quotations', icon: FileText, available: true },
       { label: 'Orders', href: '/orders', icon: ShoppingCart, available: true },
     ],
   },
   {
     label: 'Operations',
     items: [
-      { label: 'Production', href: '/production', icon: Factory, available: false },
-      { label: 'Curing', href: '/curing', icon: Layers, available: false },
+      { label: 'Production', href: '/production', icon: Factory, available: true },
+      { label: 'Curing', href: '/curing', icon: Layers, available: true },
       { label: 'Stock', href: '/stock', icon: Boxes, available: false },
       { label: 'Deliveries', href: '/deliveries', icon: Truck, available: false },
       { label: 'Drivers', href: '/drivers', icon: Users, available: true },

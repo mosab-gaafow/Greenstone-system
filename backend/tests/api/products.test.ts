@@ -259,8 +259,8 @@ describe('products module', () => {
 
   describe('products carry no price', () => {
     it('rejects a create that includes a price', async () => {
-      // Prices are agreed per transaction and snapshotted on quotation, order
-      // and invoice items. A price on the product master would eventually be
+      // Prices are agreed per transaction and snapshotted on order and
+      // invoice items. A price on the product master would eventually be
       // mistaken for the real one.
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
@@ -413,8 +413,8 @@ describe('products module', () => {
 
       await request(app).post(`${PRODUCTS}/${product.id}/deactivate`).set(headers).send({});
 
-      // Past quotations, orders and invoices reference products permanently,
-      // so a product is retired, never removed.
+      // Past orders and invoices reference products permanently, so a
+      // product is retired, never removed.
       expect(
         await getTestPrisma().product.findUnique({ where: { id: product.id } }),
       ).not.toBeNull();

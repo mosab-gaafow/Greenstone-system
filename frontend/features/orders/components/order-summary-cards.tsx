@@ -16,11 +16,11 @@ export function OrderSummaryCards() {
       isLoading: summary.isLoading,
     },
     {
-      label: 'Cash',
-      value: summary.cash ?? 0,
+      label: 'Prepaid',
+      value: summary.prepaid ?? 0,
       icon: Banknote,
       tone: 'success',
-      caption: 'Fully paid',
+      caption: 'Paid before dispatch',
       isLoading: summary.isLoading,
     },
     {

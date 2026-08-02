@@ -1,6 +1,6 @@
 import { api, type PaginationMeta } from '@/lib/api-client';
 import type { Order, OrderDetail, OrderFilters } from '../types/order.types';
-import type { OrderFormValues } from '../schemas/order.schema';
+import type { CancelOrderFormValues, OrderFormValues } from '../schemas/order.schema';
 
 export interface OrderListResult {
   orders: Order[];
@@ -14,7 +14,8 @@ export async function fetchOrders(filters: OrderFilters): Promise<OrderListResul
       pageSize: filters.pageSize,
       search: filters.search,
       customerId: filters.customerId,
-      paymentType: filters.paymentType,
+      paymentArrangement: filters.paymentArrangement,
+      status: filters.status,
     },
   });
 
@@ -31,13 +32,20 @@ export async function createOrder(values: OrderFormValues): Promise<OrderDetail>
   return data;
 }
 
+export async function cancelOrder(
+  id: string,
+  values: CancelOrderFormValues,
+): Promise<OrderDetail> {
+  const { data } = await api.post<OrderDetail>(`/orders/${id}/cancel`, values);
+  return data;
+}
+
 /** An empty override reason is not sent — the backend treats it as none given. */
 function normaliseOrder(values: OrderFormValues) {
   return {
     customerId: values.customerId,
-    sourceQuotationId: values.sourceQuotationId,
     customerAddressId: values.customerAddressId,
-    paymentType: values.paymentType,
+    paymentArrangement: values.paymentArrangement,
     items: values.items,
     creditOverrideReason: values.creditOverrideReason?.trim()
       ? values.creditOverrideReason.trim()

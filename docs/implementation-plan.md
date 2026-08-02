@@ -69,12 +69,18 @@ Claude must not:
 | 4B | Master data — Customers and customer addresses | COMPLETED |
 | 4C | Master data — Employees, Drivers, and Vehicles | COMPLETED |
 | 4D | Master data — Suppliers, Company Settings, and development demo seed | COMPLETED |
-| 5A | Quotations | COMPLETED |
+| 5A | Quotations (removed from plan 2026-08-02 — built, code removed in Phase 6C-3) | COMPLETED |
 | 5B | Orders and customer credit | COMPLETED |
 | 6A | Raw-material and finished-stock foundations | COMPLETED |
-| 6B | Production and curing | NOT_STARTED |
-| 7 | Purchases and supplier balances | NOT_STARTED |
-| 8 | Finished stock (deliveries) | NOT_STARTED |
+| 6B | Production and curing | COMPLETED |
+| 6C-1 | Quotation and Order data audit | COMPLETED |
+| 6C-2 | Direct Order foundation (status, paymentArrangement) | COMPLETED |
+| 6C-3 | Safe Quotation removal | COMPLETED |
+| 6D | Product operational names and truck capacity | NOT_STARTED |
+| 6E | Customer credit projection formula and balance filters | NOT_STARTED |
+| 6F | Vehicle Owners; rework Vehicle | NOT_STARTED |
+| 7 | Purchases and supplier balances (Pumice/Cement calculations) | NOT_STARTED |
+| 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
 | 10 | Expenses and salaries | NOT_STARTED |
 | 11 | Dashboard, reports, and alerts | NOT_STARTED |
@@ -620,7 +626,16 @@ ships and is reviewed as a focused, independent change:
 - **Phase 5A — Quotations (COMPLETED).**
 - **Phase 5B — Orders and Customer Credit (COMPLETED).**
 
-## Phase 5A — Quotations (COMPLETED)
+## Phase 5A — Quotations (COMPLETED; removed from the plan 2026-08-02)
+
+**This sub-phase's scope is no longer part of the approved system.** New
+confirmed company information (2026-08-02) removed Quotations entirely — see
+`docs/decisions/business-workflow-update-2026-08-02.md`. Everything below is
+left unedited as an honest record of what was actually built and shipped at
+the time; it does not describe current or future scope. The quotations
+module, its tables, its PDF, and its tests still exist in the codebase today
+and have not been touched — removing them is its own future sub-phase, Phase
+6C, below.
 
 Backend module: `quotations`. New shared infrastructure: `shared/documents/`
 (the "generate and persist an official PDF" pipeline), and the real
@@ -789,6 +804,13 @@ proceed even when the customer is credit-blocked. The check reads the
 customer's *current* status, not a hypothetical status including the new
 order's own amount.
 
+**Superseded 2026-08-02:** the "current status, not including the new order's
+own amount" behaviour above is a reversal target — the new confirmed rule
+requires the projection to explicitly include the new credit order's own
+total (`docs/decisions/business-workflow-update-2026-08-02.md` section 6).
+Also, `CASH` is renamed `PREPAID` going forward — see Phase 6C-2/6E below. This
+paragraph is left as an honest record of what 5B actually built.
+
 `CustomerCreditOverride`: append-only. When a `CREDIT` order would be blocked,
 the caller may resubmit `POST /orders` with `creditOverrideReason` set; the
 service checks `customer-credit:override` (Admin/Super Admin only), and if
@@ -853,7 +875,28 @@ used — because Production/Curing cannot honestly satisfy business-blueprint
 already existing:
 
 - **Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED).**
-- **Phase 6B — Production and Curing (not started).**
+- **Phase 6B — Production and Curing (COMPLETED).**
+
+New confirmed company information (2026-08-02) added four further sub-phases
+under the same Phase 6 umbrella, continuing the lettering after 6B rather than
+renumbering the plan — see
+`docs/decisions/business-workflow-update-2026-08-02.md` for the full record.
+Phase 6C was judged too large for one focused change and is itself split into
+three smaller steps, 6C-1–6C-3, following the same sub-lettering approach
+already used for Phase 4 (4A–4D) and Phase 5/6 (5A/5B, 6A/6B):
+
+- **Phase 6C-1 — Quotation and Order Data Audit (COMPLETED).** Read-only
+  inspection and report. No code, no migration, no deletion.
+- **Phase 6C-2 — Direct Order Foundation (COMPLETED).** `Order.status`,
+  `paymentArrangement` rename, cancellation action. Does not touch Quotation
+  code.
+- **Phase 6C-3 — Safe Quotation Removal (COMPLETED).** Removed the
+  Quotation module, tables, and related code, after 6C-1 confirmed it was
+  safe and 6C-2's `sourceQuotationId` removal had landed.
+- **Phase 6D — Product operational names and truck capacity (NOT_STARTED).**
+- **Phase 6E — Customer credit projection formula and balance filters
+  (NOT_STARTED).**
+- **Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED).**
 
 ## Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED)
 
@@ -916,44 +959,58 @@ reservation logic on top of this ledger). Low-stock/curing-completion
 alerts, any notification persistence (Phase 11 — `reorderLevel` is stored
 now, but nothing reads it yet). Production and Curing themselves (Phase 6B).
 
-## Phase 6B — Production and Curing (not started)
+## Phase 6B — Production and Curing (COMPLETED)
 
-Not yet detailed. Plan this sub-phase on its own when it is next.
+Backend modules: `production` and `curing` (technical-blueprint 3.3 lists
+them separately). Both extend the ledgers `raw-materials`/`finished-stock`
+already built in Phase 6A, and reuse `broken-products` for breakage records.
+See docs/database-notes.md for the table-level design notes.
 
-## Modules
+### Production
 
-Implement:
+`POST /production` creates the batch, its items, and (per item) an
+automatically-started `CuringRecord` — there is no separate "begin curing"
+endpoint — all in one transaction: allocate the yearly `PRD-YYYY-####`
+number, insert the batch and items, start curing for every item, credit the
+order (when this batch is for one), record raw-material usage against the
+Phase 6A ledger, and record any production-stage breakage. Any failure rolls
+back all of it.
 
-- Production.
-- Curing.
-- Broken products where required for this workflow.
+`allocatedQuantity`/`excessQuantity` computed at this point are the
+**planned** split against the order — the split actually credited to
+finished stock is computed at curing release, since further breakage may
+occur during curing. The allocation cap is `orderItem.quantity −
+orderItem.producedQuantity` (how much this order item still needs
+*produced*), not `remainingQuantity` (delivery's concern, Phase 8). A
+purpose-`ORDER` batch requires every item's product to already be on the
+referenced order — rejected otherwise, not silently treated as excess.
 
-## Work
+No update or delete route: a production run, once recorded, is never edited
+— only curing moves it forward.
 
-Implement:
+### Curing
 
-- Production numbering.
-- Production for an order.
-- Production for general stock.
-- Pallet entry.
-- Twelve pieces per pallet.
-- Produced quantity calculation.
-- Broken quantity.
-- Usable quantity.
-- Order allocation.
-- Excess quantity.
-- Production order allocation records.
-- Actual raw-material usage.
-- Two-day curing.
-- Three-day curing.
-- Minimum two-full-day release rule.
-- Controlled change from three days to two days.
-- Written reason.
-- Audit log.
-- Curing release.
-- Order-allocated stock release.
-- Excess release to general finished stock.
-- Curing completion alerts.
+A curing record's release requires `now >= plannedCompletion`, using
+whichever duration is currently selected — not a separate "two full days
+from the original start" floor. `TWO_DAYS` is already the shortest
+selectable duration, which is what makes it the absolute floor; the only way
+to release a `THREE_DAYS` record before the full three days is the explicit,
+audited `PATCH /curing/:id/change-duration` action (Admin/Super Admin only,
+written reason required, one-directional — three to two, never back).
+
+`POST /curing/:id/release` uses the `CURING_RELEASE` **capability**
+(`requireCapability`, built in Phase 2, unused until this phase) instead of
+a plain role permission: Admin/Super Admin always pass; an Accountant passes
+only with a capability grant. Release computes `releasedQuantity =
+quantityEntering − brokenQuantity` (breakage discovered during curing — a
+second, separate capture point from the production item's own broken
+quantity), splits it as `orderPortion = min(allocatedQuantity,
+releasedQuantity)` / `excessPortion = releasedQuantity − orderPortion`
+(curing breakage hits the excess portion first, protecting the customer's
+committed quantity — my interpretation, not a stated rule), credits finished
+stock with two movements (`CURING_RELEASE`/`GENERAL_STOCK_RELEASE`), credits
+`OrderItem.allocatedQuantity` for the order portion, and marks the
+production batch `COMPLETED` once every item's curing has been released.
 
 ## Completion gate
 
@@ -964,6 +1021,265 @@ Implement:
 - Broken quantities are recorded.
 - Raw-material usage is actual, not formula-based.
 - Tests and builds pass.
+
+### Excluded from 6B
+
+Purchases (Phase 7), stock reservation/delivery dispatch (Phase 8),
+curing-completion alerts and any notification persistence (Phase 11 —
+`plannedCompletion` is stored, nothing reads it yet for alerting).
+
+## Phase 6C — Remove Quotations; rework Order (split into three steps)
+
+Phase 6C is too large for one focused, reviewable change. It is split into
+three sub-steps, the same way Phase 4 split into 4A–4D and Phase 6 split into
+6A/6B — each ships and is approved independently. See
+`docs/decisions/business-workflow-update-2026-08-02.md` sections 1, 4, 5, and
+12 for the full confirmed rules behind this scope.
+
+**None of 6C-1, 6C-2, or 6C-3 are planned or approved for implementation
+yet.** This section records expected scope only.
+
+### Phase 6C-1 — Quotation and Order Data Audit (COMPLETED)
+
+**Read-only. No code, no migration, no deletion.** Produced a report only.
+
+**Findings (2026-08-02):** 3 quotations, 4 quotation items, 0 orders with
+`sourceQuotationId` set, 1 `GeneratedDocument` (type `QUOTATION`), 1 stored
+PDF file (30,930 bytes), `QUOTATION` document sequence at year 2026/last
+number 3, `Order.paymentType` distribution 3 `CASH`/0 `CREDIT`, 3 total
+orders. All 3 quotations were confirmed by the business owner as development
+test data — not production records, safe to remove in Phase 6C-3. The
+highest-risk scenario (an order referencing a quotation) did not occur.
+
+Inspect and report:
+
+- Quotation row count.
+- `QuotationItem` row count.
+- `Order` rows with `sourceQuotationId` not null (count, and enough detail
+  to identify which orders — order number, customer, date).
+- `GeneratedDocument` rows of type `QUOTATION` (count, and whether any are
+  recent/likely real rather than test data).
+- Stored quotation PDF files on disk (via `stored_files` metadata linked to
+  those `GeneratedDocument` rows) — count and total size.
+- `DocumentSequence` rows for the `QUOTATION` document type (last allocated
+  number, year).
+- Existing `Order.paymentType` value distribution (`CASH` vs `CREDIT` counts).
+- Existing `Order` row count (baseline, so 6C-2's rename can be sanity-checked
+  afterward — same row count before and after).
+
+Rules:
+
+- Do not delete anything.
+- Do not create a migration.
+- Do not edit application code.
+- If any linked or important records exist (real, non-demo quotations;
+  orders actually converted from a quotation; real stored PDF files), report
+  them clearly and explicitly flag them for a human decision before 6C-3
+  proceeds.
+
+Gate: 6C-3 may not begin until this report exists and confirms removal is
+safe, or until a human has explicitly decided how to handle whatever unsafe
+records were found.
+
+### Phase 6C-2 — Direct Order Foundation (COMPLETED)
+
+Migration `20260802160000_phase6c2_direct_order_foundation` applied to
+`greenstone_dev` (`prisma migrate deploy`, confirmed via `prisma migrate
+status` → "Database schema is up to date!"). All 3 existing orders backfilled
+correctly (`CASH` → `PREPAID`, `status` defaulted to `PENDING`). Backend
+**499/499 tests passing** (one pre-existing, unrelated flaky test in
+`finished-stock.test.ts` — confirmed by re-running that file alone and the
+full suite again, both clean). Backend and frontend `typecheck`/`lint`/build
+all clean; frontend `build` generated all 26 routes.
+
+Depended on nothing from 6C-1 except the `Order.paymentType` value snapshot
+(informational only — 6C-2 proceeded regardless of 6C-1's findings, since it
+does not touch Quotation data). Did not touch Quotation code at all.
+
+Implemented:
+
+- Rename `Order.paymentType` → `Order.paymentArrangement`.
+- Change existing `CASH` values to `PREPAID`.
+- Keep existing `CREDIT` values as `CREDIT`.
+- Add `Order.status` (`OrderStatus` enum): `PENDING`, `IN_PRODUCTION`,
+  `CURING`, `READY_FOR_DELIVERY`, `PARTIALLY_DELIVERED`, `COMPLETED`,
+  `CANCELLED` (per the confirmed lifecycle,
+  `docs/decisions/business-workflow-update-2026-08-02.md` section 12.3).
+- Every new Order starts as `PENDING`. Reject a client-supplied `status` on
+  both creation and update — the field is never accepted from a request
+  body.
+- **Do not create a generic status-update endpoint.** There is no
+  `PATCH /orders/:id/status` accepting an arbitrary target value.
+- Remove `Order.sourceQuotationId`/`sourceQuotationItemId` and the
+  quotation-conversion API shape (`POST /orders` accepting
+  `sourceQuotationId`) — **only after Phase 6C-1 confirms there are no unsafe
+  linked records.** Direct order creation (`{ customerId, customerAddressId,
+  paymentArrangement, items, creditOverrideReason? }`) becomes the only
+  creation shape.
+- Add an explicit `POST /orders/:id/cancel` action. Cancellation requires a
+  written reason and writes an audit log, matching the pattern already used
+  for Quotation rejection/cancellation (Phase 5A) and Curing duration changes
+  (Phase 6B).
+
+During 6C-2, implement real service actions only for:
+
+- `PENDING` — set automatically at creation, never chosen.
+- `CANCELLED` — set only through the explicit cancellation action.
+
+The other five statuses belong to later workflows and must not be settable
+by a user request in this phase:
+
+- Production sets `IN_PRODUCTION` (Phase 6B's existing module, revisited
+  later to write this status — not part of 6C-2's own scope).
+- Curing sets `CURING`.
+- Finished-stock/curing release sets `READY_FOR_DELIVERY`.
+- Delivery sets `PARTIALLY_DELIVERED`.
+- Full delivery sets `COMPLETED`.
+
+This phase keeps direct Order creation only — no quotation-conversion shape
+remains once this phase and 6C-1's confirmation are both complete.
+
+### Phase 6C-3 — Safe Quotation Removal (COMPLETED)
+
+Gated on Phase 6C-1's report confirming removal was safe (0 orders
+referenced a quotation; the 3 quotations/4 items/1 generated PDF were
+confirmed development test data), and on Phase 6C-2 having already removed
+`Order.sourceQuotationId`. Migration
+`20260802170000_phase6c3_remove_quotations` applied to `greenstone_dev`.
+Backend **470/470 tests passing** (down from 499 — `quotations.test.ts` and
+the 4 quotation-conversion tests in `orders.test.ts` were removed, not a
+regression), re-run twice for stability. Frontend build generated 24 routes
+(down from 26 — the two `/quotations` routes are gone). Backend and
+frontend `typecheck`/`lint`/`test`/`build` all clean.
+
+The one `QUOTATION`-type generated PDF file was removed via a one-off
+script before the migration ran (SQL cannot touch the filesystem); 59
+additional orphaned PDF files from repeated test runs, never referenced by
+any database row, were removed from local storage at the same time.
+
+**`DocumentType.QUOTATION` was deliberately kept**, not removed as
+originally planned — see the "Important deviation" note below.
+
+Removed:
+
+- The `quotations` backend module (routes, controller, service, repository,
+  validators, types).
+- `quotations` frontend pages and features.
+- The Quotations entry from frontend navigation (`nav-items.ts`).
+- The `quotation` resource from the permissions matrix and its permission
+  tests.
+- Quotation-specific test files (`quotations.test.ts` and any quotation
+  assertions in `permissions.test.ts`).
+- Quotation PDF generation code path.
+- The `QUOTATION` document-numbering configuration path (the `quotations`
+  module was the only thing that ever allocated one — no code allocates a
+  new `QUOTATION` number now).
+- The `QUOTATION` value from `GeneratedDocumentType` (its one row was
+  deleted first, so narrowing was safe).
+- `Quotation`/`QuotationItem` Prisma models and their `quotations`/
+  `quotation_items` tables, via the new migration above.
+
+Rules followed:
+
+- No already-applied migration file was edited — this was a new migration on
+  top of the existing history.
+- No stored PDF file or `generated_documents`/`stored_files` row was removed
+  silently — 6C-1's audit found exactly one such row, the business owner
+  explicitly confirmed it was test data safe to remove, and it was removed
+  deliberately (script + migration), not as an unreviewed side effect.
+- Historical `DocumentSequence` rows for `QUOTATION` were never deleted —
+  see the deviation note below.
+
+### Important deviation: `DocumentType.QUOTATION` was kept
+
+The original plan (this section, first draft) said to remove `QUOTATION`
+from **both** `GeneratedDocumentType` and `DocumentType`. Only
+`GeneratedDocumentType` was actually narrowed. `DocumentType` backs
+`document_sequences.documentType`, which has a real historical row (year
+2026, last number 3) that must never be hard-deleted or invalidated per the
+project's standing rule for issued document records
+(`docs/implementation-plan.md` section 2; `CLAUDE.md`). Narrowing that
+column's MySQL `ENUM` list while a row still holds the removed value would
+either fail the migration outright (in strict SQL mode) or silently corrupt
+that row — neither is acceptable for a document-numbering record. Keeping
+`QUOTATION` in `DocumentType` costs nothing going forward: no code path
+allocates a new one, since the `quotations` module that did so is gone. See
+the `DocumentType` doc comment in `schema.prisma` and
+`docs/database-notes.md`'s "Planned schema changes" section 3 for the full
+reasoning.
+
+### Excluded from Phase 6C (all three steps)
+
+None of 6C-1, 6C-2, or 6C-3 include: Product operational names or truck
+capacities (Phase 6D), customer credit projection or customer balance
+filters (Phase 6E), Vehicle Owners or Vehicle rework (Phase 6F), Production,
+Curing, Purchases, Deliveries, Invoices, or Payments. Each of those remains
+its own phase, unaffected by this split.
+
+## Phase 6D — Product operational names and truck capacity (NOT_STARTED)
+
+Not yet planned or approved for implementation — documentation only at this
+stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections 2
+and 3.
+
+Expected scope:
+
+- Add `Product.operationalName` (optional string) and
+  `Product.maxPiecesPerTruck` (optional positive integer).
+- Set the four confirmed operational names and truck capacities (4-inch/
+  1,500; 6-inch/1,200; 9-inch/850; 300mm/750). Leave the two Hollow Pot
+  150mm/200mm operational names empty — not confirmed.
+- This is an additive migration only (two new nullable columns) — no data
+  loss, no existing column changes.
+- Any later delivery-trip calculation that reads `maxPiecesPerTruck` (Phase 8)
+  must snapshot the value used at that time, so a later product update never
+  changes an already-recorded delivery.
+
+## Phase 6E — Customer credit projection formula and balance filters (NOT_STARTED)
+
+Not yet planned or approved for implementation — documentation only at this
+stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections 6
+and 7.
+
+Expected scope:
+
+- Change the `customer-credit` module's new-credit-order check from "current
+  outstanding balance" to "current outstanding balance + active credit orders
+  not yet invoiced + the new credit order's own total."
+- No schema migration required — this only changes the `customer-credit`
+  service logic and the order-creation credit check already built in 5B.
+- Add the customer list filter (All / No outstanding balance / Has
+  outstanding balance), using the existing accounting-balance calculation,
+  independent of active status and credit status.
+- Depends on Phase 6C-2's `paymentArrangement` rename landing first if the
+  two are implemented in the same session, since the credit check reads the
+  order's payment arrangement.
+
+## Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED)
+
+Not yet planned or approved for implementation — documentation only at this
+stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections
+10 and 11, and the impact report's note on the `calculationFactor` conflict.
+
+Expected scope:
+
+- Add a new `vehicle-owners` backend module and `VehicleOwner` model (name,
+  phone, optional national ID, active status).
+- Replace `Vehicle.ownershipType`/its `COMPANY`/`HIRED` enum with a
+  `vehicleOwnerId` foreign key to `VehicleOwner`.
+- Decide (with the business owner, not assumed) whether to remove the
+  existing Phase 4C volumetric fields (`truckLengthM`, `truckWidthM`,
+  `truckHeightM`, `calculationFactor`, `calculatedLoadKg`,
+  `calculatedLoadTonnes`) now that per-product `maxPiecesPerTruck` (Phase 6D)
+  supersedes them for delivery-trip planning — **not yet confirmed**, do not
+  remove them until confirmed.
+- Add the `vehicle-owners` resource to the permissions matrix, matching the
+  existing `driver`/`vehicle` create/read/update pattern for all three roles.
+- Rework `vehicles.test.ts`, which currently asserts `ownershipType`,
+  `hireCost`, and the volumetric fields extensively.
+- This is a schema migration (new table, new FK column, drop of
+  `ownershipType`) — existing `Vehicle` rows need a `vehicleOwnerId` backfill
+  strategy before the column can be made required.
 
 ---
 
@@ -994,7 +1310,22 @@ Implement:
 Implement:
 
 - Purchase numbering.
-- Purchase items.
+- Purchase items, including the Pumice cubic-metre calculation and Cement
+  bag calculation confirmed 2026-08-02 (see
+  `docs/decisions/business-workflow-update-2026-08-02.md` sections 8 and 9):
+  - Pumice: `volumePerLoad = length × width × height`,
+    `totalVolume = volumePerLoad × numberOfLoads`,
+    `totalCost = totalVolume × ratePerCubicMetre` (current rate KES 1,100 per
+    cubic metre). Snapshot length, width, height, volume per load, number of
+    loads, total volume, rate per cubic metre, and total cost on every Pumice
+    purchase item. The rate must be configurable later; old purchases keep
+    the rate used at creation. This `1100` must never be confused with
+    `Vehicle.calculationFactor`'s unrelated `1100` (kilograms per cubic
+    metre, Phase 4C) — different unit, different meaning.
+  - Cement: measurement unit `BAG`, `totalCost = numberOfBags × unitCost`
+    (current unit cost KES 850/bag). This is the same generic
+    quantity × unit-cost shape every Purchase Item already has — no
+    additional schema fields needed for Cement.
 - Purchase receipt into stock (writes a `PURCHASE_RECEIPT` raw-material
   movement using the Phase 6A ledger).
 - Supplier opening balances.
@@ -1039,6 +1370,8 @@ Implement:
 - Finished stock.
 - Deliveries.
 - Vehicles.
+- Vehicle Owners (2026-08-02 — see Phase 6F; must land before or alongside
+  this phase since Delivery snapshots the vehicle owner as payee).
 - Drivers.
 - Broken products where remaining functions are needed.
 
@@ -1058,8 +1391,16 @@ Implement:
 - One location per delivery.
 - Vehicle assignment.
 - Driver assignment.
-- Company vehicle.
-- Hired vehicle.
+- Single-product truck-trip calculation (2026-08-02):
+  `requiredTrips = ceiling(deliveryQuantity / maxPiecesPerTruck)`, using the
+  product's `maxPiecesPerTruck` (Phase 6D), snapshotted onto the delivery so
+  a later product update never changes an already-recorded delivery's trip
+  count. Mixed-product truck loads are not confirmed — do not implement.
+- Transport payment (2026-08-02): snapshot driver, vehicle, vehicle owner,
+  transport rate, number of trips, total transport cost, and payee (the
+  Vehicle Owner — the Driver, if they own the vehicle) on every delivery.
+  `totalTransportCost = numberOfTrips × transportRate` (current rate KES
+  8,500/trip). Never count this cost a second time as a general expense.
 - Dispatch.
 - Permanent stock reduction at dispatch.
 - Pre-dispatch cancellation.

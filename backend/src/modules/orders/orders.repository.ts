@@ -1,6 +1,6 @@
-import type { Order, OrderItem, Prisma, Product } from '../../generated/prisma/client.js';
+import type { Order, OrderItem, OrderStatus, Prisma, Product } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
-import type { DbClient } from '../../shared/database/transaction.js';
+import type { DbClient, TransactionClient } from '../../shared/database/transaction.js';
 import type { ListOrdersFilters, OrderItemInput } from './orders.types.js';
 
 /**
@@ -30,8 +30,12 @@ function buildWhere(filters: ListOrdersFilters): Prisma.OrderWhereInput {
     where.customerId = filters.customerId;
   }
 
-  if (filters.paymentType !== undefined) {
-    where.paymentType = filters.paymentType;
+  if (filters.paymentArrangement !== undefined) {
+    where.paymentArrangement = filters.paymentArrangement;
+  }
+
+  if (filters.status !== undefined) {
+    where.status = filters.status;
   }
 
   return where;
@@ -70,11 +74,28 @@ export async function findOrderById(
   });
 }
 
-export async function findOrderBySourceQuotationId(
-  quotationId: string,
-  client: DbClient = getPrisma(),
-): Promise<Order | null> {
-  return client.order.findUnique({ where: { sourceQuotationId: quotationId } });
+/** Used by `production.service.ts` when a batch allocates quantity to this item. */
+export async function incrementOrderItemProducedQuantity(
+  tx: TransactionClient,
+  orderItemId: string,
+  quantity: number,
+): Promise<void> {
+  await tx.orderItem.update({
+    where: { id: orderItemId },
+    data: { producedQuantity: { increment: quantity } },
+  });
+}
+
+/** Used by `curing.service.ts` when curing releases quantity earmarked for this item. */
+export async function incrementOrderItemAllocatedQuantity(
+  tx: TransactionClient,
+  orderItemId: string,
+  quantity: number,
+): Promise<void> {
+  await tx.orderItem.update({
+    where: { id: orderItemId },
+    data: { allocatedQuantity: { increment: quantity } },
+  });
 }
 
 export async function insertOrder(
@@ -85,13 +106,9 @@ export async function insertOrder(
     addressLabel: string;
     addressLine: string;
     addressDirections: string | null;
-    sourceQuotationId: string | null;
-    paymentType: Prisma.OrderCreateInput['paymentType'];
+    paymentArrangement: Prisma.OrderCreateInput['paymentArrangement'];
     totalAmount: Prisma.Decimal;
-    items: (OrderItemInput & {
-      lineTotal: Prisma.Decimal;
-      sourceQuotationItemId: string | null;
-    })[];
+    items: (OrderItemInput & { lineTotal: Prisma.Decimal })[];
   },
   client: DbClient = getPrisma(),
 ): Promise<OrderDetailRow> {
@@ -103,8 +120,7 @@ export async function insertOrder(
       addressLabel: input.addressLabel,
       addressLine: input.addressLine,
       addressDirections: input.addressDirections,
-      sourceQuotationId: input.sourceQuotationId,
-      paymentType: input.paymentType,
+      paymentArrangement: input.paymentArrangement,
       totalAmount: input.totalAmount,
       items: {
         create: input.items.map((item, index) => ({
@@ -112,7 +128,6 @@ export async function insertOrder(
           quantity: item.quantity,
           agreedUnitPrice: item.agreedUnitPrice,
           lineTotal: item.lineTotal,
-          sourceQuotationItemId: item.sourceQuotationItemId,
           remainingQuantity: item.quantity,
           sortOrder: index,
         })),
@@ -122,5 +137,17 @@ export async function insertOrder(
       customer: { select: { name: true } },
       items: { include: { product: true }, orderBy: { sortOrder: 'asc' } },
     },
+  });
+}
+
+/** Used only by the explicit cancellation action — no generic status setter. */
+export async function setOrderCancelled(
+  id: string,
+  reason: string,
+  client: DbClient = getPrisma(),
+): Promise<Order> {
+  return client.order.update({
+    where: { id },
+    data: { status: 'CANCELLED' satisfies OrderStatus, statusReason: reason },
   });
 }

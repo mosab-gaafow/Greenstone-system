@@ -221,8 +221,8 @@ export function CustomerList() {
         }
         description={
           confirming?.isActive
-            ? 'No new quotations or orders can be created for them. Existing records are kept, and you can activate them again at any time.'
-            : 'New quotations and orders can be created for them again.'
+            ? 'No new orders can be created for them. Existing records are kept, and you can activate them again at any time.'
+            : 'New orders can be created for them again.'
         }
         confirmLabel={confirming?.isActive ? 'Deactivate' : 'Activate'}
         destructive={confirming?.isActive ?? false}

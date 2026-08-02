@@ -28,7 +28,7 @@ import type {
  * Product business logic.
  *
  * Products carry no price. Prices are agreed per transaction and snapshotted on
- * quotation, order and invoice items from Phase 5.
+ * order and invoice items.
  *
  * Product lists are read-heavy and change rarely, so they are cached. The cache
  * is a convenience only: every write invalidates it **after** the transaction
@@ -131,7 +131,7 @@ export async function deactivateProduct(
 
 /**
  * Products are never deleted, only activated and deactivated, because past
- * quotations, orders and invoices reference them permanently.
+ * orders and invoices reference them permanently.
  */
 async function changeActiveState(
   id: string,

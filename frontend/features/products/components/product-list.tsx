@@ -156,7 +156,7 @@ export function ProductList() {
                 description={
                   isFiltered
                     ? 'Try a different search or clear the filters.'
-                    : 'Add the products Greenstone manufactures so they can be used on quotations and orders.'
+                    : 'Add the products Greenstone manufactures so they can be used on orders.'
                 }
                 action={
                   isFiltered ? (

@@ -7,6 +7,16 @@ The main Greenstone Management System requirements are approved.
 
 Development may begin after the technical project setup is prepared.
 
+**Amendment (2026-08-02):** confirmed company information changed several
+workflow assumptions below — Quotations are removed from the planned system,
+Orders are created directly, product operational names and truck capacities
+were added, the customer credit formula was split into an accounting balance
+and a projected-exposure check, and the Driver/Vehicle model was reworked
+around a new Vehicle Owner entity. See
+`docs/decisions/business-workflow-update-2026-08-02.md` for the full record.
+Sections below are updated to match it; where a section still describes prior
+behaviour, the amendment record is authoritative.
+
 Unknown company data will not block MVP development. Safe demo data may be used during development. Real data will be entered during production setup.
 
 The system must remain:
@@ -55,7 +65,6 @@ The system must support:
 - Customer phone number.
 - Customer email when available.
 - Multiple building-site addresses.
-- Customer quotations.
 - Customer orders.
 - Customer invoices.
 - Customer payments.
@@ -63,6 +72,19 @@ The system must support:
 - Customer credit status.
 - Customer operational history.
 - Opening customer balances during production setup.
+
+Quotations are not part of the management system — see section 2.5.
+
+### Customer filters (2026-08-02)
+
+Independent of active status and credit status, the customer list supports:
+
+- All customers.
+- No outstanding balance (accounting outstanding balance = 0).
+- Has outstanding balance (accounting outstanding balance > 0).
+
+The accounting outstanding balance is the one defined in section 2.24, not the
+projected credit-risk exposure used only for new credit-order decisions.
 
 ---
 
@@ -84,13 +106,54 @@ The initial products are:
 
 The product master must contain:
 
-- Product name.
+- Product name (the full official name — never renamed or removed).
 - Product category.
 - Product size.
 - Product description when needed.
 - Active or inactive status.
+- Configurable operational name (2026-08-02) — the short name staff use day to
+  day, separate from the official name.
+- Configurable maximum pieces per truck (2026-08-02) — see below.
 
 A fixed selling price is not required in the product master.
+
+### Operational names (2026-08-02)
+
+| Official name | Operational name |
+|---|---|
+| Hollow Blocks 4 × 9 | 4-inch |
+| Hollow Blocks 6 × 9 | 6-inch |
+| Hollow Blocks 9 × 9 | 9-inch |
+| Hollow Pot 380 × 200 × 300 mm | 300mm |
+
+The operational names for Hollow Pot 380 × 200 × 150 mm and 380 × 200 × 200 mm
+are **not confirmed**. Leave the field empty for those two until confirmed.
+
+### Truck capacity (2026-08-02)
+
+Each product may have a configurable maximum pieces one truck can carry of
+that single product:
+
+| Operational name | Max pieces per truck |
+|---|---|
+| 4-inch | 1,500 |
+| 6-inch | 1,200 |
+| 9-inch | 850 |
+| 300mm | 750 |
+
+Rules:
+
+- A positive whole number, or empty when not yet known.
+- An authorised user may update it later.
+- Old delivery records keep a capacity snapshot — a later change must never
+  recalculate an already-recorded delivery.
+- Single-product delivery calculation:
+  `requiredTrips = ceiling(deliveryQuantity / maxPiecesPerTruck)`.
+- Mixed-product truck loads are **not** calculated yet — that rule is not
+  confirmed.
+
+See `docs/decisions/business-workflow-update-2026-08-02.md` section 3 for how
+this interacts with the existing Vehicle truck-load calculation.
 
 ---
 
@@ -98,18 +161,15 @@ A fixed selling price is not required in the product master.
 
 Greenstone may give different prices to different customers.
 
-The agreed unit price must be entered on:
-
-- Each quotation item.
-- Each direct order item.
+The agreed unit price must be entered on each direct order item — there is no
+quotation step (see section 2.5).
 
 The agreed order price must be copied to the invoice item.
 
-Every quotation, order, and invoice item must store its own price snapshot.
+Every order and invoice item must store its own price snapshot.
 
 Changing a price for a future customer must not change:
 
-- Old quotations.
 - Old orders.
 - Old invoices.
 
@@ -127,29 +187,31 @@ An optional suggested or standard product price may be added later.
 
 ---
 
-## 2.5 Quotations
+## 2.5 Quotations (removed — 2026-08-02)
 
-The quotation module must support:
+Quotations are **not part of the Greenstone Management System.** They are
+handled entirely outside it, through:
 
-- Creating quotations.
-- Several products and sizes in one quotation.
-- Customer-specific agreed prices.
-- Draft quotation editing.
-- Quotation totals.
-- Quotation printing.
-- PDF download.
-- Accepted, rejected, cancelled, and draft statuses.
-- Creating an order from an accepted quotation.
+- Company email.
+- The Greenstone website contact form.
+- Manual communication.
 
-Website quotation requests will continue to arrive through email.
+The management system workflow begins directly with an Order (section 2.6).
+There is no quotation module, no "convert an accepted quotation into an
+order" step, and no quotation PDF.
 
-Staff will manually enter the quotation into the management system.
-
-There will be no automatic website connection in the MVP.
+Quotations were built in an earlier phase before this was confirmed. Removing
+the already-built code is tracked separately — see
+`docs/decisions/business-workflow-update-2026-08-02.md` and
+`docs/implementation-plan.md` Phase 6C.
 
 ---
 
 ## 2.6 Orders
+
+Every order is created **directly** (2026-08-02) — there is no quotation step
+(section 2.5) and no "accepted quotation becomes an order" conversion. The
+agreed price is entered on the order item.
 
 The order module must support:
 
@@ -157,7 +219,9 @@ The order module must support:
 - Customer-specific agreed prices.
 - A selected customer building-site address.
 - Credit orders.
-- Fully paid orders.
+- Prepaid orders (fully paid before dispatch — see the payment arrangement
+  rule below; do not call this "cash," which is a payment method, section
+  2.23).
 - Partial production.
 - Excess production.
 - Partial deliveries.
@@ -169,12 +233,40 @@ The order module must support:
 - Remaining quantity.
 - Credit-limit validation.
 
-An order may be created from:
+### Order status (2026-08-02)
 
-- An accepted quotation.
-- A direct customer order.
+Every new order starts automatically as `PENDING`. Users must not freely
+select the initial status — it is system-controlled. The full status
+lifecycle between `PENDING` and the order's completion (after full delivery,
+section 2.6's workflow step 13 in the amendment record) is **not yet
+confirmed**.
 
-For a direct order, the agreed price must be entered on the order item.
+### Payment arrangement (2026-08-02)
+
+Every order has a payment arrangement:
+
+- `PREPAID`
+- `CREDIT`
+
+A `PREPAID` order must be fully paid through approved payments before
+dispatch. Do not call this arrangement "cash" — cash is a payment *method*
+(section 2.23), a separate concept from the order-level payment arrangement.
+
+### Confirmed direct-order workflow (2026-08-02)
+
+1. Register Products.
+2. Register Customers.
+3. Add Customer Addresses.
+4. Create an Order directly.
+5. Check customer activity and credit.
+6. Use ready finished stock when available.
+7. Register Production when stock is insufficient.
+8. Register Curing separately for newly produced products.
+9. Create Invoice.
+10. Record and approve Payment.
+11. Prepare and dispatch Delivery.
+12. Create Receipt from approved payment.
+13. Complete the Order after full delivery.
 
 ---
 
@@ -446,6 +538,41 @@ The purchase module must support:
 
 Purchases must increase raw-material stock when received.
 
+### Pumice — cubic-metre calculation (2026-08-02)
+
+Pumice is purchased and costed by volume, not weight or bag count:
+
+```
+volumePerLoad = length × width × height
+totalVolume = volumePerLoad × numberOfLoads
+totalCost = totalVolume × ratePerCubicMetre
+```
+
+Current rate: **KES 1,100 per cubic metre.** This is unrelated to, and must
+never be confused with, the existing Vehicle truck-load calculation's
+`calculationFactor` (also defaulted to `1100`, but meaning kilograms per
+cubic metre — see section 2.20 and
+`docs/decisions/business-workflow-update-2026-08-02.md`).
+
+Every pumice purchase item snapshots: length, width, height, volume per load,
+number of loads, total volume, rate per cubic metre, and total cost. The rate
+must be configurable later; old purchases keep the rate used at creation.
+
+### Cement — bag calculation (2026-08-02)
+
+Cement's measurement unit is `BAG`:
+
+```
+totalCost = numberOfBags × unitCost
+```
+
+Current known unit cost: **KES 850 per bag**, stored as a purchase-item
+snapshot (it may change; old purchases keep the cost used at creation).
+
+The reference figure of 170–190 bags used per day is informational only.
+Production must record the actual number of bags used — the system must
+never automatically consume 170 or 190 bags.
+
 ---
 
 ## 2.17 Supplier balances
@@ -505,7 +632,7 @@ Every delivery must contain:
 - Delivery products.
 - Delivery quantities.
 - Registered driver.
-- Registered company or hired vehicle.
+- Registered vehicle.
 - Delivery date.
 - Delivery status.
 
@@ -527,9 +654,37 @@ The MVP does not require:
 - Delivery-note upload.
 - Proof-of-delivery file.
 
+### Truck capacity and trip count (2026-08-02)
+
+For a delivery of a single product:
+
+```
+requiredTrips = ceiling(deliveryQuantity / product.maxPiecesPerTruck)
+```
+
+using the product's configured truck capacity (section 2.3). Mixed-product
+truck loads are not calculated yet — that rule is not confirmed. Every
+delivery keeps a capacity snapshot, so a later change to a product's truck
+capacity never recalculates an already-recorded delivery.
+
+### Transport payment (2026-08-02)
+
+Current transport rate: **KES 8,500 per trip.** The payee is always the
+Vehicle Owner (section 2.20) — which may be the Driver, if the Driver owns
+the vehicle used.
+
+```
+totalTransportCost = numberOfTrips × transportRate
+```
+
+Every delivery snapshots: driver, vehicle, vehicle owner, transport rate,
+number of trips, total transport cost, and payee. A vehicle never stores one
+permanent hire cost. Transport cost must never be counted a second time as a
+general expense.
+
 ---
 
-## 2.20 Drivers and vehicles
+## 2.20 Drivers, Vehicle Owners, and vehicles (revised 2026-08-02)
 
 The system must allow registration of:
 
@@ -537,25 +692,35 @@ The system must allow registration of:
 
 - Driver name.
 - Phone number.
+- National ID.
 - Active or inactive status.
 - Delivery history.
 
-### Company vehicles
+### Vehicle Owners (2026-08-02)
+
+A vehicle owner is a separate master-data record from a driver, even when the
+same person is both:
+
+- Name.
+- Phone number.
+- National ID when available.
+- Active or inactive status.
+
+### Vehicles (revised 2026-08-02)
 
 - Registration number.
 - Vehicle type.
-- Company ownership type.
+- Registered Vehicle Owner.
 - Active or inactive status.
 - Delivery history.
 
-### Hired vehicles
+A vehicle no longer has an ownership-type category (`Company`/`Hired`) or a
+permanent hire cost — every vehicle has a registered owner instead, and
+transport cost is recorded per delivery trip (section 2.19), never stored
+once on the vehicle.
 
-- Registration number.
-- Vehicle type.
-- Hired ownership type.
-- Hire cost where applicable.
-- Active or inactive status.
-- Delivery history.
+Do not permanently attach one Driver to one Vehicle. The actual Driver and
+Vehicle are selected on every delivery trip.
 
 Safe demo records may be used during development.
 
@@ -664,15 +829,30 @@ Credit levels:
 | KES 900,000–999,999 | STRONG_WARNING |
 | KES 1,000,000 or above | BLOCKED |
 
-Calculation:
+### Two calculations, not one (2026-08-02)
+
+**Accounting outstanding balance** — the real financial balance:
 
 **Outstanding balance = Opening balance + Issued invoices − Approved payment allocations**
 
-When a customer is blocked:
+**Projected exposure** — used only to decide whether a *new* Credit order may
+proceed:
 
-- New credit orders are blocked.
+**Projected exposure = Current outstanding balance + Active credit orders not yet invoiced + New credit order total**
+
+Uninvoiced orders are not accounting balances. They are included only in the
+credit-risk check above — the new order's own total is explicitly part of
+that projection, unlike the interim rule used before Invoices existed.
+
+The credit-level thresholds apply to whichever calculation the workflow step
+requires: the accounting balance for reporting and the customer filters
+(section 2.2), the projected exposure for a new Credit order's decision.
+
+When the projected exposure is blocked:
+
+- The new credit order is blocked.
 - New deliveries are blocked.
-- Fully paid orders may continue.
+- Prepaid orders may continue.
 - Super Admin or Admin may override the restriction.
 
 Every override requires:
@@ -685,7 +865,7 @@ Every override requires:
 
 The KES 1,000,000 credit limit is a fixed business limit.
 
-It must not be confused with a customer’s opening balance.
+It must not be confused with a customer's opening balance.
 
 ---
 
@@ -837,7 +1017,6 @@ Use the following formats:
 
 | Document | Format |
 |---|---|
-| Quotation | QUO-YYYY-0001 |
 | Order | ORD-YYYY-0001 |
 | Production | PRD-YYYY-0001 |
 | Delivery | DEL-YYYY-0001 |
@@ -978,8 +1157,6 @@ Accountant may:
 
 - Create and edit customers.
 - Manage customer addresses.
-- Create quotations.
-- Edit draft quotations.
 - Create orders.
 - Register production.
 - Register curing information.
@@ -1021,7 +1198,6 @@ The MVP includes:
 - Customer addresses.
 - Customer credit.
 - Products.
-- Quotations.
 - Orders.
 - Production.
 - Curing.
@@ -1032,6 +1208,7 @@ The MVP includes:
 - Suppliers.
 - Purchases.
 - Purchase payments.
+- Vehicle owners.
 - Vehicles.
 - Drivers.
 - Deliveries.
@@ -1087,14 +1264,12 @@ Unknown real company values will not block this phase.
 
 Safe demo values may be used during development.
 
-## Phase 3 — Quotations, orders, and pricing snapshots
+## Phase 3 — Orders and pricing snapshots (revised 2026-08-02)
 
 Build:
 
-- Quotations.
-- Quotation items.
+- Direct orders (no quotation step).
 - Customer-specific agreed prices.
-- Direct orders.
 - Order items.
 - Price snapshots.
 - Credit-status calculation.
@@ -1103,6 +1278,8 @@ Build:
 - Admin override with reason and audit log.
 
 Do not add fixed product pricing, discounts, VAT, or taxes.
+
+Quotations are not part of this system — see section 2.5.
 
 ## Phase 4 — Production and curing
 
@@ -1147,7 +1324,10 @@ Build:
 - Stock reservation.
 - Dispatch stock reduction.
 - Delivery correction.
-- Vehicles and drivers.
+- Vehicle Owners, vehicles, and drivers (revised 2026-08-02 — see section
+  2.20).
+- Truck-capacity trip calculation and transport-payment snapshots (2026-08-02
+  — see section 2.19).
 - Partial deliveries.
 - Several delivery trips.
 

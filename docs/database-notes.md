@@ -28,6 +28,9 @@ records what exists in code and why.
 | `20260802114739_phase5a_quotation_item_sort_order`  | 5A    | `quotation_items.sortOrder`         |
 | `20260802130000_phase5b_orders_customer_credit`     | 5B    | `orders`, `order_items`, `customer_opening_balances`, `customer_credit_overrides` |
 | `20260802140000_phase6a_raw_materials_finished_stock` | 6A  | `measurement_units`, `raw_materials`, `raw_material_stock_balances`, `raw_material_movements`, `finished_stock_balances`, `finished_stock_movements`, `broken_product_records` |
+| `20260802150000_phase6b_production_curing`          | 6B    | `production_batches`, `production_items`, `production_order_allocations`, `raw_material_usages`, `curing_records` |
+| `20260802160000_phase6c2_direct_order_foundation`   | 6C-2  | `orders.paymentType`→`paymentArrangement` (rename + backfill), `orders.status`/`statusReason` added, `orders.sourceQuotationId`/`order_items.sourceQuotationItemId` dropped |
+| `20260802170000_phase6c3_remove_quotations`          | 6C-3  | Deletes the one `QUOTATION`-type `generated_documents`/`stored_files` row, narrows `GeneratedDocumentType`, drops `quotations` and `quotation_items` |
 
 Commands:
 
@@ -114,23 +117,35 @@ the system never has to treat "no settings yet" as a special case. Logo is
 not a column yet — it needs the file-storage architecture (technical-
 blueprint section 8), which does not exist.
 
-### `quotations` and `quotation_items`
+### `quotations` and `quotation_items` (removed, Phase 6C-3, 2026-08-02)
 
-See business-blueprint sections 2.4 and 2.5. Only `DRAFT` quotations may be
-edited — every other status change (`ACCEPTED`, `REJECTED`, `CANCELLED`) is
-a one-way, explicit service action, never a plain field update. Allowed
-transitions: `DRAFT → ACCEPTED | REJECTED | CANCELLED`, `ACCEPTED →
-CANCELLED`. `REJECTED` and `CANCELLED` are terminal.
+**Dropped** by `20260802170000_phase6c3_remove_quotations` — see
+`docs/decisions/business-workflow-update-2026-08-02.md`. Confirmed safe by
+the Phase 6C-1 data audit (0 `Order` rows referenced a quotation) and the
+business owner's confirmation that all existing quotation data (3
+quotations, 4 items, 1 generated PDF) was development test data. The
+physical PDF file was removed via a one-off script before the migration ran,
+since SQL cannot touch the filesystem; 59 additional orphaned PDF files left
+over from repeated test runs (never referenced by any DB row) were removed
+from local storage at the same time.
 
-`quotation_items.sortOrder` exists because `createdAt` cannot order items
+What follows is kept as a historical record of what Phase 5A built, for
+anyone reading old code review, audit logs, or this document's git history:
+
+Only `DRAFT` quotations could be edited — every other status change
+(`ACCEPTED`, `REJECTED`, `CANCELLED`) was a one-way, explicit service action,
+never a plain field update. Allowed transitions: `DRAFT → ACCEPTED |
+REJECTED | CANCELLED`, `ACCEPTED → CANCELLED`. `REJECTED` and `CANCELLED`
+were terminal.
+
+`quotation_items.sortOrder` existed because `createdAt` cannot order items
 reliably: several items created together in one nested write can tie at the
-same millisecond, making read order non-deterministic. `sortOrder` is set
-from the request array's position at write time and is the only thing the
-repository orders by.
+same millisecond, making read order non-deterministic. `sortOrder` was set
+from the request array's position at write time.
 
-`totalAmount` and every `lineTotal` are calculated by the backend
-(`quotations.service.ts`) using `Prisma.Decimal`, never trusted from a
-request and never JavaScript floating-point arithmetic.
+`totalAmount` and every `lineTotal` were calculated by the backend using
+`Prisma.Decimal`, never trusted from a request and never JavaScript
+floating-point arithmetic.
 
 ### `orders` and `order_items`
 
@@ -252,6 +267,76 @@ not a foreign key — it may point at a production item, a curing record, a
 stock movement, or a delivery depending on `stage`, and Prisma cannot
 express a polymorphic relation across several tables.
 
+### `production_batches`, `production_items`, `production_order_allocations`, `raw_material_usages`
+
+See business-blueprint section 2.7. A batch is created for exactly one
+purpose — `ORDER` (with `orderId` set) or `GENERAL_STOCK` (`orderId` null) —
+never both, never neither.
+
+`production_items.allocatedQuantity`/`excessQuantity` are the **planned**
+split against the order, computed at production time. The split actually
+credited to finished stock is computed at curing release
+(`curing.service.ts`), because further breakage may occur during curing —
+see the `curing_records` note below. The allocation cap at production time
+is `orderItem.quantity − orderItem.producedQuantity` (how much this order
+item still needs *produced*), not `remainingQuantity` (that tracks
+delivery, Phase 8's concern).
+
+`production_order_allocations` connects a production item to the specific
+order item it was produced for. `raw_material_usages.measurementUnitId`
+snapshots the raw material's unit at the time of entry, the same
+snapshot-alongside-the-FK pattern used for order/quotation item prices — a
+later change to the raw material's configured unit must never rewrite this
+history.
+
+`status` on `production_batches` (`IN_PROGRESS`/`COMPLETED`) is computed,
+never accepted from a request — it flips to `COMPLETED` once every item's
+curing has been released (`curing.service.ts` calls
+`production.service.ts`'s `markBatchCompleted` for this).
+
+### `curing_records`
+
+See business-blueprint section 2.8. Belongs to exactly one production item,
+created automatically alongside it — there is no separate "start curing"
+endpoint. `productionBatchId` is denormalised from
+`productionItem.productionBatchId` specifically so `curing`'s own repository
+can check "has every item in this batch been released" with a query against
+this table alone, never needing to read `production`'s tables directly.
+
+**Release requires `now >= plannedCompletion`**, using whichever duration is
+currently selected — not a separate "at least two full days from the
+original start" floor. `TWO_DAYS` is already the shortest selectable
+duration, which is what makes it the absolute floor; the only way to
+release a `THREE_DAYS` record before the full three days is the explicit,
+audited change-to-`TWO_DAYS` action. There is no separate early-release
+override.
+
+Breakage is captured at **two separate points**: `production_items.brokenQuantity`
+(before curing) and `curing_records.brokenQuantity` (during curing, set at
+release time alongside `releasedQuantity = quantityEntering − brokenQuantity`).
+Curing breakage never touches finished stock (those pieces never made it
+there) — only a `CURING`-stage `broken_product_records` entry is written for
+traceability.
+
+At release, the credited quantity splits as: `orderPortion = min(productionItem.allocatedQuantity,
+releasedQuantity)`, `excessPortion = releasedQuantity − orderPortion` — curing
+breakage hits the excess portion first, protecting the customer's committed
+quantity. This is an interpretation, not a stated rule: the blueprint doesn't
+say which portion absorbs curing loss first. `orderPortion` writes a
+`CURING_RELEASE` finished-stock movement and credits `OrderItem.allocatedQuantity`
+("available for the order" — business-blueprint 2.8); `excessPortion` writes
+`GENERAL_STOCK_RELEASE`. Both increase the same `physicalQuantity` — the
+movement type only distinguishes what the stock is earmarked for, since
+Phase 8's reservation (tied to Delivery) is a separate later step.
+
+`change-duration` is Admin/Super Admin only, via a plain role permission —
+there is no capability override for it. `release` uses the `CURING_RELEASE`
+capability instead (`requireCapability`, built in Phase 2, unused until this
+phase): Admin/Super Admin always pass; an Accountant passes only with a
+granted capability. Using `requirePermission('curing', 'release')` here
+would have been wrong — it would block a capability-holding Accountant,
+since role permissions and per-user capabilities are two separate checks.
+
 ### `stored_files` and `generated_documents`
 
 See technical-blueprint sections 4.14 and 8. `stored_files` is metadata only
@@ -284,6 +369,82 @@ Phase 5A) rather than the Phase 1 `stub`, which only ever threw. See
 Chromium instance is launched per render and closed immediately after —
 official documents are generated rarely enough that a persistent browser
 pool isn't worth the added complexity yet.
+
+## Planned schema changes (2026-08-02)
+
+New confirmed company information
+(`docs/decisions/business-workflow-update-2026-08-02.md`) required several
+schema changes. This section records the sequence so the remaining future
+sub-phases in `docs/implementation-plan.md` (Phase 6D–6F) execute it safely,
+in order. Items 2 and 3 (Order rework, Quotation removal) are **done** —
+see the migrations table above.
+
+### 1. Product — additive only (Phase 6D)
+
+Add two nullable columns to `products`:
+
+- `operationalName` (string, nullable).
+- `maxPiecesPerTruck` (integer, nullable).
+
+Purely additive — no existing column changes, no data loss, no backfill
+required. Safe to run before or after any other migration in this list.
+
+### 2. Order — rename and drop (Phase 6C-2 — DONE)
+
+Applied by `20260802160000_phase6c2_direct_order_foundation`:
+
+- Renamed `orders.paymentType` → `orders.paymentArrangement`; existing
+  `CASH` rows rewritten to `PREPAID` via a staged nullable-column-then-
+  backfill-then-required sequence (a plain rename cannot remap stored enum
+  values).
+- Added `orders.status` (`OrderStatus`), defaulting every row — including
+  the 3 pre-existing orders — to `PENDING`, per the confirmed lifecycle in
+  `docs/decisions/business-workflow-update-2026-08-02.md` section 12.3.
+- Dropped `orders.sourceQuotationId` and `order_items.sourceQuotationItemId`.
+
+### 3. Quotation removal (Phase 6C-3 — DONE)
+
+Applied by `20260802170000_phase6c3_remove_quotations`. Dropped `quotations`
+and `quotation_items` tables entirely (ran after step 2's
+`orders.sourceQuotationId` drop, since that column was a foreign key into
+`quotations`). The one `generated_documents`/`stored_files` row of type
+`QUOTATION` was deleted first (confirmed test data), then
+`GeneratedDocumentType` was narrowed to `INVOICE | RECEIPT`.
+
+**`DocumentType.QUOTATION` and its `document_sequences` row (year 2026, last
+number 3) were deliberately kept**, not dropped — that row is historical
+data per the project's no-hard-delete rule for issued document records, and
+narrowing `DocumentType` at the database level would have required either
+rewriting or invalidating that row. No code path allocates a new `QUOTATION`
+number any more, since the `quotations` module itself is gone. See the
+`DocumentType` doc comment in `schema.prisma` for the full reasoning.
+
+### 4. Vehicle / Vehicle Owner rework (Phase 6F)
+
+- Create `vehicle_owners` (name, phone, optional national ID, active status).
+- Add `vehicles.vehicleOwnerId` (foreign key), nullable at first so existing
+  `vehicles` rows can be backfilled with a real `VehicleOwner` record before
+  the column is made required.
+- Drop `vehicles.ownershipType` (and its `COMPANY`/`HIRED` enum) once every
+  row has a `vehicleOwnerId`.
+- The existing volumetric columns (`truckLengthM`, `truckWidthM`,
+  `truckHeightM`, `calculationFactor`, `calculatedLoadKg`,
+  `calculatedLoadTonnes`) are **not** touched by this migration — whether to
+  remove them is unconfirmed (see the impact report).
+
+### 5. Future Purchase Item / Delivery snapshot columns (Phase 7 / Phase 8)
+
+Not yet scoped in detail, since Phase 7/8 have not been planned. Expected
+additions when those phases are planned:
+
+- `purchase_items`: Pumice-specific snapshot columns (length, width, height,
+  volume per load, number of loads, total volume, rate per cubic metre) —
+  additive and nullable, since only Pumice purchases use them. Cement needs
+  no new columns (existing quantity × unit-cost already covers it).
+- `deliveries`: transport snapshot columns (transport rate, number of trips,
+  total transport cost, payee, and the vehicle-owner reference used at
+  dispatch time) and the truck-capacity value used for `requiredTrips` at
+  that delivery's creation time.
 
 ## Document numbering and concurrency
 

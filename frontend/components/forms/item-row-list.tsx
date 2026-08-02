@@ -17,9 +17,9 @@ interface ItemRowListProps {
 }
 
 /**
- * Repeatable line-item rows for a multi-item form (quotations, and later
- * orders). Each row is mobile-first: one column, stacked, with the remove
- * action reachable by touch.
+ * Repeatable line-item rows for a multi-item form (orders, production).
+ * Each row is mobile-first: one column, stacked, with the remove action
+ * reachable by touch.
  */
 export function ItemRowList({
   rows,

@@ -9,7 +9,6 @@ import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-
 
 const app = createApp();
 const ORDERS = `${API_BASE_PATH}/orders`;
-const QUOTATIONS = `${API_BASE_PATH}/quotations`;
 
 async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
   const response = await request(app).get(`${API_BASE_PATH}/csrf-token`).set('Cookie', cookie);
@@ -76,6 +75,30 @@ async function seedOpeningBalance(customerId: string, amount: string) {
   });
 }
 
+/** Creates a direct order and returns its id, for tests that only need an existing order. */
+async function createOrder(
+  headers: Record<string, string>,
+  overrides: Partial<{ customerId: string; addressId: string; productId: string }> = {},
+): Promise<string> {
+  const customer = overrides.customerId ? { id: overrides.customerId } : await seedCustomer();
+  const address = overrides.addressId
+    ? { id: overrides.addressId }
+    : await seedAddress(customer.id);
+  const product = overrides.productId ? { id: overrides.productId } : await seedProduct();
+
+  const response = await request(app)
+    .post(ORDERS)
+    .set(headers)
+    .send({
+      customerId: customer.id,
+      customerAddressId: address.id,
+      paymentArrangement: 'PREPAID',
+      items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
+    });
+
+  return response.body.data.id as string;
+}
+
 describe('orders module', () => {
   beforeEach(async () => {
     await truncateAll();
@@ -106,7 +129,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -115,7 +138,7 @@ describe('orders module', () => {
   });
 
   describe('direct order creation', () => {
-    it('creates a CASH order and calculates totals in decimal', async () => {
+    it('creates a PREPAID order and calculates totals in decimal', async () => {
       const { cookie, user } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
       const customer = await seedCustomer();
@@ -129,7 +152,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [
             { productId: productA.id, quantity: 3, agreedUnitPrice: '150.50' },
             { productId: productB.id, quantity: 7, agreedUnitPrice: '99.99' },
@@ -149,6 +172,28 @@ describe('orders module', () => {
       expect(audit?.documentNumber).toMatch(/^ORD-/);
     });
 
+    it('defaults a new order to PENDING and rejects a client-supplied status', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const product = await seedProduct();
+
+      const response = await request(app)
+        .post(ORDERS)
+        .set(headers)
+        .send({
+          customerId: customer.id,
+          customerAddressId: address.id,
+          paymentArrangement: 'PREPAID',
+          status: 'COMPLETED',
+          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
+        });
+
+      // `status` is not an accepted field — the body schema is `.strict()`.
+      expect(response.status).toBe(422);
+    });
+
     it('rejects a direct order with no items', async () => {
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
@@ -158,7 +203,7 @@ describe('orders module', () => {
       const response = await request(app)
         .post(ORDERS)
         .set(headers)
-        .send({ customerId: customer.id, customerAddressId: address.id, paymentType: 'CASH' });
+        .send({ customerId: customer.id, customerAddressId: address.id, paymentArrangement: 'PREPAID' });
 
       expect(response.status).toBe(422);
     });
@@ -176,7 +221,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -197,7 +242,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -218,7 +263,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -240,7 +285,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -248,122 +293,8 @@ describe('orders module', () => {
     });
   });
 
-  describe('conversion from an accepted quotation', () => {
-    async function createAcceptedQuotation(
-      headers: Record<string, string>,
-      customerId: string,
-      productId: string,
-    ): Promise<string> {
-      const created = await request(app)
-        .post(QUOTATIONS)
-        .set(headers)
-        .send({
-          customerId,
-          items: [{ productId, quantity: 4, agreedUnitPrice: '250.00' }],
-        });
-      const id = created.body.data.id as string;
-
-      await request(app).post(`${QUOTATIONS}/${id}/accept`).set(headers).send({});
-
-      return id;
-    }
-
-    it('converts an accepted quotation, copying its customer and items', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-      const customer = await seedCustomer();
-      const address = await seedAddress(customer.id);
-      const product = await seedProduct();
-      const quotationId = await createAcceptedQuotation(headers, customer.id, product.id);
-
-      const response = await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({
-          sourceQuotationId: quotationId,
-          customerAddressId: address.id,
-          paymentType: 'CASH',
-        });
-
-      expect(response.status).toBe(201);
-      expect(response.body.data.customerId).toBe(customer.id);
-      expect(response.body.data.sourceQuotationId).toBe(quotationId);
-      expect(response.body.data.items).toHaveLength(1);
-      expect(response.body.data.items[0].quantity).toBe(4);
-      expect(response.body.data.items[0].agreedUnitPrice).toBe('250.00');
-      expect(response.body.data.totalAmount).toBe('1000.00');
-    });
-
-    it('rejects converting a draft quotation', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-      const customer = await seedCustomer();
-      const address = await seedAddress(customer.id);
-      const product = await seedProduct();
-
-      const created = await request(app)
-        .post(QUOTATIONS)
-        .set(headers)
-        .send({ customerId: customer.id, items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }] });
-
-      const response = await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({
-          sourceQuotationId: created.body.data.id,
-          customerAddressId: address.id,
-          paymentType: 'CASH',
-        });
-
-      expect(response.status).toBe(422);
-    });
-
-    it('rejects converting the same quotation twice', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-      const customer = await seedCustomer();
-      const address = await seedAddress(customer.id);
-      const product = await seedProduct();
-      const quotationId = await createAcceptedQuotation(headers, customer.id, product.id);
-
-      await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({ sourceQuotationId: quotationId, customerAddressId: address.id, paymentType: 'CASH' });
-
-      const response = await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({ sourceQuotationId: quotationId, customerAddressId: address.id, paymentType: 'CASH' });
-
-      expect(response.status).toBe(422);
-      expect(response.body.error.message).toMatch(/already been converted/i);
-    });
-
-    it('rejects a body providing both a source quotation and items', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-      const customer = await seedCustomer();
-      const address = await seedAddress(customer.id);
-      const product = await seedProduct();
-      const quotationId = await createAcceptedQuotation(headers, customer.id, product.id);
-
-      const response = await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({
-          sourceQuotationId: quotationId,
-          customerAddressId: address.id,
-          paymentType: 'CASH',
-          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '5.00' }],
-        });
-
-      expect(response.status).toBe(422);
-    });
-  });
-
   describe('customer credit', () => {
-    it('lets a CASH order proceed even when the customer is blocked', async () => {
+    it('lets a PREPAID order proceed even when the customer is blocked', async () => {
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
       const customer = await seedCustomer();
@@ -377,7 +308,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CASH',
+          paymentArrangement: 'PREPAID',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -398,7 +329,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CREDIT',
+          paymentArrangement: 'CREDIT',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
         });
 
@@ -422,7 +353,7 @@ describe('orders module', () => {
           .send({
             customerId: customer.id,
             customerAddressId: address.id,
-            paymentType: 'CREDIT',
+            paymentArrangement: 'CREDIT',
             items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
           });
 
@@ -444,7 +375,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CREDIT',
+          paymentArrangement: 'CREDIT',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
           creditOverrideReason: 'Long-standing customer.',
         });
@@ -467,7 +398,7 @@ describe('orders module', () => {
         .send({
           customerId: customer.id,
           customerAddressId: address.id,
-          paymentType: 'CREDIT',
+          paymentArrangement: 'CREDIT',
           items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
           creditOverrideReason: 'Long-standing customer, approved by management.',
         });
@@ -488,32 +419,96 @@ describe('orders module', () => {
     });
   });
 
+  describe('cancellation', () => {
+    it('cancels a PENDING order with a written reason and writes an audit log', async () => {
+      const { cookie, user } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const orderId = await createOrder(headers);
+
+      const response = await request(app)
+        .post(`${ORDERS}/${orderId}/cancel`)
+        .set(headers)
+        .send({ reason: 'Customer requested cancellation.' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.status).toBe('CANCELLED');
+      expect(response.body.data.statusReason).toBe('Customer requested cancellation.');
+
+      const audit = await getTestPrisma().auditLog.findFirst({ where: { action: 'CANCEL_ORDER' } });
+      expect(audit?.userId).toBe(user.id);
+      expect(audit?.module).toBe('orders');
+      expect(audit?.reason).toBe('Customer requested cancellation.');
+    });
+
+    it('rejects cancellation with no reason', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const orderId = await createOrder(headers);
+
+      const response = await request(app)
+        .post(`${ORDERS}/${orderId}/cancel`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(422);
+    });
+
+    it('rejects cancelling an already-cancelled order', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const orderId = await createOrder(headers);
+
+      await request(app)
+        .post(`${ORDERS}/${orderId}/cancel`)
+        .set(headers)
+        .send({ reason: 'First cancellation.' });
+
+      const response = await request(app)
+        .post(`${ORDERS}/${orderId}/cancel`)
+        .set(headers)
+        .send({ reason: 'Second attempt.' });
+
+      expect(response.status).toBe(409);
+      expect(response.body.error.code).toBe('INVALID_DOCUMENT_STATUS');
+    });
+
+    it('rejects a mutation with no CSRF token', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const orderId = await createOrder(headers);
+
+      const response = await request(app)
+        .post(`${ORDERS}/${orderId}/cancel`)
+        .set('Cookie', cookie)
+        .send({ reason: 'No CSRF token.' });
+
+      expect(response.status).toBe(403);
+    });
+  });
+
   describe('no permanent deletion', () => {
     it('exposes no delete route', async () => {
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
-      const customer = await seedCustomer();
-      const address = await seedAddress(customer.id);
-      const product = await seedProduct();
+      const orderId = await createOrder(headers);
 
-      const created = await request(app)
-        .post(ORDERS)
-        .set(headers)
-        .send({
-          customerId: customer.id,
-          customerAddressId: address.id,
-          paymentType: 'CASH',
-          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '10.00' }],
-        });
-
-      const response = await request(app)
-        .delete(`${ORDERS}/${created.body.data.id}`)
-        .set(headers);
+      const response = await request(app).delete(`${ORDERS}/${orderId}`).set(headers);
 
       expect(response.status).toBe(404);
-      expect(
-        await getTestPrisma().order.findUnique({ where: { id: created.body.data.id } }),
-      ).not.toBeNull();
+      expect(await getTestPrisma().order.findUnique({ where: { id: orderId } })).not.toBeNull();
+    });
+
+    it('exposes no generic status-update route', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const orderId = await createOrder(headers);
+
+      const response = await request(app)
+        .patch(`${ORDERS}/${orderId}`)
+        .set(headers)
+        .send({ status: 'COMPLETED' });
+
+      expect(response.status).toBe(404);
     });
   });
 });

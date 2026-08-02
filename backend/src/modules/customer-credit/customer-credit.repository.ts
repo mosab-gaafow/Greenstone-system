@@ -58,7 +58,7 @@ export async function sumCreditOrderTotals(
   client: DbClient = getPrisma(),
 ): Promise<Prisma.Decimal> {
   const result = await client.order.aggregate({
-    where: { customerId, paymentType: 'CREDIT' },
+    where: { customerId, paymentArrangement: 'CREDIT' },
     _sum: { totalAmount: true },
   });
 

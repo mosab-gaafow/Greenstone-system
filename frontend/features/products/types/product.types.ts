@@ -2,8 +2,8 @@
  * Product types.
  *
  * Mirrors the backend contract. Note there is no price — Greenstone agrees a
- * price per customer per transaction, and quotation, order and invoice items
- * each hold their own snapshot.
+ * price per customer per transaction, and order and invoice items each hold
+ * their own snapshot.
  */
 
 export const PRODUCT_CATEGORIES = ['HOLLOW_BLOCK', 'HOLLOW_POT'] as const;

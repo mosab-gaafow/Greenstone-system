@@ -37,6 +37,21 @@ export async function listBrokenProductRecords(
   return { records: rows.map(toSummary), totalRecords: total };
 }
 
+/**
+ * Inserts a broken-product record inside the caller's existing transaction —
+ * used by `production.service.ts` (`PRODUCTION` stage) and
+ * `curing.service.ts` (`CURING` stage), the same "accept a caller-supplied
+ * `tx`" pattern used throughout this codebase for cross-module writes. Does
+ * not write its own audit entry; the caller's broader action does.
+ */
+export async function recordBrokenProductInTransaction(
+  tx: TransactionClient,
+  input: CreateBrokenProductRecordInput,
+  recordedByUserId: string | null,
+): Promise<BrokenProductRecordRow> {
+  return insertBrokenProductRecord(tx, { ...input, recordedByUserId });
+}
+
 export async function createBrokenProductRecord(
   input: CreateBrokenProductRecordInput,
   context: RequestContext,
@@ -48,10 +63,7 @@ export async function createBrokenProductRecord(
   }
 
   const created = await runInTransaction(async (tx: TransactionClient) => {
-    const record = await insertBrokenProductRecord(tx, {
-      ...input,
-      recordedByUserId: context.user.id,
-    });
+    const record = await recordBrokenProductInTransaction(tx, input, context.user.id);
 
     if (input.stage === 'FINISHED_STOCK') {
       await finishedStockService.recordBrokenStockMovement(

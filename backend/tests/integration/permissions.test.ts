@@ -75,10 +75,15 @@ describe('role permissions', () => {
       expect(await hasPermission('accountant', 'customer', 'update')).toBe(true);
     });
 
-    it('may create quotations, orders and invoices', async () => {
-      expect(await hasPermission('accountant', 'quotation', 'create')).toBe(true);
+    it('may create orders and invoices', async () => {
       expect(await hasPermission('accountant', 'order', 'create')).toBe(true);
       expect(await hasPermission('accountant', 'invoice', 'create')).toBe(true);
+    });
+
+    it('may cancel orders', async () => {
+      expect(await hasPermission('accountant', 'order', 'cancel')).toBe(true);
+      expect(await hasPermission('super_admin', 'order', 'cancel')).toBe(true);
+      expect(await hasPermission('admin', 'order', 'cancel')).toBe(true);
     });
 
     it('may record payments and expenses', async () => {

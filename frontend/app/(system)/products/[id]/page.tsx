@@ -93,7 +93,7 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <DetailRow label="Price">
               {/* Stated explicitly, so nobody goes looking for a field that
                   deliberately does not exist. */}
-              <span className="text-muted-foreground">Agreed on each quotation and order</span>
+              <span className="text-muted-foreground">Agreed on each order</span>
             </DetailRow>
           </CardContent>
         </Card>

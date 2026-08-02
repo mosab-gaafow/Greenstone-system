@@ -69,7 +69,7 @@ export function SettingsForm({ settings, onSubmit, pending }: SettingsFormProps)
           id="companyName"
           label="Company name"
           placeholder="e.g. Greenstone Blocks Ltd"
-          hint="Shown on quotations, invoices and receipts once those are built."
+          hint="Shown on invoices and receipts once those are built."
           error={errors.companyName?.message}
           {...register('companyName')}
         />

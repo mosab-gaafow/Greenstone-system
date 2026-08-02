@@ -19,7 +19,7 @@ export default function OrdersPage() {
       <PageHeader
         icon={ShoppingCart}
         title="Orders"
-        description="Direct orders and orders converted from accepted quotations."
+        description="Direct orders for customers."
         secondaryActions={
           <Button
             variant="outline"

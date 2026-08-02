@@ -120,6 +120,11 @@ export function canReleaseCuring(user: CurrentUser | null | undefined): boolean 
   return hasCapability(user, 'CURING_RELEASE');
 }
 
+/** May shorten a curing record's duration. No capability override, unlike release. */
+export function canChangeCuringDuration(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
+  return isAdministrator(user);
+}
+
 /** May register salary payments. */
 export function canRegisterSalary(user: CurrentUser | null | undefined): boolean {
   return hasCapability(user, 'SALARY_REGISTER');

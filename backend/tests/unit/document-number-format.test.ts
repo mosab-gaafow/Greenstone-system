@@ -8,6 +8,8 @@ import {
 describe('document number formatting', () => {
   it('uses the approved prefix for every document type', () => {
     // These prefixes come from business-blueprint.md section 3 and must not drift.
+    // QUOTATION is kept (though no longer issued — Quotations removed, Phase
+    // 6C-3) because a real historical document_sequences row still uses it.
     expect(DOCUMENT_PREFIXES).toEqual({
       QUOTATION: 'QUO',
       ORDER: 'ORD',

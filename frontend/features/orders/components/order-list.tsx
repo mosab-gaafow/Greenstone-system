@@ -18,16 +18,26 @@ import { TableToolbar } from '@/components/data-display/table-toolbar';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { formatDate } from '@/lib/format';
 import { useOrders } from '../hooks/use-orders';
-import { OrderPaymentTypeTabs } from './order-payment-type-tabs';
-import { orderPaymentTypeLabel, type Order } from '../types/order.types';
+import { OrderPaymentArrangementTabs } from './order-payment-arrangement-tabs';
+import { orderPaymentArrangementLabel, orderStatusLabel, type Order } from '../types/order.types';
 
-const DEFAULTS = { page: '1', search: '', paymentType: 'all' } as const;
+const DEFAULTS = { page: '1', search: '', paymentArrangement: 'all' } as const;
 
 const PAGE_SIZE = 25;
 
-const PAYMENT_TYPE_TONE: Record<Order['paymentType'], StatusTone> = {
-  CASH: 'success',
+const PAYMENT_ARRANGEMENT_TONE: Record<Order['paymentArrangement'], StatusTone> = {
+  PREPAID: 'success',
   CREDIT: 'info',
+};
+
+const STATUS_TONE: Record<Order['status'], StatusTone> = {
+  PENDING: 'neutral',
+  IN_PRODUCTION: 'info',
+  CURING: 'info',
+  READY_FOR_DELIVERY: 'warning',
+  PARTIALLY_DELIVERED: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'danger',
 };
 
 export function OrderList() {
@@ -39,7 +49,10 @@ export function OrderList() {
     page,
     pageSize: PAGE_SIZE,
     search: values.search || undefined,
-    paymentType: values.paymentType === 'all' ? undefined : (values.paymentType as Order['paymentType']),
+    paymentArrangement:
+      values.paymentArrangement === 'all'
+        ? undefined
+        : (values.paymentArrangement as Order['paymentArrangement']),
   });
 
   const columns: ListColumn<Order>[] = [
@@ -81,14 +94,22 @@ export function OrderList() {
       sortValue: (order) => Number(order.totalAmount),
     },
     {
-      key: 'paymentType',
+      key: 'paymentArrangement',
       header: 'Payment',
       card: 'badge',
       render: (order) => (
         <StatusBadge
-          tone={PAYMENT_TYPE_TONE[order.paymentType]}
-          label={orderPaymentTypeLabel(order.paymentType)}
+          tone={PAYMENT_ARRANGEMENT_TONE[order.paymentArrangement]}
+          label={orderPaymentArrangementLabel(order.paymentArrangement)}
         />
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      card: 'badge',
+      render: (order) => (
+        <StatusBadge tone={STATUS_TONE[order.status]} label={orderStatusLabel(order.status)} />
       ),
     },
     {
@@ -115,7 +136,7 @@ export function OrderList() {
     },
   ];
 
-  const isFiltered = values.search !== '' || values.paymentType !== 'all';
+  const isFiltered = values.search !== '' || values.paymentArrangement !== 'all';
 
   return (
     <div className="space-y-4">
@@ -127,13 +148,13 @@ export function OrderList() {
         searchPlaceholder="Search by number or customer"
         isFiltered={isFiltered}
         onReset={() => {
-          setFilters({ search: '', paymentType: 'all' });
+          setFilters({ search: '', paymentArrangement: 'all' });
         }}
         filters={
-          <OrderPaymentTypeTabs
-            value={values.paymentType}
-            onChange={(paymentType) => {
-              setFilters({ paymentType });
+          <OrderPaymentArrangementTabs
+            value={values.paymentArrangement}
+            onChange={(paymentArrangement) => {
+              setFilters({ paymentArrangement });
             }}
           />
         }
@@ -170,14 +191,14 @@ export function OrderList() {
                 description={
                   isFiltered
                     ? 'Try a different search or clear the filters.'
-                    : 'Create a direct order, or convert an accepted quotation.'
+                    : 'Create a direct order for a customer.'
                 }
                 action={
                   isFiltered ? (
                     <Button
                       variant="outline"
                       onClick={() => {
-                        setFilters({ search: '', paymentType: 'all' });
+                        setFilters({ search: '', paymentArrangement: 'all' });
                       }}
                     >
                       Clear filters

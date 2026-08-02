@@ -1,11 +1,27 @@
 /**
  * Order types.
  *
- * Mirrors the backend contract. See business-blueprint section 2.6.
+ * Mirrors the backend contract. See business-blueprint section 2.6 and
+ * docs/decisions/business-workflow-update-2026-08-02.md (Phase 6C-2,
+ * 2026-08-02): `paymentType` (`CASH`/`CREDIT`) was renamed to
+ * `paymentArrangement` (`PREPAID`/`CREDIT`), and a system-controlled
+ * `status` was added. Quotation conversion was removed — orders are always
+ * created directly.
  */
 
-export const ORDER_PAYMENT_TYPES = ['CASH', 'CREDIT'] as const;
-export type OrderPaymentType = (typeof ORDER_PAYMENT_TYPES)[number];
+export const ORDER_PAYMENT_ARRANGEMENTS = ['PREPAID', 'CREDIT'] as const;
+export type OrderPaymentArrangement = (typeof ORDER_PAYMENT_ARRANGEMENTS)[number];
+
+export const ORDER_STATUSES = [
+  'PENDING',
+  'IN_PRODUCTION',
+  'CURING',
+  'READY_FOR_DELIVERY',
+  'PARTIALLY_DELIVERED',
+  'COMPLETED',
+  'CANCELLED',
+] as const;
+export type OrderStatus = (typeof ORDER_STATUSES)[number];
 
 export interface OrderItem {
   id: string;
@@ -29,8 +45,9 @@ export interface Order {
   customerName: string;
   customerAddressId: string;
   addressLabel: string;
-  sourceQuotationId: string | null;
-  paymentType: OrderPaymentType;
+  paymentArrangement: OrderPaymentArrangement;
+  status: OrderStatus;
+  statusReason: string | null;
   totalAmount: string;
   itemCount: number;
   createdAt: string;
@@ -48,19 +65,39 @@ export interface OrderFilters {
   pageSize: number;
   search?: string;
   customerId?: string;
-  paymentType?: OrderPaymentType;
+  paymentArrangement?: OrderPaymentArrangement;
+  status?: OrderStatus;
 }
 
-const PAYMENT_TYPE_LABELS: Record<OrderPaymentType, string> = {
-  CASH: 'Cash',
+const PAYMENT_ARRANGEMENT_LABELS: Record<OrderPaymentArrangement, string> = {
+  PREPAID: 'Prepaid',
   CREDIT: 'Credit',
 };
 
-export function orderPaymentTypeLabel(value: OrderPaymentType): string {
-  return PAYMENT_TYPE_LABELS[value];
+export function orderPaymentArrangementLabel(value: OrderPaymentArrangement): string {
+  return PAYMENT_ARRANGEMENT_LABELS[value];
 }
 
-export const ORDER_PAYMENT_TYPE_OPTIONS = ORDER_PAYMENT_TYPES.map((value) => ({
+export const ORDER_PAYMENT_ARRANGEMENT_OPTIONS = ORDER_PAYMENT_ARRANGEMENTS.map((value) => ({
   value,
-  label: PAYMENT_TYPE_LABELS[value],
+  label: PAYMENT_ARRANGEMENT_LABELS[value],
 }));
+
+const STATUS_LABELS: Record<OrderStatus, string> = {
+  PENDING: 'Pending',
+  IN_PRODUCTION: 'In production',
+  CURING: 'Curing',
+  READY_FOR_DELIVERY: 'Ready for delivery',
+  PARTIALLY_DELIVERED: 'Partially delivered',
+  COMPLETED: 'Completed',
+  CANCELLED: 'Cancelled',
+};
+
+export function orderStatusLabel(value: OrderStatus): string {
+  return STATUS_LABELS[value];
+}
+
+/** Matches the backend's `CANCELLABLE_STATUSES` in `orders.service.ts`. */
+export function isOrderCancellable(status: OrderStatus): boolean {
+  return status !== 'COMPLETED' && status !== 'CANCELLED';
+}

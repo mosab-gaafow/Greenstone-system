@@ -317,6 +317,44 @@ export async function adjustStock(
   return toStockDetail(updated);
 }
 
+/**
+ * Records actual raw-material usage inside the caller's existing
+ * transaction. Used by `production.service.ts` when a production batch
+ * consumes raw material — the same "accept a caller-supplied `tx`" pattern
+ * `customer-credit.service.ts` uses for its override recorder.
+ *
+ * Never a fixed formula (business-blueprint section 2.12) — `quantity` is
+ * whatever the caller measured.
+ */
+export async function recordProductionUsage(
+  tx: TransactionClient,
+  rawMaterialId: string,
+  quantity: Prisma.Decimal,
+  relatedEntityId: string,
+  context: RequestContext,
+): Promise<void> {
+  const balance = await lockStockBalance(tx, rawMaterialId);
+  const newQuantity = balance.quantity.sub(quantity);
+
+  if (newQuantity.isNegative()) {
+    const rawMaterial = await findRawMaterialById(rawMaterialId, tx);
+    throw new InsufficientRawMaterialError(
+      `Not enough "${rawMaterial?.name ?? 'raw material'}" in stock for this production run.`,
+    );
+  }
+
+  await setStockBalanceQuantity(tx, rawMaterialId, newQuantity);
+
+  await insertMovement(tx, {
+    rawMaterialId,
+    movementType: 'PRODUCTION_USAGE',
+    quantity: quantity.negated(),
+    balanceAfter: newQuantity,
+    relatedEntityId,
+    createdByUserId: context.user.id,
+  });
+}
+
 // --- Helpers ----------------------------------------------------------------
 
 export async function requireRawMaterial(id: string): Promise<RawMaterialRow> {

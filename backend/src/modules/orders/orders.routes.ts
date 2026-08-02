@@ -5,6 +5,7 @@ import { csrfProtection } from '../../shared/middleware/csrf.js';
 import { validate } from '../../shared/validation/validate.js';
 import * as ordersController from './orders.controller.js';
 import {
+  cancelOrderBodySchema,
   createOrderBodySchema,
   listOrdersQuerySchema,
   orderIdParamsSchema,
@@ -14,8 +15,9 @@ import {
  * Order routes.
  *
  * Per the pre-declared permission map, super_admin, admin, and accountant may
- * all create, read, and update orders. There is no status-change or delete
- * route — see the `Order` model's doc comment in schema.prisma.
+ * all create, read, update, and cancel orders. There is no generic
+ * status-update route and no delete route — see the `Order` model's doc
+ * comment in schema.prisma.
  */
 export function ordersRoutes(): Router {
   const router = Router();
@@ -42,6 +44,14 @@ export function ordersRoutes(): Router {
     requirePermission('order', 'create'),
     validate({ body: createOrderBodySchema }),
     ordersController.create,
+  );
+
+  router.post(
+    '/:id/cancel',
+    csrfProtection(),
+    requirePermission('order', 'cancel'),
+    validate({ params: orderIdParamsSchema, body: cancelOrderBodySchema }),
+    ordersController.cancel,
   );
 
   return router;

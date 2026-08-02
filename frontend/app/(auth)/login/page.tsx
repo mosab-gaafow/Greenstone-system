@@ -95,8 +95,8 @@ function BrandPanel() {
             Everything the yard runs on.
           </h2>
           <p className="text-brand-100/80 text-lg leading-relaxed text-pretty">
-            Quotations, orders, production, curing, stock, deliveries and payments — recorded once,
-            in one place.
+            Orders, production, curing, stock, deliveries and payments — recorded once, in one
+            place.
           </p>
         </div>
 

@@ -49,18 +49,32 @@ what allows them to manage users.
 | `supplier`         | create, read, update | ✅          | ✅    | ✅         |
 | `employee`         | create, read, update | ✅          | ✅    | read       |
 | `driver`           | create, read, update | ✅          | ✅    | ✅         |
+| `vehicle-owner`    | create, read, update | ✅          | ✅    | ✅         |
 | `vehicle`          | create, read, update | ✅          | ✅    | ✅         |
 
 ### Sales and credit
 
 | Resource          | Actions                             | super_admin | admin | accountant |
 | ----------------- | ----------------------------------- | ----------- | ----- | ---------- |
-| `quotation`       | create, read, update, change-status | ✅          | ✅    | ✅         |
-| `order`           | create, read, update                | ✅          | ✅    | ✅         |
+| `order`           | create, read, update, cancel         | ✅          | ✅    | ✅         |
 | `customer-credit` | read, set-opening-balance, override | ✅          | ✅    | read       |
 
 Only Super Admin and Admin may override a customer credit block. Every override
 requires a written reason and an audit log.
+
+**`order:cancel` (added 2026-08-02, Phase 6C-2):** every order starts
+`PENDING` and moves only through explicit service actions. Cancellation
+requires a written reason and an audit log, and is only allowed while the
+order has not yet reached `COMPLETED`. There is no generic status-update
+action — the remaining statuses (`IN_PRODUCTION`, `CURING`,
+`READY_FOR_DELIVERY`, `PARTIALLY_DELIVERED`, `COMPLETED`) are set only by
+Production, Curing, and Delivery as those phases ship, never by a direct
+permission grant.
+
+**`quotation` removed (2026-08-02, Phase 6C-3):** Quotations are not part of
+the system — see `docs/decisions/business-workflow-update-2026-08-02.md`.
+The `quotation` resource, its module, its tests, and its Prisma tables have
+all been removed from the codebase.
 
 ### Production and stock
 

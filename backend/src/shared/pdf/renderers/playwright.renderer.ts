@@ -7,9 +7,9 @@ import type { PdfRenderer, RenderPdfInput, RenderedPdf } from '../pdf.types.js';
  * Real PDF renderer, per docs/technical-blueprint.md section 9.3.
  *
  * Launches a fresh, isolated Chromium instance per render and closes it
- * immediately after. Official documents are generated rarely enough (a
- * quotation, invoice, or receipt at a time, never in bulk) that a persistent
- * browser pool would add complexity this volume does not need.
+ * immediately after. Official documents are generated rarely enough (an
+ * invoice or receipt at a time, never in bulk) that a persistent browser
+ * pool would add complexity this volume does not need.
  */
 export class PlaywrightPdfRenderer implements PdfRenderer {
   readonly name = 'playwright';

@@ -135,7 +135,7 @@ database for every read.
 - Store dates and times in UTC.
 - Display user-facing dates using the Africa/Nairobi timezone.
 - Official document numbers are generated only by the backend.
-- Historical prices must use quotation, order, and invoice item snapshots.
+- Historical prices must use order and invoice item snapshots.
 - Current product data must never change old transaction prices.
 
 ## Security Rules

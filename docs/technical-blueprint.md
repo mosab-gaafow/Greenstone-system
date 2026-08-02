@@ -21,6 +21,15 @@ Development must not wait for real company data such as:
 
 Safe demo data may be used in development. Real data will be entered during production setup.
 
+**Amendment (2026-08-02):** New confirmed company information changed several
+approved workflow assumptions after Phases 3–6B were built. See
+`docs/decisions/business-workflow-update-2026-08-02.md` for the authoritative
+record. Sections below marked "(2026-08-02)" reflect this update. Some code
+built under the earlier assumptions (Quotations; `Order.paymentType`/
+`sourceQuotationId`; `Vehicle.ownershipType`/`hireCost`) still exists in the
+current codebase and has not yet been removed or reworked — that is tracked as
+future sub-phases in `docs/implementation-plan.md` (Phase 6C onward).
+
 ---
 
 # 1. Final Repository Structure
@@ -104,7 +113,6 @@ The frontend and backend remain separate applications. They must not import inte
     - Authenticated application layout.
     - Dashboard.
     - Customers.
-    - Quotations.
     - Orders.
     - Production.
     - Curing.
@@ -270,7 +278,6 @@ Recommended feature folders:
 - `users`
 - `customers`
 - `products`
-- `quotations`
 - `orders`
 - `production`
 - `curing`
@@ -280,6 +287,7 @@ Recommended feature folders:
 - `suppliers`
 - `purchases`
 - `purchase-payments`
+- `vehicle-owners`
 - `vehicles`
 - `drivers`
 - `deliveries`
@@ -478,7 +486,6 @@ Rules:
 | `customer-credit` | Opening balances, credit status, credit checks and credit overrides |
 | `products` | Product master information and initial product definitions |
 | `measurement-units` | Configurable raw-material measurement units |
-| `quotations` | Quotations, quotation items, price snapshots and quotation status |
 | `orders` | Orders, order items, price snapshots and order progress |
 | `production` | Pallets, production quantities, order allocation, excess quantity and material usage coordination |
 | `curing` | Two-day and three-day curing, duration changes and product release |
@@ -488,7 +495,8 @@ Rules:
 | `suppliers` | Supplier records, opening balances and supplier account information |
 | `purchases` | Raw-material purchases and purchase items |
 | `purchase-payments` | Supplier payments and supplier balance updates |
-| `vehicles` | Company and hired vehicle records |
+| `vehicle-owners` | Vehicle owner records and active status (2026-08-02) |
+| `vehicles` | Vehicle records and their registered owner (revised 2026-08-02) |
 | `drivers` | Driver records and active status |
 | `deliveries` | Delivery trips, stock reservation, dispatch and delivery progress |
 | `invoices` | Strict order-to-invoice relationship, invoice items and balances |
@@ -502,6 +510,12 @@ Rules:
 | `reports` | Operational and approved financial reports |
 | `audit-logs` | Audit-log searching and viewing |
 | `settings` | Company settings and configurable operational values |
+
+**Quotations (removed from the planned system — 2026-08-02):** a `quotations`
+module was built in Phase 5A before this update. It is out of scope going
+forward — see `docs/decisions/business-workflow-update-2026-08-02.md`. It is
+still present in the current codebase; removing it is a future sub-phase
+(Phase 6C), not yet done.
 
 ## 3.4 Shared backend services
 
@@ -619,7 +633,6 @@ Roles remain:
 Has many:
 
 - Addresses.
-- Quotations.
 - Orders.
 - Invoices through orders.
 - Customer payments.
@@ -667,21 +680,25 @@ Stores:
 - Size.
 - Optional description.
 - Active status.
+- `operationalName` (2026-08-02) — a separate, configurable short name staff
+  use day to day (e.g. "4-inch" for Hollow Blocks 4 × 9). Optional; left empty
+  until confirmed for a given product. Does not replace the official product
+  name. Whether it must be unique is not yet confirmed.
+- `maxPiecesPerTruck` (2026-08-02) — a configurable positive whole number, or
+  empty when not yet known: the maximum pieces of this single product one
+  truck can carry. Used only for single-product delivery trip calculation
+  (`requiredTrips = ceiling(deliveryQuantity / maxPiecesPerTruck)`, see section
+  4.11). An authorised user may update it later; already-recorded deliveries
+  must keep the capacity value in effect at dispatch time as a snapshot, never
+  recalculated retroactively.
 
 It does not require a fixed selling price.
 
-### Quotation Item
-
-Belongs to:
-
-- One quotation.
-- One product.
-
-Stores:
-
-- Quantity.
-- Agreed unit-price snapshot.
-- Item total.
+**Quotations removed (2026-08-02):** Quotations are not part of the planned
+system — see `docs/decisions/business-workflow-update-2026-08-02.md`. The
+"Quotation Item" entity previously defined here is out of scope going forward.
+It still exists in the current codebase (Phase 5A); removal is a future
+sub-phase.
 
 ### Order Item
 
@@ -689,7 +706,6 @@ Belongs to:
 
 - One order.
 - One product.
-- Optional source quotation item.
 
 Stores:
 
@@ -716,15 +732,13 @@ Stores:
 
 Historical prices must never depend on the current product master.
 
-## 4.5 Quotations, orders, and invoices
+## 4.5 Orders and invoices (revised 2026-08-02)
 
-### Quotation
-
-Belongs to one customer.
-
-Has many quotation items.
-
-May create one order.
+**Quotations removed:** the workflow now begins directly with an Order — there
+is no "convert an accepted quotation into an order" step. The `Quotation`
+entity previously defined here is out of scope going forward; it still exists
+in the current codebase (Phase 5A) and is removed in a future sub-phase (see
+`docs/decisions/business-workflow-update-2026-08-02.md`).
 
 ### Order
 
@@ -732,7 +746,6 @@ Belongs to:
 
 - One customer.
 - One customer address.
-- Optional source quotation.
 
 Has many:
 
@@ -741,6 +754,23 @@ Has many:
 - Deliveries.
 
 Has exactly one invoice.
+
+Stores:
+
+- `paymentArrangement` — `PREPAID` or `CREDIT` (2026-08-02, renamed from
+  `paymentType`'s `CASH`/`CREDIT`). Cash is a payment method (section 4.13 /
+  business-blueprint 2.23), not an order-level arrangement — `PREPAID` must
+  never be called "CASH." A `PREPAID` order must be fully paid through
+  approved payments before dispatch.
+- `status` — system-controlled, not user-writable. Every new order is created
+  as `PENDING` automatically. The full status lifecycle between `PENDING` and
+  order completion (after full delivery) is **not yet confirmed** — do not
+  implement additional statuses beyond what is already built until confirmed.
+
+The current codebase's `Order.sourceQuotationId` / `sourceQuotationItemId`
+columns and the quotation-to-order conversion flow are removed together with
+Quotations in the same future sub-phase (Phase 6C), since both exist only to
+serve quotations.
 
 ### Invoice
 
@@ -984,6 +1014,30 @@ Stores:
 - Unit cost.
 - Total cost.
 
+**Pumice (2026-08-02):** Pumice is purchased and costed by volume, not weight
+or bag count. In addition to the generic fields above, a Pumice purchase item
+snapshots:
+
+- Length, width, height.
+- Volume per load (`length × width × height`).
+- Number of loads.
+- Total volume (`volumePerLoad × numberOfLoads`).
+- Rate per cubic metre.
+- Total cost (`totalVolume × ratePerCubicMetre`).
+
+Current rate: KES 1,100 per cubic metre. This must be configurable later; old
+purchases keep the rate used at creation. This value must never be confused
+with the unrelated `Vehicle.calculationFactor` default of `1100` (kilograms
+per cubic metre) — see the conflict note in section 4.11.
+
+**Cement (2026-08-02):** Cement's measurement unit is `BAG`.
+`totalCost = numberOfBags × unitCost`, using the generic quantity × unit-cost
+shape above — Cement needs **no** additional schema fields. Current known
+unit cost: KES 850 per bag, stored as the existing unit-cost snapshot. The
+reference figure of 170–190 bags used per day is informational only;
+production must record the actual number of bags used, never an automatic
+170 or 190.
+
 ### Purchase Payment
 
 Belongs to one supplier.
@@ -1006,22 +1060,43 @@ May connect a purchase payment to purchase records.
 
 It allows payment history to remain traceable without changing the purchase itself.
 
-## 4.11 Deliveries, vehicles, and drivers
+## 4.11 Deliveries, vehicles, vehicle owners, and drivers (revised 2026-08-02)
 
-### Vehicle
+### Vehicle Owner (new — 2026-08-02)
+
+Master-data entity. Stores:
+
+- Name.
+- Phone number.
+- Optional national ID.
+- Active status.
+
+### Vehicle (revised 2026-08-02)
 
 Stores:
 
 - Registration number.
 - Vehicle type.
-- Ownership type.
-- Hire cost where applicable.
+- Vehicle Owner (replaces `ownershipType`/`hireCost` entirely — every vehicle
+  now has a registered owner instead of an ownership category).
 - Active status.
 
-Ownership types:
+If the Driver owns the Vehicle, the Driver is also registered as a separate
+Vehicle Owner record (not automatically linked or merged with the Driver
+record). A Driver is never permanently attached to one Vehicle — the actual
+Driver and Vehicle are selected on every Delivery trip.
 
-- Company.
-- Hired.
+**Conflict with the existing volumetric calculation:** Phase 4C added a
+vehicle-level truck-capacity model (`truckLengthM`, `truckWidthM`,
+`truckHeightM`, `calculationFactor` defaulting to `1100` kilograms per cubic
+metre, `calculatedLoadKg`, `calculatedLoadTonnes`) that this document did not
+originally describe. The new per-product `maxPiecesPerTruck` (section 4.4)
+conflicts with it in two ways: the value `1100` also appears as the Pumice
+purchase rate (KES per cubic metre, section 4.10) — a different unit that
+must never be confused with `calculationFactor` — and the per-product model
+may make the entire volumetric Vehicle calculation redundant for
+delivery-trip planning. Whether to remove the volumetric fields is **not yet
+confirmed** — see `docs/decisions/business-workflow-update-2026-08-02.md`.
 
 ### Driver
 
@@ -1029,9 +1104,10 @@ Stores:
 
 - Name.
 - Phone number.
+- National ID.
 - Active status.
 
-### Delivery
+### Delivery (revised 2026-08-02)
 
 Belongs to:
 
@@ -1041,6 +1117,19 @@ Belongs to:
 - One driver.
 
 Has many delivery items.
+
+Snapshots at creation: driver, vehicle, vehicle owner, transport rate, number
+of trips, total transport cost, and payee (the Vehicle Owner — the Driver, if
+they own the vehicle). `totalTransportCost = numberOfTrips × transportRate`.
+Current transport rate: KES 8,500 per trip. Transport cost must never be
+counted a second time as a general expense, and Vehicle must never store one
+permanent hire cost (already true since Phase 4C removed `hireCost`).
+
+For single-product deliveries, `requiredTrips = ceiling(deliveryQuantity /
+maxPiecesPerTruck)` using the product's `maxPiecesPerTruck` (section 4.4),
+snapshotted onto the delivery record so a later change to the product's
+capacity never recalculates an already-recorded delivery. Mixed-product
+truck-load calculation is **not yet confirmed** — do not implement it.
 
 ### Delivery Item
 
@@ -1731,7 +1820,6 @@ File storage is needed for items such as:
 - Customer payment evidence.
 - Purchase payment evidence.
 - Expense evidence.
-- Generated quotation PDFs.
 - Generated invoice PDFs.
 - Generated receipt PDFs.
 
@@ -1811,9 +1899,13 @@ Production file storage must have:
 
 The MVP requires official PDFs for:
 
-- Quotations.
 - Invoices.
 - Receipts.
+
+**Quotations removed (2026-08-02):** Quotations are not part of the planned
+system — see `docs/decisions/business-workflow-update-2026-08-02.md`. A
+Quotation PDF was built in Phase 5A; it is out of scope going forward and
+removed in a future sub-phase.
 
 Other PDFs must not be added unless approved.
 
@@ -1891,7 +1983,6 @@ Issued receipts remain immutable until a future correction process is approved.
 
 | Document | Format |
 |---|---|
-| Quotation | `QUO-YYYY-0001` |
 | Order | `ORD-YYYY-0001` |
 | Production | `PRD-YYYY-0001` |
 | Delivery | `DEL-YYYY-0001` |
@@ -1902,6 +1993,10 @@ Issued receipts remain immutable until a future correction process is approved.
 | Purchase Payment | `PPY-YYYY-0001` |
 | Salary Payment | `SAL-YYYY-0001` |
 | Expense | `EXP-YYYY-0001` |
+
+**Quotation removed (2026-08-02):** the `QUO-YYYY-0001` format previously
+listed here is out of scope going forward — quotations still exist in the
+current codebase but are removed in a future sub-phase.
 
 ## 10.2 Central numbering service
 
@@ -2371,7 +2466,8 @@ Use browser-based end-to-end tests for major workflows.
 
 Critical workflows:
 
-1. Customer → quotation → order → invoice.
+1. Customer → order → invoice (2026-08-02 — quotations removed from this
+   flow).
 2. Order → production → curing → finished stock.
 3. Finished stock → reservation → dispatch → delivery.
 4. Invoice → payment → approval → receipt.
@@ -2556,8 +2652,8 @@ Build backend and frontend for:
 - Suppliers.
 - Employees.
 - Drivers.
-- Company vehicles.
-- Hired vehicles.
+- Vehicle Owners (2026-08-02 — replaces the Company/Hired vehicle split below).
+- Vehicles, each with a registered Vehicle Owner (revised 2026-08-02).
 - Settings.
 
 Add the development demo seed.
@@ -2568,16 +2664,17 @@ Completion gate:
 - Demo data is clearly identified.
 - Production seed remains clean.
 
-## Implementation Phase 5 — Quotations, orders, and customer credit
+## Implementation Phase 5 — Orders and customer credit (revised 2026-08-02)
+
+**Quotations removed:** this phase originally began with Quotations and
+"orders from quotations." That is out of scope going forward — see
+`docs/decisions/business-workflow-update-2026-08-02.md`. Quotations were
+still built as part of this phase (Phase 5A) before the change was confirmed;
+their removal is tracked separately (`docs/implementation-plan.md` Phase 6C).
 
 Build:
 
-- Quotations.
-- Quotation items.
-- Price snapshots.
-- Quotation PDF.
-- Direct orders.
-- Orders from quotations.
+- Direct orders (every order created directly, no quotation step).
 - Order items.
 - Customer opening balances.
 - Credit-status calculation.
@@ -2588,7 +2685,12 @@ Completion gate:
 
 - Price changes do not affect history.
 - Credit thresholds work.
-- One accepted quotation can create its order safely.
+
+**Still pending (see Phase 6C–6E in `docs/implementation-plan.md`):**
+`Order.paymentArrangement` rename (`PREPAID`/`CREDIT`, replacing
+`paymentType`'s `CASH`/`CREDIT`), removal of `sourceQuotationId`/
+`sourceQuotationItemId`, and the projected-exposure credit formula that
+includes the new order's own total.
 
 ## Implementation Phase 6 — Production and curing
 
@@ -2618,7 +2720,10 @@ Build:
 - Raw-material ledger.
 - Opening raw-material quantities.
 - Purchase records.
-- Purchase items.
+- Purchase items, including Pumice's cubic-metre snapshot fields (length,
+  width, height, volume per load, number of loads, total volume, rate per
+  cubic metre — 2026-08-02, see section 4.10) and Cement's bag-based
+  quantity × unit-cost (no additional fields needed).
 - Purchase numbering.
 - Supplier opening balances.
 - Purchase payments.
@@ -2630,6 +2735,7 @@ Completion gate:
 - Purchases increase raw stock.
 - Actual production usage reduces stock.
 - Supplier balances do not double-count expenses.
+- Pumice cost calculates as `volume × rate`, not weight or bag count.
 
 ## Implementation Phase 8 — Finished stock and deliveries
 
@@ -2641,7 +2747,14 @@ Build:
 - Available-stock calculation.
 - Stock adjustments.
 - Broken-product records.
-- Deliveries.
+- Deliveries, snapshotting driver, vehicle, vehicle owner, transport rate,
+  number of trips, total transport cost, and payee (2026-08-02, see section
+  4.11). Payee is the registered Vehicle Owner (the Driver, if they own the
+  vehicle). Current transport rate: KES 8,500 per trip.
+- Single-product truck-trip calculation using the product's
+  `maxPiecesPerTruck` (2026-08-02): `requiredTrips = ceiling(deliveryQuantity
+  / maxPiecesPerTruck)`, snapshotted onto the delivery. Mixed-product truck
+  loads are not confirmed — do not implement.
 - Partial deliveries.
 - Dispatch.
 - Pre-dispatch cancellation.
@@ -2653,6 +2766,8 @@ Completion gate:
 - Dispatch permanently reduces stock.
 - Cancellation releases reservations.
 - All corrections are audited.
+- A later change to a product's `maxPiecesPerTruck` does not alter an
+  already-recorded delivery's trip count.
 
 ## Implementation Phase 9 — Invoices, customer payments, and receipts
 
@@ -3056,8 +3171,8 @@ The MVP includes:
 - Authentication and permissions.
 - Customers and addresses.
 - Products.
-- Quotations and customer-specific pricing.
-- Orders.
+- Orders, with agreed unit-price snapshots per order item (2026-08-02 —
+  quotations removed; pricing is agreed directly on the order).
 - Production.
 - Curing.
 - Finished stock.

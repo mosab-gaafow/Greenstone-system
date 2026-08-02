@@ -1,26 +1,48 @@
 'use client';
 
-import { use } from 'react';
+import { use, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, ShoppingCart } from 'lucide-react';
+import { ArrowLeft, Ban, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { StatusBadge, type StatusTone } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { useOrder } from '@/features/orders/hooks/use-orders';
-import { orderPaymentTypeLabel, type OrderPaymentType } from '@/features/orders/types/order.types';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { useCancelOrder, useOrder } from '@/features/orders/hooks/use-orders';
+import {
+  isOrderCancellable,
+  orderPaymentArrangementLabel,
+  orderStatusLabel,
+  type OrderPaymentArrangement,
+  type OrderStatus,
+} from '@/features/orders/types/order.types';
 
-const PAYMENT_TYPE_TONE: Record<OrderPaymentType, StatusTone> = {
-  CASH: 'success',
+const PAYMENT_ARRANGEMENT_TONE: Record<OrderPaymentArrangement, StatusTone> = {
+  PREPAID: 'success',
   CREDIT: 'info',
+};
+
+const STATUS_TONE: Record<OrderStatus, StatusTone> = {
+  PENDING: 'neutral',
+  IN_PRODUCTION: 'info',
+  CURING: 'info',
+  READY_FOR_DELIVERY: 'warning',
+  PARTIALLY_DELIVERED: 'warning',
+  COMPLETED: 'success',
+  CANCELLED: 'danger',
 };
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const query = useOrder(id);
+  const cancelOrder = useCancelOrder(id);
+  const [cancelling, setCancelling] = useState(false);
+  const [reason, setReason] = useState('');
+  const [reasonError, setReasonError] = useState<string | null>(null);
 
   if (query.isPending) {
     return (
@@ -53,6 +75,12 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   const order = query.data;
 
+  function closeCancelDialog() {
+    setCancelling(false);
+    setReason('');
+    setReasonError(null);
+  }
+
   return (
     <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <Button
@@ -69,13 +97,31 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         icon={ShoppingCart}
         title={order.orderNumber}
         badge={
-          <StatusBadge
-            tone={PAYMENT_TYPE_TONE[order.paymentType]}
-            label={orderPaymentTypeLabel(order.paymentType)}
-          />
+          <div className="flex flex-wrap gap-2">
+            <StatusBadge
+              tone={PAYMENT_ARRANGEMENT_TONE[order.paymentArrangement]}
+              label={orderPaymentArrangementLabel(order.paymentArrangement)}
+            />
+            <StatusBadge tone={STATUS_TONE[order.status]} label={orderStatusLabel(order.status)} />
+          </div>
         }
         description={order.customerName}
       />
+
+      {isOrderCancellable(order.status) && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            disabled={cancelOrder.isPending}
+            onClick={() => {
+              setCancelling(true);
+            }}
+          >
+            <Ban className="size-4" aria-hidden />
+            Cancel order
+          </Button>
+        </div>
+      )}
 
       <div className="max-w-2xl space-y-6">
         <Card>
@@ -86,16 +132,7 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
             {order.addressDirections && (
               <DetailRow label="Directions">{order.addressDirections}</DetailRow>
             )}
-            {order.sourceQuotationId && (
-              <DetailRow label="Source quotation">
-                <Link
-                  href={`/quotations/${order.sourceQuotationId}`}
-                  className="text-primary hover:underline"
-                >
-                  View quotation
-                </Link>
-              </DetailRow>
-            )}
+            {order.statusReason && <DetailRow label="Reason">{order.statusReason}</DetailRow>}
           </CardContent>
         </Card>
 
@@ -109,6 +146,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     <th className="p-4 text-right font-medium">Qty</th>
                     <th className="p-4 text-right font-medium">Unit price</th>
                     <th className="p-4 text-right font-medium">Line total</th>
+                    <th className="p-4 text-right font-medium">Produced</th>
+                    <th className="p-4 text-right font-medium">Allocated</th>
                     <th className="p-4 text-right font-medium">Remaining</th>
                   </tr>
                 </thead>
@@ -119,6 +158,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                       <td className="p-4 text-right tabular-nums">{item.quantity}</td>
                       <td className="p-4 text-right tabular-nums">{item.agreedUnitPrice}</td>
                       <td className="p-4 text-right tabular-nums">{item.lineTotal}</td>
+                      <td className="p-4 text-right tabular-nums">{item.producedQuantity}</td>
+                      <td className="p-4 text-right tabular-nums">{item.allocatedQuantity}</td>
                       <td className="p-4 text-right tabular-nums">{item.remainingQuantity}</td>
                     </tr>
                   ))}
@@ -126,9 +167,10 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
                     <td colSpan={3} className="p-4 text-right font-semibold">
                       Total
                     </td>
-                    <td colSpan={2} className="p-4 text-right font-semibold tabular-nums">
+                    <td className="p-4 text-right font-semibold tabular-nums">
                       KES {order.totalAmount}
                     </td>
+                    <td colSpan={3}></td>
                   </tr>
                 </tbody>
               </table>
@@ -136,6 +178,42 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={cancelling}
+        onOpenChange={(open) => {
+          if (!open) closeCancelDialog();
+        }}
+        title={`Cancel ${order.orderNumber}?`}
+        description="The order will be marked cancelled. This cannot be undone."
+        confirmLabel="Cancel order"
+        destructive
+        pending={cancelOrder.isPending}
+        onConfirm={() => {
+          const trimmed = reason.trim();
+
+          if (!trimmed) {
+            setReasonError('A reason is required to cancel an order.');
+            return;
+          }
+
+          cancelOrder.mutate({ reason: trimmed }, { onSuccess: closeCancelDialog });
+        }}
+      >
+        <Textarea
+          placeholder="Reason (required)"
+          value={reason}
+          onChange={(event) => {
+            setReason(event.target.value);
+            if (reasonError) setReasonError(null);
+          }}
+        />
+        {reasonError && (
+          <p className="text-destructive text-sm" role="alert">
+            {reasonError}
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

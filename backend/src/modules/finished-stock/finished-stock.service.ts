@@ -1,3 +1,4 @@
+import type { FinishedStockMovementType } from '../../generated/prisma/client.js';
 import {
   ensureBalance,
   findMovements,
@@ -186,6 +187,45 @@ export async function recordBrokenStockMovement(
     productId,
     movementType: 'BROKEN',
     quantity: -quantity,
+    balanceAfter: newPhysical,
+    relatedEntityId,
+    createdByUserId: context.user.id,
+  });
+}
+
+/**
+ * Credits physical stock at curing release, inside the caller's existing
+ * transaction. Used by `curing.service.ts` — `CURING_RELEASE` for the
+ * portion earmarked for an order, `GENERAL_STOCK_RELEASE` for the excess
+ * portion (business-blueprint section 2.8). Both are still physically in the
+ * yard either way; the movement type only distinguishes what it is earmarked
+ * for. Ensures the balance row exists first, since a product's first
+ * finished-stock activity may well be a curing release rather than an
+ * opening entry.
+ */
+export async function recordCuringRelease(
+  tx: TransactionClient,
+  productId: string,
+  quantity: number,
+  movementType: Extract<FinishedStockMovementType, 'CURING_RELEASE' | 'GENERAL_STOCK_RELEASE'>,
+  relatedEntityId: string,
+  context: RequestContext,
+): Promise<void> {
+  if (quantity <= 0) {
+    return;
+  }
+
+  await ensureBalance(productId, tx);
+  const balance = await lockBalance(tx, productId);
+  const newPhysical = balance.physicalQuantity + quantity;
+  const availableQuantity = newPhysical - balance.reservedQuantity;
+
+  await setBalanceQuantities(tx, productId, newPhysical, availableQuantity);
+
+  await insertMovement(tx, {
+    productId,
+    movementType,
+    quantity,
     balanceAfter: newPhysical,
     relatedEntityId,
     createdByUserId: context.user.id,

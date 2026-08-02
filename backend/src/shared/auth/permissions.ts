@@ -43,8 +43,7 @@ export const statement = {
   vehicle: ['create', 'read', 'update'],
 
   // Sales and credit
-  quotation: ['create', 'read', 'update', 'change-status'],
-  order: ['create', 'read', 'update'],
+  order: ['create', 'read', 'update', 'cancel'],
   'customer-credit': ['read', 'set-opening-balance', 'override'],
 
   // Production and stock
@@ -95,8 +94,7 @@ export const accountant = ac.newRole({
   driver: ['create', 'read', 'update'],
   vehicle: ['create', 'read', 'update'],
 
-  quotation: ['create', 'read', 'update', 'change-status'],
-  order: ['create', 'read', 'update'],
+  order: ['create', 'read', 'update', 'cancel'],
   'customer-credit': ['read'],
 
   production: ['create', 'read', 'allocate'],
@@ -138,8 +136,7 @@ const fullBusinessAccess = {
   driver: ['create', 'read', 'update'],
   vehicle: ['create', 'read', 'update'],
 
-  quotation: ['create', 'read', 'update', 'change-status'],
-  order: ['create', 'read', 'update'],
+  order: ['create', 'read', 'update', 'cancel'],
   'customer-credit': ['read', 'set-opening-balance', 'override'],
 
   production: ['create', 'read', 'allocate'],

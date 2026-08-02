@@ -14,21 +14,22 @@ import type { GenerateDocumentInput, GeneratedDocumentFile } from './documents.t
 /**
  * Shared "generate an official PDF" pipeline.
  *
- * Built once here so Quotations (Phase 5A) and Invoices/Receipts (Phase 9)
+ * Built once in Phase 5A so Quotations and Invoices/Receipts (Phase 9) could
  * share the same rules: the backend renders from saved data, the file is
  * stored permanently, and a `GeneratedDocument` row makes every version
- * traceable. See docs/technical-blueprint.md sections 4.14 and 9.
+ * traceable. Quotations were removed in Phase 6C-3 (2026-08-02); the pipeline
+ * remains generic for Invoices/Receipts. See docs/technical-blueprint.md
+ * sections 4.14 and 9.
  *
  * A new version is only rendered when the source record has changed since
  * the last one was generated (`sourceUpdatedAt` newer than the latest
  * version's `generatedAt`) — this keeps repeat downloads of an unchanged
  * document from piling up duplicate files or launching Chromium needlessly.
- * Once a quotation (or later, an invoice/receipt) can no longer be edited,
- * every download after that reuses the same stored file.
+ * Once an invoice/receipt can no longer be edited, every download after that
+ * reuses the same stored file.
  */
 
 const STORAGE_CATEGORY: Record<GeneratedDocumentType, string> = {
-  QUOTATION: 'quotation-pdfs',
   INVOICE: 'invoice-pdfs',
   RECEIPT: 'receipt-pdfs',
 };

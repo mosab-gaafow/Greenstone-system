@@ -3,7 +3,7 @@ import { getRequestContext } from '../../shared/auth/session.middleware.js';
 import { buildPaginationMeta, sendCreated, sendSuccess } from '../../shared/responses/api-response.js';
 import { getValidatedQuery } from '../../shared/validation/validate.js';
 import * as ordersService from './orders.service.js';
-import type { CreateOrderInput, ListOrdersFilters } from './orders.types.js';
+import type { CancelOrderInput, CreateOrderInput, ListOrdersFilters } from './orders.types.js';
 
 /**
  * HTTP handling for orders.
@@ -39,6 +39,21 @@ export async function create(req: Request, res: Response, next: NextFunction): P
     sendCreated(
       res,
       await ordersService.createOrder(req.body as CreateOrderInput, getRequestContext(res)),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function cancel(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await ordersService.cancelOrder(
+        req.params['id'] as string,
+        req.body as CancelOrderInput,
+        getRequestContext(res),
+      ),
     );
   } catch (error) {
     next(error);

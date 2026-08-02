@@ -64,8 +64,8 @@ export function ProductActions({ product }: { product: Product }) {
         title={deactivating ? `Deactivate ${product.name}?` : `Activate ${product.name}?`}
         description={
           deactivating
-            ? 'It will no longer be available on new quotations and orders. Existing records keep it, and you can activate it again at any time.'
-            : 'It will become available again on new quotations and orders.'
+            ? 'It will no longer be available on new orders. Existing records keep it, and you can activate it again at any time.'
+            : 'It will become available again on new orders.'
         }
         confirmLabel={deactivating ? 'Deactivate' : 'Activate'}
         destructive={deactivating}

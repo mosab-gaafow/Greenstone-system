@@ -4,8 +4,8 @@ import type { ProductCategory } from '../../generated/prisma/client.js';
  * Product module types.
  *
  * There is deliberately no price anywhere in this module. Greenstone agrees a
- * price per customer per transaction, and quotation, order and invoice items
- * each store their own snapshot. See business-blueprint section 2.4.
+ * price per customer per transaction, and order and invoice items each store
+ * their own snapshot. See business-blueprint section 2.4.
  */
 
 export interface ProductSummary {

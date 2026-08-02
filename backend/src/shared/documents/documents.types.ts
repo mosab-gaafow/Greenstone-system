@@ -8,9 +8,9 @@ import type { GeneratedDocumentType } from '../../generated/prisma/client.js';
 
 export interface GenerateDocumentInput {
   documentType: GeneratedDocumentType;
-  /** Id of the quotation, invoice, or receipt this document belongs to. */
+  /** Id of the invoice or receipt this document belongs to. */
   relatedEntityId: string;
-  /** The official number, e.g. "QUO-2026-0001". Used only for the file name. */
+  /** The official number, e.g. "INV-2026-0001". Used only for the file name. */
   documentNumber: string;
   /** Fully rendered HTML, built by the calling module from saved data. */
   html: string;

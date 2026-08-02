@@ -1,9 +1,10 @@
-import type { OrderPaymentType } from '../../generated/prisma/client.js';
+import type { OrderPaymentArrangement, OrderStatus } from '../../generated/prisma/client.js';
 
 /**
  * Order module types.
  *
- * See business-blueprint section 2.6 and docs/implementation-plan.md Phase 5B.
+ * See business-blueprint section 2.6, docs/implementation-plan.md Phase
+ * 5B/6C-2, and docs/decisions/business-workflow-update-2026-08-02.md.
  */
 
 export interface OrderItemInput {
@@ -33,8 +34,9 @@ export interface OrderSummary {
   customerName: string;
   customerAddressId: string;
   addressLabel: string;
-  sourceQuotationId: string | null;
-  paymentType: OrderPaymentType;
+  paymentArrangement: OrderPaymentArrangement;
+  status: OrderStatus;
+  statusReason: string | null;
   totalAmount: string;
   itemCount: number;
   createdAt: string;
@@ -48,19 +50,23 @@ export interface OrderDetail extends Omit<OrderSummary, 'itemCount'> {
 }
 
 /**
- * One request shape, two sources: exactly one of `sourceQuotationId` or
- * (`customerId` + `items`) must be present — the service enforces this.
+ * Direct order creation only — quotation conversion removed (Phase 6C-2,
+ * 2026-08-02).
  *
  * `creditOverrideReason` only matters when the customer is BLOCKED and the
  * order is CREDIT — see business-blueprint section 2.24.
  */
 export interface CreateOrderInput {
-  customerId?: string | undefined;
-  sourceQuotationId?: string | undefined;
+  customerId: string;
   customerAddressId: string;
-  paymentType: OrderPaymentType;
-  items?: OrderItemInput[] | undefined;
+  paymentArrangement: OrderPaymentArrangement;
+  items: OrderItemInput[];
   creditOverrideReason?: string | undefined;
+}
+
+/** Cancellation requires a written reason — never optional, unlike Quotation's. */
+export interface CancelOrderInput {
+  reason: string;
 }
 
 export type OrderSortField = 'orderNumber' | 'createdAt';
@@ -71,7 +77,8 @@ export interface ListOrdersFilters {
   pageSize: number;
   search?: string | undefined;
   customerId?: string | undefined;
-  paymentType?: OrderPaymentType | undefined;
+  paymentArrangement?: OrderPaymentArrangement | undefined;
+  status?: OrderStatus | undefined;
   sortBy: OrderSortField;
   sortDirection: SortDirection;
 }
