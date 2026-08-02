@@ -6,7 +6,7 @@ import { Users } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageContainer } from '@/components/layout/page-container';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { CustomerForm } from '@/features/customers/components/customer-form';
+import { CustomerFormDialog } from '@/features/customers/components/customer-form-dialog';
 import { useCustomer, useUpdateCustomer } from '@/features/customers/hooks/use-customers';
 
 export default function EditCustomerPage({ params }: { params: Promise<{ id: string }> }) {
@@ -15,6 +15,10 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
 
   const query = useCustomer(id);
   const updateCustomer = useUpdateCustomer(id);
+
+  function close() {
+    router.push(`/customers/${id}`);
+  }
 
   if (query.isPending) {
     return (
@@ -41,15 +45,17 @@ export default function EditCustomerPage({ params }: { params: Promise<{ id: str
   }
 
   return (
-    <PageContainer title={`Edit ${query.data.name}`} description="Update the customer details.">
-      <CustomerForm
-        customer={query.data}
-        pending={updateCustomer.isPending}
-        onSubmit={async (values) => {
-          await updateCustomer.mutateAsync(values);
-          router.push(`/customers/${id}`);
-        }}
-      />
-    </PageContainer>
+    <CustomerFormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      customer={query.data}
+      pending={updateCustomer.isPending}
+      onSubmit={async (values) => {
+        await updateCustomer.mutateAsync(values);
+        close();
+      }}
+    />
   );
 }

@@ -2,12 +2,12 @@
 
 import { use } from 'react';
 import { useRouter } from 'next/navigation';
+import { Package } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageContainer } from '@/components/layout/page-container';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { ProductForm } from '@/features/products/components/product-form';
+import { ProductFormDialog } from '@/features/products/components/product-form-dialog';
 import { useProduct, useUpdateProduct } from '@/features/products/hooks/use-products';
-import { Package } from 'lucide-react';
 
 export default function EditProductPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -15,6 +15,10 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
 
   const query = useProduct(id);
   const updateProduct = useUpdateProduct(id);
+
+  function close() {
+    router.push(`/products/${id}`);
+  }
 
   if (query.isPending) {
     return (
@@ -41,15 +45,17 @@ export default function EditProductPage({ params }: { params: Promise<{ id: stri
   }
 
   return (
-    <PageContainer title={`Edit ${query.data.name}`} description="Update the product details.">
-      <ProductForm
-        product={query.data}
-        pending={updateProduct.isPending}
-        onSubmit={async (values) => {
-          await updateProduct.mutateAsync(values);
-          router.push(`/products/${id}`);
-        }}
-      />
-    </PageContainer>
+    <ProductFormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) close();
+      }}
+      product={query.data}
+      pending={updateProduct.isPending}
+      onSubmit={async (values) => {
+        await updateProduct.mutateAsync(values);
+        close();
+      }}
+    />
   );
 }

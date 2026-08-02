@@ -15,20 +15,15 @@ import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { Pagination } from '@/components/data-display/pagination';
-import { SearchInput } from '@/components/shared/search-input';
-import { FilterSelect } from '@/components/shared/filter-select';
+import { TableToolbar } from '@/components/data-display/table-toolbar';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useUrlFilters } from '@/hooks/use-url-filters';
+import { formatDate } from '@/lib/format';
 import { useCustomers, useSetCustomerActive } from '../hooks/use-customers';
+import { CustomerStatusTabs } from './customer-status-tabs';
 import type { Customer } from '../types/customer.types';
 
 const DEFAULTS = { page: '1', search: '', status: 'all' } as const;
-
-const STATUS_FILTER = [
-  { value: 'all', label: 'All statuses' },
-  { value: 'active', label: 'Active' },
-  { value: 'inactive', label: 'Inactive' },
-];
 
 const PAGE_SIZE = 25;
 
@@ -52,10 +47,17 @@ export function CustomerList() {
       header: 'Customer',
       card: 'title',
       render: (customer) => (
-        <Link href={`/customers/${customer.id}`} className="hover:underline">
-          {customer.name}
-        </Link>
+        <div className="min-w-0">
+          <Link
+            href={`/customers/${customer.id}`}
+            className="text-primary font-semibold hover:underline"
+          >
+            {customer.name}
+          </Link>
+          <p className="text-muted-foreground text-xs">Added {formatDate(customer.createdAt)}</p>
+        </div>
       ),
+      sortValue: (customer) => customer.name.toLowerCase(),
     },
     { key: 'phone', header: 'Phone', card: 'subtitle', render: (customer) => customer.phone },
     {
@@ -68,13 +70,17 @@ export function CustomerList() {
       key: 'sites',
       header: 'Sites',
       card: 'meta',
+      align: 'right',
+      className: 'tabular-nums',
       render: (customer) => String(customer.addressCount),
+      sortValue: (customer) => customer.addressCount,
     },
     {
       key: 'status',
       header: 'Status',
       card: 'badge',
       render: (customer) => <StatusBadge isActive={customer.isActive} />,
+      sortValue: (customer) => (customer.isActive ? 1 : 0),
     },
     {
       key: 'actions',
@@ -117,23 +123,25 @@ export function CustomerList() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col gap-3 sm:flex-row">
-        <SearchInput
-          value={values.search}
-          onChange={(search) => {
-            setFilters({ search });
-          }}
-          placeholder="Search by name, phone or email"
-        />
-        <FilterSelect
-          label="Status"
-          value={values.status}
-          options={STATUS_FILTER}
-          onChange={(status) => {
-            setFilters({ status });
-          }}
-        />
-      </div>
+      <TableToolbar
+        search={values.search}
+        onSearchChange={(search) => {
+          setFilters({ search });
+        }}
+        searchPlaceholder="Search by name, phone or email"
+        isFiltered={isFiltered}
+        onReset={() => {
+          setFilters({ search: '', status: 'all' });
+        }}
+        filters={
+          <CustomerStatusTabs
+            value={values.status}
+            onChange={(status) => {
+              setFilters({ status });
+            }}
+          />
+        }
+      />
 
       {query.isPending ? (
         <ListSkeleton />

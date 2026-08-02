@@ -18,7 +18,8 @@ import { clearCsrfToken } from '@/lib/api-client';
 import { LOGIN_PATH } from '@/lib/config';
 import { roleLabel, type CurrentUser } from '@/lib/permissions';
 
-export function UserMenu({ user }: { user: CurrentUser }) {
+/** Shared sign-out flow — used by both the header and sidebar user menus. */
+export function useSignOut() {
   const [signingOut, setSigningOut] = useState(false);
 
   async function handleSignOut() {
@@ -37,13 +38,45 @@ export function UserMenu({ user }: { user: CurrentUser }) {
     }
   }
 
+  return { signingOut, handleSignOut };
+}
+
+/** The dropdown body — identity summary plus sign-out. Shared by every trigger. */
+export function UserMenuContent({ user }: { user: CurrentUser }) {
+  const { signingOut, handleSignOut } = useSignOut();
+
+  return (
+    <DropdownMenuContent align="end" className="w-60">
+      <DropdownMenuLabel className="font-normal">
+        <span className="block text-sm font-medium">{user.name}</span>
+        <span className="text-muted-foreground block truncate text-xs">{user.email}</span>
+        <span className="text-muted-foreground mt-1 block text-xs">{roleLabel(user.role)}</span>
+      </DropdownMenuLabel>
+
+      <DropdownMenuSeparator />
+
+      <DropdownMenuItem
+        variant="destructive"
+        disabled={signingOut}
+        onClick={() => {
+          void handleSignOut();
+        }}
+      >
+        <LogOut className="size-4" aria-hidden />
+        {signingOut ? 'Signing out…' : 'Sign out'}
+      </DropdownMenuItem>
+    </DropdownMenuContent>
+  );
+}
+
+export function UserMenu({ user }: { user: CurrentUser }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button variant="ghost" className="h-11 gap-2.5 px-2" aria-label="Account menu">
             <Avatar className="size-8">
-              <AvatarFallback className="bg-brand-50 text-brand-600 text-xs font-semibold dark:bg-brand-900 dark:text-brand-100">
+              <AvatarFallback className="bg-accent text-accent-foreground text-xs font-semibold">
                 {initials(user.name)}
               </AvatarFallback>
             </Avatar>
@@ -55,31 +88,12 @@ export function UserMenu({ user }: { user: CurrentUser }) {
         }
       />
 
-      <DropdownMenuContent align="end" className="w-60">
-        <DropdownMenuLabel className="font-normal">
-          <span className="block text-sm font-medium">{user.name}</span>
-          <span className="text-muted-foreground block truncate text-xs">{user.email}</span>
-          <span className="text-muted-foreground mt-1 block text-xs">{roleLabel(user.role)}</span>
-        </DropdownMenuLabel>
-
-        <DropdownMenuSeparator />
-
-        <DropdownMenuItem
-          variant="destructive"
-          disabled={signingOut}
-          onClick={() => {
-            void handleSignOut();
-          }}
-        >
-          <LogOut className="size-4" aria-hidden />
-          {signingOut ? 'Signing out…' : 'Sign out'}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
+      <UserMenuContent user={user} />
     </DropdownMenu>
   );
 }
 
-function initials(name: string): string {
+export function initials(name: string): string {
   return name
     .split(/\s+/)
     .filter(Boolean)

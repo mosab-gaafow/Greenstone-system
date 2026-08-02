@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { MapPin, MoreHorizontal, PencilLine, Plus, Power, PowerOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -47,13 +48,18 @@ export function AddressManager({ customerId, addresses, canEdit }: AddressManage
   }
 
   return (
-    <section className="space-y-4">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h2 className="font-heading text-base font-semibold">Building sites</h2>
-          <p className="text-muted-foreground text-sm">
-            Deliveries go to one site. A site can be used by many orders.
-          </p>
+    <Card className="gap-4">
+      <CardHeader className="flex flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <span className="bg-accent text-accent-foreground flex size-9 shrink-0 items-center justify-center rounded-lg">
+            <MapPin className="size-4" aria-hidden />
+          </span>
+          <div>
+            <h2 className="font-heading text-base font-semibold">Building sites</h2>
+            <p className="text-muted-foreground text-sm">
+              Deliveries go to one site. A site can be used by many orders.
+            </p>
+          </div>
         </div>
         {canEdit && addresses.length > 0 && (
           <Button variant="outline" className="h-11 shrink-0" onClick={openAdd}>
@@ -61,84 +67,86 @@ export function AddressManager({ customerId, addresses, canEdit }: AddressManage
             <span className="hidden sm:inline">Add site</span>
           </Button>
         )}
-      </div>
+      </CardHeader>
 
-      {addresses.length === 0 ? (
-        <div className="rounded-lg border">
-          <EmptyState
-            icon={MapPin}
-            title="No sites yet"
-            description="Add the places this customer wants deliveries taken to."
-            action={
-              canEdit ? (
-                <Button onClick={openAdd}>
-                  <Plus className="size-4" aria-hidden />
-                  Add site
-                </Button>
-              ) : undefined
-            }
-          />
-        </div>
-      ) : (
-        <ul className="space-y-3">
-          {addresses.map((address) => (
-            <li key={address.id} className="bg-card rounded-lg border p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <p className="truncate font-medium">{address.label}</p>
-                  <p className="text-muted-foreground text-sm">{address.addressLine}</p>
-                  {address.directions && (
-                    <p className="text-muted-foreground text-sm italic">{address.directions}</p>
-                  )}
-                </div>
+      <CardContent>
+        {addresses.length === 0 ? (
+          <div className="rounded-lg border">
+            <EmptyState
+              icon={MapPin}
+              title="No sites yet"
+              description="Add the places this customer wants deliveries taken to."
+              action={
+                canEdit ? (
+                  <Button onClick={openAdd}>
+                    <Plus className="size-4" aria-hidden />
+                    Add site
+                  </Button>
+                ) : undefined
+              }
+            />
+          </div>
+        ) : (
+          <ul className="space-y-3">
+            {addresses.map((address) => (
+              <li key={address.id} className="bg-muted/40 rounded-lg border p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 space-y-1">
+                    <p className="truncate font-medium">{address.label}</p>
+                    <p className="text-muted-foreground text-sm">{address.addressLine}</p>
+                    {address.directions && (
+                      <p className="text-muted-foreground text-sm italic">{address.directions}</p>
+                    )}
+                  </div>
 
-                <div className="flex shrink-0 items-center gap-2">
-                  <StatusBadge isActive={address.isActive} />
+                  <div className="flex shrink-0 items-center gap-2">
+                    <StatusBadge isActive={address.isActive} />
 
-                  {canEdit && (
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            aria-label={`Actions for ${address.label}`}
+                    {canEdit && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              aria-label={`Actions for ${address.label}`}
+                            >
+                              <MoreHorizontal className="size-4" aria-hidden />
+                            </Button>
+                          }
+                        />
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem
+                            onClick={() => {
+                              openEdit(address);
+                            }}
                           >
-                            <MoreHorizontal className="size-4" aria-hidden />
-                          </Button>
-                        }
-                      />
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem
-                          onClick={() => {
-                            openEdit(address);
-                          }}
-                        >
-                          <PencilLine className="size-4" aria-hidden />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          variant={address.isActive ? 'destructive' : 'default'}
-                          onClick={() => {
-                            setConfirming(address);
-                          }}
-                        >
-                          {address.isActive ? (
-                            <PowerOff className="size-4" aria-hidden />
-                          ) : (
-                            <Power className="size-4" aria-hidden />
-                          )}
-                          {address.isActive ? 'Deactivate' : 'Activate'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  )}
+                            <PencilLine className="size-4" aria-hidden />
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            variant={address.isActive ? 'destructive' : 'default'}
+                            onClick={() => {
+                              setConfirming(address);
+                            }}
+                          >
+                            {address.isActive ? (
+                              <PowerOff className="size-4" aria-hidden />
+                            ) : (
+                              <Power className="size-4" aria-hidden />
+                            )}
+                            {address.isActive ? 'Deactivate' : 'Activate'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
+                  </div>
                 </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
 
       <AddressDialog
         open={dialogOpen}
@@ -184,6 +192,6 @@ export function AddressManager({ customerId, addresses, canEdit }: AddressManage
           }
         }}
       />
-    </section>
+    </Card>
   );
 }

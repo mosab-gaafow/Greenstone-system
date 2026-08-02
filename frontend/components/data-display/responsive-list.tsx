@@ -1,6 +1,16 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { useMemo, useState } from 'react';
+import {
+  type ColumnDef,
+  type SortingState,
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+} from '@tanstack/react-table';
+import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 import {
   Table,
   TableBody,
@@ -18,6 +28,11 @@ import { cn } from '@/lib/utils';
  * than two, so a screen cannot accidentally ship one and forget the other, and
  * so no wide table ever forces horizontal scrolling on a phone.
  *
+ * The desktop table is built on TanStack Table so a column can sort. Sorting
+ * only reorders the page of records already on screen — the backend list
+ * endpoints do not accept a sort parameter yet, so this is an honest, useful
+ * client-side sort rather than a claim of server-side ordering.
+ *
  * The caller describes each column once. `card` decides how the column appears
  * on a phone:
  *
@@ -32,7 +47,14 @@ export interface ListColumn<TRecord> {
   header: string;
   render: (record: TRecord) => ReactNode;
   card?: 'title' | 'subtitle' | 'meta' | 'badge' | 'hidden';
-  /** Right-aligns the desktop cell. Used for actions. */
+  /** Right-aligns the desktop cell. Used for actions and numbers. */
+  align?: 'left' | 'right';
+  className?: string;
+  /** Enables sorting the current page by this column. */
+  sortValue?: (record: TRecord) => string | number;
+}
+
+interface ColumnMeta {
   align?: 'left' | 'right';
   className?: string;
 }
@@ -41,8 +63,6 @@ interface ResponsiveListProps<TRecord> {
   records: TRecord[];
   columns: ListColumn<TRecord>[];
   getRowKey: (record: TRecord) => string;
-  /** Makes the whole row and card open this link. */
-  getRowHref?: (record: TRecord) => string;
   onRowClick?: (record: TRecord) => void;
   emptyState: ReactNode;
   caption?: string;
@@ -56,8 +76,32 @@ export function ResponsiveList<TRecord>({
   emptyState,
   caption,
 }: ResponsiveListProps<TRecord>) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+
+  const tableColumns = useMemo<ColumnDef<TRecord, unknown>[]>(
+    () =>
+      columns.map((column) => ({
+        id: column.key,
+        header: column.header,
+        accessorFn: column.sortValue ?? (() => ''),
+        enableSorting: Boolean(column.sortValue),
+        cell: ({ row }) => column.render(row.original),
+        meta: { align: column.align, className: column.className } satisfies ColumnMeta,
+      })),
+    [columns],
+  );
+
+  const table = useReactTable({
+    data: records,
+    columns: tableColumns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
   if (records.length === 0) {
-    return <div className="rounded-lg border">{emptyState}</div>;
+    return <div className="rounded-xl border">{emptyState}</div>;
   }
 
   const title = columns.find((column) => column.card === 'title');
@@ -73,7 +117,7 @@ export function ResponsiveList<TRecord>({
         {records.map((record) => (
           <li
             key={getRowKey(record)}
-            className="bg-card rounded-lg border p-4 shadow-xs"
+            className="bg-card rounded-xl border p-4 shadow-xs dark:shadow-none"
             onClick={
               onRowClick
                 ? () => {
@@ -117,42 +161,80 @@ export function ResponsiveList<TRecord>({
       </ul>
 
       {/* Desktop: table */}
-      <div className="hidden overflow-hidden rounded-lg border md:block">
+      <div className="hidden overflow-hidden rounded-xl border md:block">
         <Table>
           {caption && <caption className="sr-only">{caption}</caption>}
-          <TableHeader>
-            <TableRow>
-              {columns.map((column) => (
-                <TableHead
-                  key={column.key}
-                  className={cn(column.align === 'right' && 'text-right', column.className)}
-                >
-                  {column.header}
-                </TableHead>
-              ))}
-            </TableRow>
+          <TableHeader className="bg-muted/40">
+            {table.getHeaderGroups().map((headerGroup) => (
+              <TableRow key={headerGroup.id} className="hover:bg-transparent">
+                {headerGroup.headers.map((header) => {
+                  const columnMeta = header.column.columnDef.meta as ColumnMeta | undefined;
+                  const canSort = header.column.getCanSort();
+                  const sortDirection = header.column.getIsSorted();
+
+                  return (
+                    <TableHead
+                      key={header.id}
+                      className={cn(
+                        columnMeta?.align === 'right' && 'text-right',
+                        columnMeta?.className,
+                      )}
+                    >
+                      {canSort ? (
+                        <button
+                          type="button"
+                          onClick={header.column.getToggleSortingHandler()}
+                          className={cn(
+                            'group/sort text-foreground hover:text-foreground inline-flex items-center gap-1',
+                            columnMeta?.align === 'right' && 'flex-row-reverse',
+                          )}
+                        >
+                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {sortDirection === 'asc' ? (
+                            <ArrowUp className="text-primary size-3.5" aria-hidden />
+                          ) : sortDirection === 'desc' ? (
+                            <ArrowDown className="text-primary size-3.5" aria-hidden />
+                          ) : (
+                            <ArrowUpDown
+                              className="size-3.5 opacity-0 transition-opacity group-hover/sort:opacity-40"
+                              aria-hidden
+                            />
+                          )}
+                        </button>
+                      ) : (
+                        flexRender(header.column.columnDef.header, header.getContext())
+                      )}
+                    </TableHead>
+                  );
+                })}
+              </TableRow>
+            ))}
           </TableHeader>
           <TableBody>
-            {records.map((record) => (
+            {table.getRowModel().rows.map((row) => (
               <TableRow
-                key={getRowKey(record)}
+                key={row.id}
                 className={cn(onRowClick && 'cursor-pointer')}
                 onClick={
                   onRowClick
                     ? () => {
-                        onRowClick(record);
+                        onRowClick(row.original);
                       }
                     : undefined
                 }
               >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.key}
-                    className={cn(column.align === 'right' && 'text-right', column.className)}
-                  >
-                    {column.render(record)}
-                  </TableCell>
-                ))}
+                {row.getVisibleCells().map((cell) => {
+                  const columnMeta = cell.column.columnDef.meta as ColumnMeta | undefined;
+
+                  return (
+                    <TableCell
+                      key={cell.id}
+                      className={cn(columnMeta?.align === 'right' && 'text-right', columnMeta?.className)}
+                    >
+                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                    </TableCell>
+                  );
+                })}
               </TableRow>
             ))}
           </TableBody>

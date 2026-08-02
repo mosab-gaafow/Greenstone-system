@@ -1,6 +1,6 @@
 'use client';
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-client';
 import * as customersApi from '../api/customers.api';
@@ -26,6 +26,39 @@ export function useCustomer(id: string) {
     queryKey: customerKeys.detail(id),
     queryFn: () => customersApi.fetchCustomer(id),
   });
+}
+
+/**
+ * Counts for the summary cards above the customer list.
+ *
+ * Reuses the existing list endpoint with `pageSize: 1` — the count is read
+ * from `meta.totalRecords`, so this needs no new backend endpoint. Three
+ * small requests (all, active, inactive) rather than one large one.
+ */
+export function useCustomerSummary() {
+  const [all, active, inactive] = useQueries({
+    queries: [
+      {
+        queryKey: customerKeys.list({ page: 1, pageSize: 1 }),
+        queryFn: () => customersApi.fetchCustomers({ page: 1, pageSize: 1 }),
+      },
+      {
+        queryKey: customerKeys.list({ page: 1, pageSize: 1, isActive: true }),
+        queryFn: () => customersApi.fetchCustomers({ page: 1, pageSize: 1, isActive: true }),
+      },
+      {
+        queryKey: customerKeys.list({ page: 1, pageSize: 1, isActive: false }),
+        queryFn: () => customersApi.fetchCustomers({ page: 1, pageSize: 1, isActive: false }),
+      },
+    ],
+  });
+
+  return {
+    total: all.data?.meta.totalRecords,
+    active: active.data?.meta.totalRecords,
+    inactive: inactive.data?.meta.totalRecords,
+    isLoading: all.isPending || active.isPending || inactive.isPending,
+  };
 }
 
 function errorMessage(error: unknown, fallback: string): string {

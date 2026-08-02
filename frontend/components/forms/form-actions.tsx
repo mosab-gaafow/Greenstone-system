@@ -1,6 +1,6 @@
 'use client';
 
-import { Loader2 } from 'lucide-react';
+import { Loader2, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -12,6 +12,8 @@ interface FormActionsProps {
   cancelLabel?: string;
   /** Pins the bar to the bottom of the screen on phones. */
   sticky?: boolean;
+  /** Shown on the submit button; replaced by a spinner while pending. */
+  submitIcon?: LucideIcon;
 }
 
 /**
@@ -28,6 +30,7 @@ export function FormActions({
   onCancel,
   cancelLabel = 'Cancel',
   sticky = true,
+  submitIcon: SubmitIcon,
 }: FormActionsProps) {
   return (
     <div
@@ -49,7 +52,11 @@ export function FormActions({
         </Button>
       )}
       <Button type="submit" className="h-11 sm:w-auto" disabled={pending}>
-        {pending && <Loader2 className="size-4 animate-spin" aria-hidden />}
+        {pending ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+        ) : (
+          SubmitIcon && <SubmitIcon className="size-4" aria-hidden />
+        )}
         {pending ? (pendingLabel ?? 'Saving…') : submitLabel}
       </Button>
     </div>

@@ -1,8 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { PageContainer } from '@/components/layout/page-container';
-import { ProductForm } from '@/features/products/components/product-form';
+import { ProductFormDialog } from '@/features/products/components/product-form-dialog';
 import { useCreateProduct } from '@/features/products/hooks/use-products';
 
 export default function NewProductPage() {
@@ -10,14 +9,18 @@ export default function NewProductPage() {
   const createProduct = useCreateProduct();
 
   return (
-    <PageContainer title="Add product" description="Add a product to the master list.">
-      <ProductForm
-        pending={createProduct.isPending}
-        onSubmit={async (values) => {
-          const product = await createProduct.mutateAsync(values);
-          router.push(`/products/${product.id}`);
-        }}
-      />
-    </PageContainer>
+    <ProductFormDialog
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          router.push('/products');
+        }
+      }}
+      pending={createProduct.isPending}
+      onSubmit={async (values) => {
+        const product = await createProduct.mutateAsync(values);
+        router.push(`/products/${product.id}`);
+      }}
+    />
   );
 }

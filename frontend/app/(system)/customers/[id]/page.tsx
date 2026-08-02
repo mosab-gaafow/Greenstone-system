@@ -6,7 +6,8 @@ import { ArrowLeft, PencilLine, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
-import { PageContainer } from '@/components/layout/page-container';
+import { PageHeader } from '@/components/layout/page-header';
+import { DetailRow } from '@/components/data-display/detail-row';
 import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { AddressManager } from '@/features/customers/components/address-manager';
@@ -18,19 +19,19 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
 
   if (query.isPending) {
     return (
-      <PageContainer title="Customer">
+      <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
         <div className="max-w-2xl space-y-3">
           <Skeleton className="h-6 w-1/2" />
           <Skeleton className="h-32 w-full" />
           <Skeleton className="h-24 w-full" />
         </div>
-      </PageContainer>
+      </div>
     );
   }
 
   if (query.isError) {
     return (
-      <PageContainer title="Customer">
+      <div className="w-full p-4 sm:p-6 lg:p-8">
         <EmptyState
           icon={Users}
           title="This customer could not be loaded"
@@ -42,55 +43,52 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             </Button>
           }
         />
-      </PageContainer>
+      </div>
     );
   }
 
   const customer = query.data;
 
   return (
-    <PageContainer
-      title={customer.name}
-      description={customer.phone}
-      action={
-        <Button
-          render={<Link href={`/customers/${customer.id}/edit`} />}
-          className="h-11 w-full sm:w-auto"
-        >
-          <PencilLine className="size-4" aria-hidden />
-          Edit
-        </Button>
-      }
-    >
-      <div className="max-w-2xl space-y-8">
+    <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
+      <Button
+        variant="ghost"
+        size="sm"
+        render={<Link href="/customers" />}
+        className="text-muted-foreground -ml-2 h-9"
+      >
+        <ArrowLeft className="size-4" aria-hidden />
+        Back to customers
+      </Button>
+
+      <PageHeader
+        icon={Users}
+        title={customer.name}
+        badge={<StatusBadge isActive={customer.isActive} />}
+        description={customer.phone}
+        action={
+          <Button
+            render={<Link href={`/customers/${customer.id}/edit`} />}
+            className="h-11 w-full sm:w-auto"
+          >
+            <PencilLine className="size-4" aria-hidden />
+            Edit
+          </Button>
+        }
+      />
+
+      <div className="max-w-2xl space-y-6">
         <Card>
-          <CardContent className="space-y-4 pt-6">
-            <Row label="Status">
-              <StatusBadge isActive={customer.isActive} />
-            </Row>
-            <Row label="Phone">{customer.phone}</Row>
-            <Row label="Email">
-              {customer.email ?? <span className="text-muted-foreground">None</span>}
-            </Row>
+          <CardContent className="space-y-4">
+            <DetailRow label="Phone">{customer.phone}</DetailRow>
+            <DetailRow label="Email">
+              {customer.email ?? <span className="text-muted-foreground">Not provided</span>}
+            </DetailRow>
           </CardContent>
         </Card>
 
         <AddressManager customerId={customer.id} addresses={customer.addresses} canEdit />
-
-        <Button variant="ghost" render={<Link href="/customers" />}>
-          <ArrowLeft className="size-4" aria-hidden />
-          Back to customers
-        </Button>
       </div>
-    </PageContainer>
-  );
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1 border-b pb-3 last:border-b-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-      <span className="text-muted-foreground text-sm">{label}</span>
-      <span className="text-sm font-medium sm:text-right">{children}</span>
     </div>
   );
 }

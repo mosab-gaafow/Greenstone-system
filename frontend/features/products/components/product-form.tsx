@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Package, Save } from 'lucide-react';
 import { TextField } from '@/components/forms/text-field';
 import { TextareaField } from '@/components/forms/textarea-field';
 import { SelectField } from '@/components/forms/select-field';
@@ -18,6 +19,8 @@ interface ProductFormProps {
   product?: Product;
   onSubmit: (values: ProductFormValues) => Promise<unknown>;
   pending: boolean;
+  /** Defaults to navigating back. A Sheet/Dialog host should close itself instead. */
+  onCancel?: () => void;
 }
 
 /**
@@ -26,7 +29,7 @@ interface ProductFormProps {
  * There is no price field, by design. Prices are agreed per transaction and
  * captured on the quotation, order or invoice.
  */
-export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
+export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFormProps) {
   const router = useRouter();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -66,7 +69,7 @@ export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
           }
         })(event);
       }}
-      className="max-w-xl space-y-8"
+      className="space-y-6"
       noValidate
     >
       {submitError && (
@@ -78,41 +81,44 @@ export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
       <FormSection
         title="Product details"
         description="Products have no fixed price. The price is agreed on each quotation and order."
+        icon={Package}
       >
         <TextField
           id="name"
           label="Product name"
           required
-          placeholder="Hollow Blocks 6 × 9"
+          placeholder="e.g. Hollow Blocks 6 × 9"
           error={errors.name?.message}
           {...register('name')}
         />
 
-        <Controller
-          name="category"
-          control={control}
-          render={({ field }) => (
-            <SelectField
-              id="category"
-              label="Category"
-              required
-              value={field.value}
-              onChange={field.onChange}
-              options={CATEGORY_OPTIONS}
-              error={errors.category?.message}
-            />
-          )}
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Controller
+            name="category"
+            control={control}
+            render={({ field }) => (
+              <SelectField
+                id="category"
+                label="Category"
+                required
+                value={field.value}
+                onChange={field.onChange}
+                options={CATEGORY_OPTIONS}
+                error={errors.category?.message}
+              />
+            )}
+          />
 
-        <TextField
-          id="size"
-          label="Size"
-          required
-          placeholder="6 × 9"
-          hint="As written on quotations and delivery notes."
-          error={errors.size?.message}
-          {...register('size')}
-        />
+          <TextField
+            id="size"
+            label="Size"
+            required
+            placeholder="e.g. 6 × 9"
+            hint="As written on quotations and delivery notes."
+            error={errors.size?.message}
+            {...register('size')}
+          />
+        </div>
 
         <TextareaField
           id="description"
@@ -124,10 +130,15 @@ export function ProductForm({ product, onSubmit, pending }: ProductFormProps) {
       </FormSection>
 
       <FormActions
-        submitLabel={product ? 'Save changes' : 'Add product'}
+        submitLabel={product ? 'Save changes' : 'Save product'}
+        submitIcon={Save}
         pending={pending}
         onCancel={() => {
-          router.back();
+          if (onCancel) {
+            onCancel();
+          } else {
+            router.back();
+          }
         }}
       />
     </form>

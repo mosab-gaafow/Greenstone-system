@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { Save, UserRound } from 'lucide-react';
 import { TextField } from '@/components/forms/text-field';
 import { FormSection } from '@/components/forms/form-section';
 import { FormActions } from '@/components/forms/form-actions';
@@ -16,9 +17,11 @@ interface CustomerFormProps {
   customer?: Customer;
   onSubmit: (values: CustomerFormValues) => Promise<unknown>;
   pending: boolean;
+  /** Defaults to navigating back. A Sheet/Dialog host should close itself instead. */
+  onCancel?: () => void;
 }
 
-export function CustomerForm({ customer, onSubmit, pending }: CustomerFormProps) {
+export function CustomerForm({ customer, onSubmit, pending, onCancel }: CustomerFormProps) {
   const router = useRouter();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
@@ -56,7 +59,7 @@ export function CustomerForm({ customer, onSubmit, pending }: CustomerFormProps)
           }
         })(event);
       }}
-      className="max-w-xl space-y-8"
+      className="space-y-6"
       noValidate
     >
       {submitError && (
@@ -65,48 +68,56 @@ export function CustomerForm({ customer, onSubmit, pending }: CustomerFormProps)
         </Alert>
       )}
 
-      <FormSection title="Customer details">
+      <FormSection title="Basic information" icon={UserRound}>
         <TextField
           id="name"
           label="Customer name"
           required
-          placeholder="Kamau Contractors"
+          placeholder="e.g. Kamau Contractors"
           error={errors.name?.message}
           {...register('name')}
         />
 
-        <TextField
-          id="phone"
-          label="Phone number"
-          required
-          // Opens the phone keypad on a mobile device.
-          type="tel"
-          inputMode="tel"
-          autoComplete="tel"
-          placeholder="0722 123 456"
-          error={errors.phone?.message}
-          {...register('phone')}
-        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            id="phone"
+            label="Phone number"
+            required
+            // Opens the phone keypad on a mobile device.
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            placeholder="07XX XXX XXX"
+            hint="Kenyan mobile format."
+            error={errors.phone?.message}
+            {...register('phone')}
+          />
 
-        <TextField
-          id="email"
-          label="Email"
-          type="email"
-          inputMode="email"
-          autoCapitalize="none"
-          spellCheck={false}
-          placeholder="Optional"
-          hint="Used for sending quotations and invoices."
-          error={errors.email?.message}
-          {...register('email')}
-        />
+          <TextField
+            id="email"
+            label="Email"
+            type="email"
+            inputMode="email"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="e.g. name@example.com"
+            hint="Optional."
+            error={errors.email?.message}
+            {...register('email')}
+          />
+        </div>
       </FormSection>
 
       <FormActions
-        submitLabel={customer ? 'Save changes' : 'Add customer'}
+        submitLabel={customer ? 'Save changes' : 'Save customer'}
+        submitIcon={Save}
         pending={pending}
         onCancel={() => {
-          router.back();
+          if (onCancel) {
+            onCancel();
+          } else {
+            router.back();
+          }
         }}
       />
     </form>
