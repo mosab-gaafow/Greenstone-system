@@ -5,6 +5,7 @@
 //          Account, Verification), plus the Greenstone UserCapabilityGrant.
 // Phase 4A: Product.
 // Phase 4B: Customer, CustomerAddress.
+// Phase 4C: Employee, Driver, Vehicle.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
@@ -251,6 +252,121 @@ model CustomerAddress {
   @@unique([customerId, labelNormalized])
   @@index([customerId, isActive])
   @@map("customer_addresses")
+}
+
+/// Employee salary frequency. See business-blueprint section 2.28.
+enum SalaryFrequency {
+  WEEKLY
+  MONTHLY
+}
+
+/// Shared payment-method vocabulary.
+///
+/// Reused from the approved customer-payment method list (business-blueprint
+/// section 2.23) rather than inventing a second one for employees.
+enum PaymentMethod {
+  MPESA
+  CASH
+  BANK_TRANSFER
+  CHEQUE
+}
+
+/// See business-blueprint section 2.20.
+enum VehicleOwnershipType {
+  COMPANY
+  HIRED
+}
+
+/// Employee master.
+///
+/// Only the master record and its salary fields live here. Salary payment
+/// processing — registration, approval, correction, reversal — is a later
+/// phase (technical-blueprint Implementation Phase 10).
+model Employee {
+  id              String          @id @default(uuid())
+  name            String
+  phone           String
+  /// Kenyan ID number. Optional, and deliberately unvalidated in format —
+  /// same permissive philosophy as phone numbers elsewhere in this schema.
+  nationalId      String?
+  jobTitle        String
+  salaryFrequency SalaryFrequency
+  salaryAmount    Decimal         @db.Decimal(12, 2)
+  paymentMethod   PaymentMethod
+  isActive        Boolean         @default(true)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([isActive])
+  @@index([name])
+  @@map("employees")
+}
+
+/// Driver master. See business-blueprint section 2.20.
+///
+/// Not automatically a Greenstone employee — Driver and Employee are separate
+/// master-data modules, and a driver never gains salary/employee fields.
+model Driver {
+  id   String @id @default(uuid())
+  name String
+  phone String
+  /// Readable, as entered (trimmed only).
+  nationalId           String
+  /// Trimmed, uppercased, internal whitespace collapsed. This is the column
+  /// the uniqueness constraint and the duplicate check actually use, so
+  /// "12345678" and " 12345678 " can never both be entered.
+  nationalIdNormalized String   @unique
+  isActive             Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([name])
+  @@map("drivers")
+}
+
+/// Vehicle master. See business-blueprint section 2.20.
+///
+/// Hired-only for the MVP: Greenstone owns no vehicles yet. `ownershipType`
+/// stays in the schema, defaulted to HIRED and not exposed as a request
+/// field, so COMPANY support needs no migration later — but nothing here
+/// pairs a vehicle with a driver. That pairing happens per Delivery trip
+/// (Phase 8), never as a fixed property of the vehicle. See
+/// docs/implementation-plan.md Phase 4C.
+///
+/// The truck-load fields are a new approved rule, also captured in
+/// docs/implementation-plan.md Phase 4C. Every vehicle requires all three
+/// dimensions; the factor and calculated figures are stored as a snapshot,
+/// computed only by the backend (`DEFAULT_CALCULATION_FACTOR` in
+/// vehicles.service.ts), so a future change to that default never rewrites an
+/// already-saved vehicle.
+///
+/// There is deliberately no hire-cost field — a vehicle does not have one
+/// permanent hire cost. Actual transport cost varies per delivery trip and
+/// belongs to a later Delivery/Expense/transport-payment workflow.
+model Vehicle {
+  id                     String               @id @default(uuid())
+  registrationNumber     String
+  /// Uppercased, whitespace-collapsed — "KDA 123X" and "kda123x" are the same
+  /// plate and must not become two records.
+  registrationNormalized String               @unique
+  vehicleType            String
+  ownershipType          VehicleOwnershipType @default(HIRED)
+
+  truckLengthM         Decimal @db.Decimal(6, 2)
+  truckWidthM          Decimal @db.Decimal(6, 2)
+  truckHeightM         Decimal @db.Decimal(6, 2)
+  /// Snapshot of the factor used when the load was last calculated.
+  calculationFactor    Decimal @db.Decimal(10, 2)
+  calculatedLoadKg     Decimal @db.Decimal(12, 2)
+  calculatedLoadTonnes Decimal @db.Decimal(12, 3)
+
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@map("vehicles")
 }
 
 model Session {

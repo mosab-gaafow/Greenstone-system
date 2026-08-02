@@ -65,7 +65,10 @@ Claude must not:
 | 1 | Backend foundation | NOT_STARTED |
 | 2 | Authentication, users, and permissions | NOT_STARTED |
 | 3 | Frontend shell and authentication | NOT_STARTED |
-| 4 | Master data | NOT_STARTED |
+| 4A | Master data — Products and shared UI patterns | COMPLETED |
+| 4B | Master data — Customers and customer addresses | COMPLETED |
+| 4C | Master data — Employees, Drivers, and Vehicles | NOT_STARTED |
+| 4D | Master data — Suppliers, Company Settings, and development demo seed | NOT_STARTED |
 | 5 | Quotations, orders, and customer credit | NOT_STARTED |
 | 6 | Production and curing | NOT_STARTED |
 | 7 | Raw materials, purchases, and supplier balances | NOT_STARTED |
@@ -355,25 +358,22 @@ Implement:
 
 Create the records required by later workflows.
 
-## Backend and frontend modules
+Phase 4 is split into four approved sub-phases, 4A–4D, so each ships and is
+reviewed as a focused, independent change rather than one large one. This
+split is now the approved record of Phase 4 — do not collapse it back into a
+single undivided phase.
 
-Implement:
+`RawMaterial` and `MeasurementUnit` are **deferred out of Phase 4 entirely**.
+They remain in the approved MVP scope (business-blueprint sections 2.12–2.14,
+technical-blueprint section 4.9) and return together with raw-material stock,
+in the phase that needs them (Phase 7, "Raw materials, purchases, and
+supplier balances"). Do not implement them as part of 4A–4D.
 
-- Customers.
-- Customer addresses.
-- Products.
-- Measurement units.
-- Raw materials.
-- Suppliers.
-- Employees.
-- Drivers.
-- Company vehicles.
-- Hired vehicles.
-- Settings.
+## Phase 4A — Products and shared UI patterns (COMPLETED)
 
-## Product data
+Backend module: `products`.
 
-Include the confirmed initial product definitions:
+Included the confirmed initial product definitions:
 
 - Hollow Blocks 6 × 9
 - Hollow Blocks 4 × 9
@@ -382,7 +382,157 @@ Include the confirmed initial product definitions:
 - Hollow Pot 380 × 200 × 200 mm
 - Hollow Pot 380 × 200 × 300 mm
 
-Do not add a required fixed selling price to products.
+No required fixed selling price on products, per business-blueprint section 2.4.
+
+Also established the shared frontend design system every later master-data
+module reuses: the page header, connected summary-metrics card, status tabs,
+search/filter toolbar, responsive data table with mobile cards, and the
+Dialog-on-desktop / Sheet-on-mobile form pattern.
+
+## Phase 4B — Customers and customer addresses (COMPLETED)
+
+Backend module: `customers` (addresses live inside it, per
+technical-blueprint section 3.3 — a customer's building sites have no module
+of their own).
+
+Applied the Phase 4A design system to the Customers list, detail, and
+add/edit form.
+
+## Phase 4C — Employees, Drivers, and Vehicles (IN PROGRESS)
+
+Backend modules: `employees`, `drivers`, `vehicles` — three separate modules,
+each with the required six files.
+
+### Employees (COMPLETED)
+
+Fields: name, phone, optional Kenyan ID number, job title, salary frequency
+(`WEEKLY` or `MONTHLY`), salary amount, payment method, active status. See
+business-blueprint section 2.28. Shipped and unaffected by the Driver/Vehicle
+revision below.
+
+### Drivers and employees are separate (revised)
+
+A driver is **not** automatically a Greenstone employee. The two remain
+independent master-data modules — do not add salary or employee fields to
+Driver.
+
+Fields: name, phone, national ID number, active status.
+
+- `nationalId` is **required**. Stored as two columns, following the same
+  pattern as Customer phone/email and Product name: `nationalId` (trimmed,
+  the readable value shown on screen) and `nationalIdNormalized` (trimmed,
+  uppercased, internal whitespace collapsed — this is the column with the
+  `@unique` constraint, and is what the duplicate check actually compares).
+  Editing a record never silently turns it into a duplicate of another —
+  the same availability check runs on update as on create, excluding the
+  record's own id.
+- `phone` uses the same permissive validation as everywhere else in the
+  system.
+
+### Vehicles — hired-only for the MVP (revised)
+
+Greenstone currently does not own any vehicles. For the MVP:
+
+- Every registered vehicle is treated as hired.
+- The frontend does not offer a `COMPANY` ownership choice.
+- The `ownershipType` column and its `COMPANY`/`HIRED` enum stay in the
+  schema, defaulted to `HIRED` and not exposed as a request field, so company
+  vehicles can be added later without a schema migration.
+
+Fields: registration number (unique), vehicle type, truck length, truck
+width, truck height, calculation factor, calculated load (kg), calculated
+load (tonnes), active status.
+
+`hireCost` is **removed** from the Vehicle master. This does not mean hire
+cost is out of business scope — it means a vehicle does not have one
+permanent hire cost. Actual transport cost varies per delivery trip, and will
+be captured later in the approved Delivery, Expense, or transport-payment
+workflow, not invented as a rate or formula now. Vehicle payment tracking
+returns only when that workflow is approved, likely alongside
+Purchases/Supplier payments.
+
+### Truck load calculation (revised — dimensions are now required)
+
+New approved rule, captured here because it is not yet in the business or
+technical blueprint:
+
+```text
+calculatedLoadKg = truckLength × truckWidth × truckHeight × calculationFactor
+calculatedLoadTonnes = calculatedLoadKg ÷ 1000
+```
+
+- Dimensions are entered in metres, and are **required** on every vehicle
+  (the original draft made them optional — every vehicle now needs a known
+  load capacity).
+- Default `calculationFactor` is 1100, **backend-controlled**. The normal
+  vehicle form cannot change it — the UI may show it read-only, but the value
+  a vehicle is saved with always comes from the backend constant, never from
+  a request field. The backend remains the sole authority for the official
+  calculation; anything the frontend computes before saving is a preview
+  only.
+- Length, width, height, factor, kilograms, and tonnes are all stored as a
+  snapshot on the vehicle record.
+- All dimensions and the factor must be greater than zero, and — new,
+  following a production bug — capped at a realistic maximum (50 metres per
+  dimension) so a data-entry slip cannot produce a load figure that overflows
+  the database column and surfaces as a raw server error instead of a
+  validation message.
+- Calculations are decimal-safe (no floating-point money or measurement math).
+- No payment-rate or payable-amount formula is derived from this — load
+  capacity only.
+- A future change to the default factor must not change any previously saved
+  vehicle's stored figures.
+
+### Driver and vehicle relationship (new)
+
+Do not add `driverId` or `usualDriverId` on Vehicle, required or optional.
+Driver and Vehicle remain fully independent master records in Phase 4C — one
+driver may use many vehicles, one vehicle may use many drivers, and nothing
+here decides that pairing.
+
+When Phase 8 (Deliveries) is built, the Delivery record selects one Driver
+and one Vehicle **per trip**, and must preserve a full snapshot of the
+selection, not just the two ids — because a vehicle's dimensions or a
+driver's details could change later, and a past delivery's record must not
+silently change with them:
+
+- `driverId`
+- `vehicleId`
+- vehicle registration number (snapshot)
+- truck dimension snapshots (length, width, height)
+- calculation factor snapshot
+- calculated load kilograms snapshot
+- calculated load tonnes snapshot
+
+This is documentation only — no Delivery model exists yet.
+
+The approved future relationship, once Deliveries (Phase 8) exists:
+
+- One Delivery belongs to one Driver and one Vehicle.
+- One Driver may be used on many deliveries; one Vehicle may be used on many
+  deliveries.
+- Different drivers may use the same vehicle on different trips, and the same
+  driver may use different vehicles — the pairing is chosen per delivery, not
+  fixed on the vehicle record.
+
+An optional `usualDriverId` convenience field on Vehicle may be considered
+later, but it must never become a permanent ownership relationship, and it is
+explicitly **not part of the MVP** — do not build it now.
+
+Frontend follows the Phase 4A/4B design system: page header, connected
+summary metrics (Total/Active/Inactive), status tabs, search toolbar,
+responsive table with mobile cards, and Dialog/Sheet add-edit forms.
+
+## Phase 4D — Suppliers, Company Settings, and development demo seed
+
+Backend modules: `suppliers`, `settings`.
+
+Includes the development-only demo seed process for master data (Employees,
+Drivers, Vehicles, Suppliers, and any other Phase 4 record types). Demo data
+must be clearly marked, easy to remove, and never inserted automatically in
+production.
+
+Not yet detailed further — plan this sub-phase on its own when it is next.
 
 ## Caching
 
@@ -392,17 +542,9 @@ update, activate, and deactivate.
 Never cache a value a transaction acts on. See `docs/technical-blueprint.md`
 section 4A.
 
-## Demo data
-
-Prepare a development-only seed process.
-
-Demo data must:
-
-- Be clearly marked.
-- Be easy to remove.
-- Never be inserted automatically in production.
-
 ## Completion gate
+
+Per sub-phase:
 
 - Master records can be created, viewed, edited, activated, and deactivated as approved.
 - Mobile forms work.

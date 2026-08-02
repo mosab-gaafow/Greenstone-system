@@ -18,9 +18,11 @@ records what exists in code and why.
 
 ## Migrations
 
-| Migration                              | Phase | Contents                           |
-| -------------------------------------- | ----- | ---------------------------------- |
-| `20260801162336_phase1_infrastructure` | 1     | `document_sequences`, `audit_logs` |
+| Migration                                          | Phase | Contents                           |
+| --------------------------------------------------- | ----- | ----------------------------------- |
+| `20260801162336_phase1_infrastructure`               | 1     | `document_sequences`, `audit_logs` |
+| `20260802040854_phase4c_employees_drivers_vehicles` | 4C    | `employees`, `drivers`, `vehicles`  |
+| `20260802050406_phase4c_driver_national_id_vehicle_hired_only` | 4C | Driver `nationalId`/`nationalIdNormalized`; Vehicle drops `hireCost`, dimensions become required |
 
 Commands:
 
@@ -64,6 +66,31 @@ the application.
   table.
 - Indexed on `(entityType, entityId)`, `userId`, `(module, action)` and
   `createdAt`, which are the ways audit history is searched.
+
+### `vehicles`
+
+Hired-only for the MVP: `ownershipType` defaults to `HIRED` and is never
+accepted from a request — the column and enum stay in the schema so `COMPANY`
+support needs no migration later. There is no `hireCost` column; a vehicle
+does not have one permanent hire cost, and actual transport cost belongs to a
+later Delivery/Expense/transport-payment workflow.
+
+The truck-load fields (`truckLengthM`, `truckWidthM`, `truckHeightM`,
+`calculationFactor`, `calculatedLoadKg`, `calculatedLoadTonnes`) are **all
+required** — every vehicle needs a known load capacity — and are a snapshot,
+not a live computation. `vehicles.service.ts` calculates them from the
+backend-only `DEFAULT_CALCULATION_FACTOR` (1100) whenever a vehicle is
+created or that specific vehicle's dimensions change — never in bulk, never
+on a read, and never from a request field. This is deliberate: a future
+change to the default factor must not silently rewrite figures already saved
+on other vehicles.
+
+`registrationNormalized` uses a dedicated normaliser
+(`normalizeRegistration` in `vehicles.repository.ts`), not the shared
+`normalizeForComparison`. A registration plate written "KDA 123X" and
+"kda123x" is the same plate, so every space is stripped — the shared
+normaliser only collapses repeated whitespace, which is correct for names and
+labels but not for this case.
 
 ## Document numbering and concurrency
 

@@ -5,6 +5,7 @@ import {
   FileText,
   Factory,
   Home,
+  IdCard,
   Layers,
   Package,
   Receipt,
@@ -49,7 +50,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Master data',
-    items: [{ label: 'Products', href: '/products', icon: Package, available: true }],
+    items: [
+      { label: 'Products', href: '/products', icon: Package, available: true },
+      { label: 'Employees', href: '/employees', icon: IdCard, available: true },
+    ],
   },
   {
     label: 'Sales',
@@ -66,6 +70,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Curing', href: '/curing', icon: Layers, available: false },
       { label: 'Stock', href: '/stock', icon: Boxes, available: false },
       { label: 'Deliveries', href: '/deliveries', icon: Truck, available: false },
+      { label: 'Drivers', href: '/drivers', icon: Users, available: true },
+      { label: 'Vehicles', href: '/vehicles', icon: Truck, available: true },
     ],
   },
   {
