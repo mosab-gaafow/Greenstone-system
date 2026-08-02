@@ -19,7 +19,7 @@ describe('environment validation', () => {
     expect(env.PORT).toBe(4000);
     expect(env.LOG_LEVEL).toBe('info');
     expect(env.STORAGE_PROVIDER).toBe('local');
-    expect(env.PDF_RENDERER).toBe('stub');
+    expect(env.PDF_RENDERER).toBe('playwright');
     expect(env.isProduction).toBe(false);
   });
 

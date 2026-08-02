@@ -24,6 +24,8 @@ records what exists in code and why.
 | `20260802040854_phase4c_employees_drivers_vehicles` | 4C    | `employees`, `drivers`, `vehicles`  |
 | `20260802050406_phase4c_driver_national_id_vehicle_hired_only` | 4C | Driver `nationalId`/`nationalIdNormalized`; Vehicle drops `hireCost`, dimensions become required |
 | `20260802105011_phase4d_suppliers_settings`         | 4D    | `suppliers`, `company_settings`     |
+| `20260802113702_phase5a_quotations`                 | 5A    | `stored_files`, `generated_documents`, `quotations`, `quotation_items` |
+| `20260802114739_phase5a_quotation_item_sort_order`  | 5A    | `quotation_items.sortOrder`         |
 
 Commands:
 
@@ -110,6 +112,57 @@ the system never has to treat "no settings yet" as a special case. Logo is
 not a column yet — it needs the file-storage architecture (technical-
 blueprint section 8), which does not exist.
 
+### `quotations` and `quotation_items`
+
+See business-blueprint sections 2.4 and 2.5. Only `DRAFT` quotations may be
+edited — every other status change (`ACCEPTED`, `REJECTED`, `CANCELLED`) is
+a one-way, explicit service action, never a plain field update. Allowed
+transitions: `DRAFT → ACCEPTED | REJECTED | CANCELLED`, `ACCEPTED →
+CANCELLED`. `REJECTED` and `CANCELLED` are terminal.
+
+`quotation_items.sortOrder` exists because `createdAt` cannot order items
+reliably: several items created together in one nested write can tie at the
+same millisecond, making read order non-deterministic. `sortOrder` is set
+from the request array's position at write time and is the only thing the
+repository orders by.
+
+`totalAmount` and every `lineTotal` are calculated by the backend
+(`quotations.service.ts`) using `Prisma.Decimal`, never trusted from a
+request and never JavaScript floating-point arithmetic.
+
+### `stored_files` and `generated_documents`
+
+See technical-blueprint sections 4.14 and 8. `stored_files` is metadata only
+— the binary lives in the storage provider (`backend/src/shared/storage/`,
+local filesystem in development, S3-compatible object storage planned for
+production). `generated_documents` is the explicit relation table linking a
+business record to its official generated PDF, restricted by
+`GeneratedDocumentType` to the three approved kinds (`QUOTATION`, `INVOICE`,
+`RECEIPT` — business-blueprint section 9.1: "Other PDFs must not be added
+unless approved").
+
+`relatedEntityId` is a plain id, not a foreign key: the same table serves
+Quotations now and will serve Invoices/Receipts in Phase 9, and Prisma
+cannot express a polymorphic relation across three separate tables.
+
+A new version is generated only when the source record's `updatedAt` is
+newer than the latest version's `generatedAt` — otherwise the existing
+stored file is served again. Rendered PDF bytes are deliberately **not**
+compared by checksum for this decision: Chromium embeds its own generation
+timestamp in the PDF, so two renders of identical input are never
+byte-identical, which made an earlier checksum-based design flaky. The
+checksum is still stored on `stored_files` as required metadata, just not
+used to decide whether to regenerate.
+
+### PDF rendering
+
+`PDF_RENDERER` defaults to `playwright` (real Chromium rendering, added in
+Phase 5A) rather than the Phase 1 `stub`, which only ever threw. See
+`backend/src/shared/pdf/renderers/playwright.renderer.ts`. A fresh, isolated
+Chromium instance is launched per render and closed immediately after —
+official documents are generated rarely enough that a persistent browser
+pool isn't worth the added complexity yet.
+
 ## Document numbering and concurrency
 
 Numbers are generated only by `src/shared/numbering/`, inside a transaction.
@@ -169,6 +222,14 @@ fail and asserting the business row is gone.
 - Migrations are applied to the test database before the suite runs.
 - Tables are truncated between tests.
 - Test files run serially, because they share one database.
+- `truncateAll()` runs its `DELETE` statements inside one `$transaction`, not
+  directly on the plain client. This was a real bug found in Phase 5A: the
+  mariadb driver adapter may hand separate `$executeRawUnsafe` calls
+  different pooled connections, so `SET FOREIGN_KEY_CHECKS = 0` from one call
+  is not guaranteed to apply to a `DELETE` on another — harmless until a
+  table has a real foreign key into a table listed earlier in `TABLES`, which
+  is exactly what `quotation_items → products` introduced. Wrapping every
+  statement in a transaction pins them all to one connection.
 
 ## Cache
 

@@ -71,8 +71,9 @@ const envSchema = z
       .default(10 * 1024 * 1024),
     ALLOWED_FILE_MIME_TYPES: z.string().default('image/jpeg,image/png,image/webp,application/pdf'),
 
-    // PDF rendering. Only the stub exists in Phase 1; Phase 5 adds a real renderer.
-    PDF_RENDERER: z.enum(['stub']).default('stub'),
+    // PDF rendering. "stub" always throws; "playwright" is the real renderer,
+    // added in Phase 5 with the first official PDF (quotations).
+    PDF_RENDERER: z.enum(['stub', 'playwright']).default('playwright'),
 
     RATE_LIMIT_WINDOW_MS: z.coerce
       .number()

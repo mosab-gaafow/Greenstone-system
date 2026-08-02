@@ -11,6 +11,7 @@ import { driversRoutes } from './modules/drivers/drivers.routes.js';
 import { vehiclesRoutes } from './modules/vehicles/vehicles.routes.js';
 import { suppliersRoutes } from './modules/suppliers/suppliers.routes.js';
 import { settingsRoutes } from './modules/settings/settings.routes.js';
+import { quotationsRoutes } from './modules/quotations/quotations.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -71,6 +72,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/vehicles`, vehiclesRoutes());
   app.use(`${API_BASE_PATH}/suppliers`, suppliersRoutes());
   app.use(`${API_BASE_PATH}/settings`, settingsRoutes());
+  app.use(`${API_BASE_PATH}/quotations`, quotationsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

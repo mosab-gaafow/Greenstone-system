@@ -45,6 +45,10 @@ const TABLES = [
   'vehicles',
   'suppliers',
   'company_settings',
+  'quotation_items',
+  'quotations',
+  'generated_documents',
+  'stored_files',
   'user_capability_grants',
   'session',
   'account',
@@ -59,16 +63,23 @@ const TABLES = [
  * referenced by a foreign key, even with `FOREIGN_KEY_CHECKS = 0`, and `user` is
  * referenced by `audit_logs`. Disabling the checks still lets the deletes run in
  * any order.
+ *
+ * Everything runs inside one `$transaction`, which pins every statement to a
+ * single pooled connection. Issuing the statements directly on `prisma`
+ * instead does not: the mariadb driver adapter may hand separate calls
+ * different connections, so `SET FOREIGN_KEY_CHECKS = 0` from one call can
+ * silently fail to apply to a `DELETE` on another — harmless until a table
+ * has a real foreign key into a table listed earlier here, which surfaces as
+ * an intermittent constraint-violation failure.
  */
 export async function truncateAll(): Promise<void> {
   const prisma = getTestPrisma();
 
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-  try {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
     for (const table of TABLES) {
-      await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
+      await tx.$executeRawUnsafe(`DELETE FROM \`${table}\``);
     }
-  } finally {
-    await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
-  }
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+  });
 }

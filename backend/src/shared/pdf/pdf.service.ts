@@ -1,5 +1,6 @@
 import { getEnv } from '../../config/env.js';
 import { StubPdfRenderer } from './renderers/stub.renderer.js';
+import { PlaywrightPdfRenderer } from './renderers/playwright.renderer.js';
 import type { PdfRenderer, RenderPdfInput, RenderedPdf } from './pdf.types.js';
 
 /**
@@ -15,6 +16,9 @@ export function getPdfRenderer(): PdfRenderer {
     switch (PDF_RENDERER) {
       case 'stub':
         cachedRenderer = new StubPdfRenderer();
+        break;
+      case 'playwright':
+        cachedRenderer = new PlaywrightPdfRenderer();
         break;
       default: {
         const exhaustive: never = PDF_RENDERER;

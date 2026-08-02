@@ -69,7 +69,8 @@ Claude must not:
 | 4B | Master data — Customers and customer addresses | COMPLETED |
 | 4C | Master data — Employees, Drivers, and Vehicles | COMPLETED |
 | 4D | Master data — Suppliers, Company Settings, and development demo seed | COMPLETED |
-| 5 | Quotations, orders, and customer credit | NOT_STARTED |
+| 5A | Quotations | COMPLETED |
+| 5B | Orders and customer credit | NOT_STARTED |
 | 6 | Production and curing | NOT_STARTED |
 | 7 | Raw materials, purchases, and supplier balances | NOT_STARTED |
 | 8 | Finished stock and deliveries | NOT_STARTED |
@@ -612,43 +613,116 @@ Per sub-phase:
 
 Implement customer sales preparation and order control.
 
-## Modules
+Split into two approved sub-phases, mirroring Phase 4's A–D split, so each
+ships and is reviewed as a focused, independent change:
 
-Implement:
+- **Phase 5A — Quotations (COMPLETED).**
+- **Phase 5B — Orders and Customer Credit (not started).**
 
-- Quotations.
-- Orders.
-- Customer credit.
+## Phase 5A — Quotations (COMPLETED)
 
-## Work
+Backend module: `quotations`. New shared infrastructure: `shared/documents/`
+(the "generate and persist an official PDF" pipeline), and the real
+Playwright PDF renderer (`shared/pdf/renderers/playwright.renderer.ts`),
+replacing the Phase 1 stub. See business-blueprint sections 2.4 and 2.5.
 
-Implement:
+### Quotation and QuotationItem
 
-- Quotation numbering.
-- Quotation items.
-- Customer-specific agreed prices.
-- Price snapshots.
-- Draft quotation editing.
-- Quotation status changes.
-- Quotation PDF.
-- Direct orders.
-- Orders from accepted quotations.
-- Order numbering.
-- Order items.
-- Customer addresses on orders.
-- Customer opening balances.
-- Credit-status calculation.
-- Credit thresholds:
-  - NORMAL below KES 800,000.
-  - WARNING from KES 800,000 to 899,999.
-  - STRONG_WARNING from KES 900,000 to 999,999.
-  - BLOCKED at KES 1,000,000 or above.
-- New credit-order block.
-- Admin and Super Admin override.
-- Written override reason.
-- Audit log.
+Fields: quotation number (from the pre-existing `QUOTATION` numbering
+sequence), customer, status (`DRAFT`/`ACCEPTED`/`REJECTED`/`CANCELLED`),
+total amount, an optional written status reason. Items: product, quantity
+(whole number), agreed unit price, line total.
 
-## Do not add
+Rules:
+
+- Only `DRAFT` quotations may be edited. Every other status change is a
+  one-way, explicit service action (accept/reject/cancel), never a plain
+  field update. Allowed transitions: `DRAFT → ACCEPTED | REJECTED |
+  CANCELLED`, `ACCEPTED → CANCELLED`. `REJECTED` and `CANCELLED` are
+  terminal.
+- A quotation must contain at least one item.
+- The backend calculates every `lineTotal` (`quantity × agreedUnitPrice`)
+  and `totalAmount` (sum of line totals) using `Prisma.Decimal` — never
+  trusted from a request, never JavaScript floating-point arithmetic.
+- Creation runs in one transaction: allocate the yearly number, create the
+  quotation and its items, save the calculated totals, write the audit log.
+  Any failure rolls back the whole transaction, including the number.
+- Before create or update, the service confirms the customer exists and is
+  active, and every product exists and is active.
+- Quotations are never deleted, only moved through the four statuses.
+- Rejection and cancellation accept an optional written reason.
+
+### Quotation PDF (not deferred — approved as part of 5A)
+
+Unlike the original draft plan, quotation PDF generation is part of this
+sub-phase, not deferred to Phase 9. Building it now meant discovering and
+completing shared infrastructure that Phase 1 had deliberately scaffolded but
+left unfinished for this exact moment:
+
+- `shared/storage/` (file metadata, local filesystem provider, checksums,
+  MIME/size validation) already existed and needed no changes.
+- `shared/pdf/` existed with only a stub renderer that always threw, whose
+  own comment said "the real renderer arrives in Phase 5 with the first
+  official PDF." `PlaywrightPdfRenderer` now implements it; `PDF_RENDERER`
+  defaults to `playwright`.
+- Two new tables were added: `stored_files` (file metadata) and
+  `generated_documents` (the explicit relation table linking a business
+  record to its official PDF, restricted by `GeneratedDocumentType` to
+  `QUOTATION`/`INVOICE`/`RECEIPT` — business-blueprint section 9.1: "Other
+  PDFs must not be added unless approved").
+- `shared/documents/` is the new, reusable "generate and persist an official
+  PDF" pipeline: render, decide whether a new version is needed (the source
+  record's `updatedAt` newer than the latest version's `generatedAt` — not a
+  checksum comparison, since Chromium's own embedded timestamp makes two
+  renders of identical input never byte-identical), store the file, record
+  the `GeneratedDocument`/`StoredFile` metadata, and write an audit log — all
+  inside one transaction. Built generically so Phase 9 reuses it for
+  Invoices and Receipts without rework.
+- `GET /quotations/:id/pdf` downloads the PDF. A browser-printable detail
+  page also exists, but does not replace the official backend-generated PDF.
+
+### API
+
+`GET /quotations`, `GET /quotations/:id`, `GET /quotations/:id/pdf`,
+`POST /quotations`, `PATCH /quotations/:id`, `POST /quotations/:id/accept`,
+`POST /quotations/:id/reject`, `POST /quotations/:id/cancel`. No permanent-
+delete endpoint.
+
+### Frontend
+
+A full page, not a Dialog — the multi-item form needs more room than the
+master-data Dialog/Sheet pattern. Customer and product pickers use
+`SearchableSelect` (already built in an earlier phase, unused until now).
+Repeatable items use a new generic `components/forms/item-row-list.tsx`,
+written for reuse when Orders (5B) needs the same pattern. Frontend-computed
+line totals and the quotation total are a preview only — the backend total
+is what gets saved.
+
+### Excluded from 5A
+
+Orders, customer credit, customer opening balances, credit overrides,
+invoices, customer payments, receipts, discounts, VAT, taxes.
+
+## Phase 5B — Orders and Customer Credit (not started)
+
+Not yet detailed. Plan this sub-phase on its own when it is next, per the
+already-agreed corrections from planning:
+
+- Order gets an explicit `paymentType` (`CREDIT`/`CASH`); `CASH` orders skip
+  the credit check entirely, since a fully paid order may proceed even when
+  the customer is credit-blocked (business-blueprint section 2.24).
+- Until Invoices exist (Phase 9), outstanding balance for the credit check is
+  opening balance plus the customer's not-yet-invoiced `CREDIT` orders — not
+  opening balance alone, or blocking would never actually trigger before
+  Phase 9 ships. This switches to the real
+  `opening balance + issued invoices − payments` formula once Invoices
+  exist.
+- Credit thresholds: NORMAL below KES 800,000; WARNING KES 800,000–899,999;
+  STRONG_WARNING KES 900,000–999,999; BLOCKED at KES 1,000,000 or above.
+  WARNING/STRONG_WARNING are informational only — they do not block an order.
+- Order creation from an accepted quotation belongs here, not 5A.
+
+## Do not add (either sub-phase)
 
 - Discounts.
 - VAT.
@@ -657,11 +731,13 @@ Implement:
 
 ## Completion gate
 
+Per sub-phase:
+
 - Historical price snapshots remain unchanged.
-- Credit levels calculate correctly.
-- Blocked credit orders are rejected.
-- Fully paid orders may continue.
-- Overrides are audited.
+- Credit levels calculate correctly (5B).
+- Blocked credit orders are rejected (5B).
+- Fully paid orders may continue (5B).
+- Overrides are audited (5B).
 - PDFs use official saved information.
 - Tests and builds pass.
 
