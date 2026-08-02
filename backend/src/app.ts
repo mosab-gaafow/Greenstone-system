@@ -9,6 +9,8 @@ import { customersRoutes } from './modules/customers/customers.routes.js';
 import { employeesRoutes } from './modules/employees/employees.routes.js';
 import { driversRoutes } from './modules/drivers/drivers.routes.js';
 import { vehiclesRoutes } from './modules/vehicles/vehicles.routes.js';
+import { suppliersRoutes } from './modules/suppliers/suppliers.routes.js';
+import { settingsRoutes } from './modules/settings/settings.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -67,6 +69,8 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/employees`, employeesRoutes());
   app.use(`${API_BASE_PATH}/drivers`, driversRoutes());
   app.use(`${API_BASE_PATH}/vehicles`, vehiclesRoutes());
+  app.use(`${API_BASE_PATH}/suppliers`, suppliersRoutes());
+  app.use(`${API_BASE_PATH}/settings`, settingsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

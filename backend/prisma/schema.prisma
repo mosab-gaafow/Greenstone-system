@@ -369,6 +369,54 @@ model Vehicle {
   @@map("vehicles")
 }
 
+/// Supplier master. See business-blueprint section 2.16.
+///
+/// Master record only — opening balances, purchases, and purchase payments
+/// (business-blueprint sections 2.17–2.18) belong to Phase 7, once
+/// raw-material stock exists for a purchase to receive into.
+model Supplier {
+  id    String  @id @default(uuid())
+  name  String
+  phone String
+  /// Digits only, in international form — same normalisation as Customer
+  /// phone, so the same number entered two different ways is one supplier.
+  phoneNormalized String  @unique
+  email           String?
+  /// Lowercased. Unique when present; MySQL allows many NULLs in a unique
+  /// index, so suppliers without an email are unaffected.
+  emailNormalized String? @unique
+  /// Free text. Not normalised or unique — descriptive, not an identity field.
+  address   String? @db.Text
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([isActive])
+  @@index([name])
+  @@map("suppliers")
+}
+
+/// Company settings. See business-blueprint section 9.5 (technical blueprint)
+/// and section 5 (permissions — Admin/Super Admin only).
+///
+/// A singleton: exactly one row, fixed at `SETTINGS_ROW_ID` in
+/// settings.repository.ts. There is no create or delete endpoint, only read
+/// and update. Logo is deliberately not a field yet — it needs the file-
+/// storage architecture (technical-blueprint section 8), which does not exist
+/// yet.
+model CompanySettings {
+  id             String   @id
+  companyName    String?
+  address        String?  @db.Text
+  phone          String?
+  email          String?
+  paymentDetails String?  @db.Text
+  footerNotes    String?  @db.Text
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
 model Session {
   id             String   @id
   expiresAt      DateTime

@@ -43,6 +43,8 @@ const TABLES = [
   'employees',
   'drivers',
   'vehicles',
+  'suppliers',
+  'company_settings',
   'user_capability_grants',
   'session',
   'account',

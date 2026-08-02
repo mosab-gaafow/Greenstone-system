@@ -15,6 +15,7 @@ import {
   Truck,
   Users,
   Wallet,
+  Warehouse,
   type LucideIcon,
 } from 'lucide-react';
 import type { CurrentUser } from '@/lib/permissions';
@@ -53,6 +54,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Products', href: '/products', icon: Package, available: true },
       { label: 'Employees', href: '/employees', icon: IdCard, available: true },
+      { label: 'Suppliers', href: '/suppliers', icon: Warehouse, available: true },
     ],
   },
   {
@@ -107,7 +109,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: 'Settings',
         href: '/settings',
         icon: Settings,
-        available: false,
+        available: true,
         visible: canChangeSettings,
       },
     ],

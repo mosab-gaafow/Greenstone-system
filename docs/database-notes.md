@@ -23,6 +23,7 @@ records what exists in code and why.
 | `20260801162336_phase1_infrastructure`               | 1     | `document_sequences`, `audit_logs` |
 | `20260802040854_phase4c_employees_drivers_vehicles` | 4C    | `employees`, `drivers`, `vehicles`  |
 | `20260802050406_phase4c_driver_national_id_vehicle_hired_only` | 4C | Driver `nationalId`/`nationalIdNormalized`; Vehicle drops `hireCost`, dimensions become required |
+| `20260802105011_phase4d_suppliers_settings`         | 4D    | `suppliers`, `company_settings`     |
 
 Commands:
 
@@ -91,6 +92,23 @@ on other vehicles.
 "kda123x" is the same plate, so every space is stripped — the shared
 normaliser only collapses repeated whitespace, which is correct for names and
 labels but not for this case.
+
+### `suppliers`
+
+Master record only, per business-blueprint section 2.16. Opening balances,
+purchases, and purchase payments (sections 2.17–2.18) are Phase 7. `phone` and
+`email` follow the same dual-column normalisation as `customers`; `address`
+is free text, not normalised or unique.
+
+### `company_settings`
+
+A singleton: exactly one row, fixed at `SETTINGS_ROW_ID` in
+`settings.repository.ts`. Read and update only — no create or delete
+endpoint, so there is never a "which settings row" question. A missing row is
+created with blank values on first read (`ensureSettingsRow`), so the rest of
+the system never has to treat "no settings yet" as a special case. Logo is
+not a column yet — it needs the file-storage architecture (technical-
+blueprint section 8), which does not exist.
 
 ## Document numbering and concurrency
 

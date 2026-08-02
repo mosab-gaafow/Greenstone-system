@@ -67,8 +67,8 @@ Claude must not:
 | 3 | Frontend shell and authentication | NOT_STARTED |
 | 4A | Master data — Products and shared UI patterns | COMPLETED |
 | 4B | Master data — Customers and customer addresses | COMPLETED |
-| 4C | Master data — Employees, Drivers, and Vehicles | NOT_STARTED |
-| 4D | Master data — Suppliers, Company Settings, and development demo seed | NOT_STARTED |
+| 4C | Master data — Employees, Drivers, and Vehicles | COMPLETED |
+| 4D | Master data — Suppliers, Company Settings, and development demo seed | COMPLETED |
 | 5 | Quotations, orders, and customer credit | NOT_STARTED |
 | 6 | Production and curing | NOT_STARTED |
 | 7 | Raw materials, purchases, and supplier balances | NOT_STARTED |
@@ -398,7 +398,7 @@ of their own).
 Applied the Phase 4A design system to the Customers list, detail, and
 add/edit form.
 
-## Phase 4C — Employees, Drivers, and Vehicles (IN PROGRESS)
+## Phase 4C — Employees, Drivers, and Vehicles (COMPLETED)
 
 Backend modules: `employees`, `drivers`, `vehicles` — three separate modules,
 each with the required six files.
@@ -523,16 +523,69 @@ Frontend follows the Phase 4A/4B design system: page header, connected
 summary metrics (Total/Active/Inactive), status tabs, search toolbar,
 responsive table with mobile cards, and Dialog/Sheet add-edit forms.
 
-## Phase 4D — Suppliers, Company Settings, and development demo seed
+## Phase 4D — Suppliers, Company Settings, and development demo seed (COMPLETED)
 
 Backend modules: `suppliers`, `settings`.
 
-Includes the development-only demo seed process for master data (Employees,
-Drivers, Vehicles, Suppliers, and any other Phase 4 record types). Demo data
-must be clearly marked, easy to remove, and never inserted automatically in
-production.
+### Suppliers
 
-Not yet detailed further — plan this sub-phase on its own when it is next.
+Master record only, per business-blueprint section 2.16. Opening balances,
+purchases, and purchase payments (sections 2.17–2.18) are Phase 7, once
+raw-material stock exists for a purchase to receive into.
+
+Fields: name, phone (required, unique), email (optional, unique when
+present), address (optional, free text), active status.
+
+`phone`/`email` follow the same dual-column normalisation as Customer
+phone/email. `address` is descriptive text only — not normalised, not unique.
+Per the pre-declared permission map, super_admin, admin, and accountant may
+all create, read, and update suppliers (no permission changes were needed —
+`supplier` was already granted before this phase, the same situation Phase 4C
+found for `employee`/`driver`/`vehicle`).
+
+### Company settings
+
+A **singleton** — one `CompanySettings` row, fixed at `SETTINGS_ROW_ID` in
+`settings.repository.ts`. There is no create or delete endpoint, only
+`GET /api/v1/settings` and `PATCH /api/v1/settings`.
+
+Fields: company name, address, phone, email, payment details, footer notes —
+all optional, since real company data is unknown during development
+(business-blueprint section 9.5) and is entered later, during production
+setup. **Logo is excluded** — it needs the file-storage architecture
+(technical-blueprint section 8), which does not exist yet.
+
+`settings` is granted to super_admin and admin only — the Accountant has no
+`settings` permission at all (business-blueprint section 5.3), so an
+Accountant request is refused before it reaches the service. Every update
+writes an audit log in the same transaction (technical-blueprint section
+7.3 requires this for settings changes). Reads are cached as a master-data
+lookup; a missing row is created with blank values on first read, so the rest
+of the system never has to handle "no settings yet" as a special case.
+
+### Development demo seed
+
+`prisma/seed/development/index.ts` is implemented (previously a placeholder
+that threw). It seeds clearly marked demo records — every name prefixed
+"Demo " — for the master-data modules that existed with none: Customers,
+Employees, Drivers, Vehicles, Suppliers. Products are not seeded here; the
+confirmed initial product definitions are real system data, created by the
+production seed instead.
+
+Every demo record uses a fixed identifying value (phone, national ID, or
+registration number), so re-running the seed finds the existing row and skips
+it rather than creating a duplicate.
+
+The seed refuses to run if `NODE_ENV=production`, or if `DATABASE_URL`'s
+database name contains "prod" — defence in depth, the same approach
+`tests/setup/global-setup.ts` uses for the test database.
+
+### Production seed
+
+`prisma/seed/production/index.ts` now also creates the one required
+company-settings row (blank, per "required system settings" in
+business-blueprint section 4.3), alongside the confirmed product definitions
+it already seeded. Idempotent, like the rest of the production seed.
 
 ## Caching
 
