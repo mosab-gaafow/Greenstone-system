@@ -273,7 +273,7 @@ enum ProductCategory {
 /// Product master.
 ///
 /// Deliberately has **no selling price**. Greenstone agrees a price per customer
-/// per transaction, and quotation, order and invoice items each store their own
+/// per transaction, and order and invoice items each store their own
 /// price snapshot. A price here would eventually be mistaken for the real one.
 ///
 /// See business-blueprint sections 2.3 and 2.4.
@@ -287,6 +287,23 @@ model Product {
   category       ProductCategory
   size           String
   description    String?         @db.Text
+  /// Short day-to-day name staff actually use (e.g. "4-inch"), separate from
+  /// the full official `name` (2026-08-02/03). Nullable — left empty until
+  /// confirmed for a given product; permanently empty for the two Hollow Pot
+  /// 150mm/200mm products, a deliberate decision, not a placeholder.
+  operationalName           String?
+  /// Trimmed, case-normalised, internal whitespace collapsed — same
+  /// nullable-but-unique-when-present pattern as `Customer.emailNormalized`.
+  operationalNameNormalized String?         @unique
+  /// Confirmed pieces one pallet of this product holds. Nullable — Production
+  /// refuses to run for a product with no value here (business-blueprint
+  /// section 2.7). Replaces the old global "one pallet is always 12 pieces"
+  /// rule, which is no longer true for every product.
+  piecesPerPallet           Int?
+  /// Confirmed maximum pieces of this single product one truck can carry
+  /// (2026-08-02). Nullable until confirmed. Applies only when a truck
+  /// carries a single product type — mixed-product capacity is deferred.
+  maxPiecesPerTruck         Int?
   isActive       Boolean         @default(true)
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt

@@ -31,6 +31,7 @@ records what exists in code and why.
 | `20260802150000_phase6b_production_curing`          | 6B    | `production_batches`, `production_items`, `production_order_allocations`, `raw_material_usages`, `curing_records` |
 | `20260802160000_phase6c2_direct_order_foundation`   | 6C-2  | `orders.paymentType`→`paymentArrangement` (rename + backfill), `orders.status`/`statusReason` added, `orders.sourceQuotationId`/`order_items.sourceQuotationItemId` dropped |
 | `20260802170000_phase6c3_remove_quotations`          | 6C-3  | Deletes the one `QUOTATION`-type `generated_documents`/`stored_files` row, narrows `GeneratedDocumentType`, drops `quotations` and `quotation_items` |
+| `20260803180000_phase6d_product_operational_fields` | 6D    | `products.operationalName`/`operationalNameNormalized`/`piecesPerPallet`/`maxPiecesPerTruck` added (all nullable); backfills the four confirmed products by `nameNormalized` |
 
 Commands:
 
@@ -99,6 +100,35 @@ on other vehicles.
 "kda123x" is the same plate, so every space is stripped — the shared
 normaliser only collapses repeated whitespace, which is correct for names and
 labels but not for this case.
+
+### `products`
+
+Master record, per business-blueprint sections 2.3 and 2.4. `name`/
+`nameNormalized` is the original Phase 4A uniqueness pattern.
+
+`operationalName`/`operationalNameNormalized` (2026-08-02, Phase 6D —
+COMPLETED) follow the same nullable-but-unique-when-present pattern as
+`Customer.emailNormalized` — the readable value is stored as typed;
+`operationalNameNormalized` is what the `@unique` index and the duplicate
+check actually use. Both stay `NULL` for a product with no confirmed
+operational name (the two Hollow Pot 150mm/200mm products, permanently).
+
+`piecesPerPallet` (2026-08-03, Phase 6D — COMPLETED) replaces the old global
+"one pallet is always 12 pieces" assumption — every product now has its own
+value, `NULL` until confirmed. `production.service.ts` reads it from the
+selected product at creation time and refuses to run when it is `NULL`,
+rather than falling back to any default.
+
+`maxPiecesPerTruck` (2026-08-02, Phase 6D — COMPLETED) is read only by a
+future Delivery trip calculation (Phase 8); nothing consumes it yet. Both
+`piecesPerPallet` and `maxPiecesPerTruck` are ordinary nullable integers, not
+an enum or lookup table — a positive whole number or `NULL`.
+
+The Phase 6D migration backfilled the four already-confirmed products
+(4-inch/6-inch/9-inch/300mm) by matching `nameNormalized`, never by `name`,
+so a later rename of the official name doesn't retroactively break the
+match. 230MM is not created, connected, or backfilled anywhere — see
+`docs/decisions/business-workflow-update-2026-08-02.md` section 13.
 
 ### `suppliers`
 
@@ -375,19 +405,31 @@ pool isn't worth the added complexity yet.
 New confirmed company information
 (`docs/decisions/business-workflow-update-2026-08-02.md`) required several
 schema changes. This section records the sequence so the remaining future
-sub-phases in `docs/implementation-plan.md` (Phase 6D–6F) execute it safely,
-in order. Items 2 and 3 (Order rework, Quotation removal) are **done** —
-see the migrations table above.
+sub-phases in `docs/implementation-plan.md` (Phase 6E–6F) execute it safely,
+in order. Items 1, 2, and 3 (Product fields, Order rework, Quotation
+removal) are **done** — see the migrations table above.
 
-### 1. Product — additive only (Phase 6D)
+### 1. Product — additive (Phase 6D — DONE)
 
-Add two nullable columns to `products`:
+Applied by `20260803180000_phase6d_product_operational_fields`. Four
+nullable columns added to `products`:
 
 - `operationalName` (string, nullable).
+- `operationalNameNormalized` (string, nullable, unique when present).
+- `piecesPerPallet` (integer, nullable).
 - `maxPiecesPerTruck` (integer, nullable).
 
-Purely additive — no existing column changes, no data loss, no backfill
-required. Safe to run before or after any other migration in this list.
+Purely additive — no existing column changed, no data loss. The same
+migration backfilled the four already-confirmed products by `nameNormalized`
+(4-inch/18/1500, 6-inch/12/1200, 9-inch/null pieces-per-pallet/850,
+300mm/6/750); the two Hollow Pot 150mm/200mm rows were left untouched, per
+their confirmed permanently-empty operational name. See the `products` table
+section above for the full detail.
+
+**230MM (2026-08-03):** the company confirmed the label "230MM" is in use,
+but not which product it identifies. No `Product` row, seed entry, or schema
+placeholder was created for it — see
+`docs/decisions/business-workflow-update-2026-08-02.md` section 13.
 
 ### 2. Order — rename and drop (Phase 6C-2 — DONE)
 
@@ -440,7 +482,13 @@ additions when those phases are planned:
 - `purchase_items`: Pumice-specific snapshot columns (length, width, height,
   volume per load, number of loads, total volume, rate per cubic metre) —
   additive and nullable, since only Pumice purchases use them. Cement needs
-  no new columns (existing quantity × unit-cost already covers it).
+  no new columns (existing quantity × unit-cost already covers it); its
+  company-facing measurement-unit name is confirmed "Sack," not "Bag"
+  (2026-08-03 — see `docs/decisions/business-workflow-update-2026-08-02.md`
+  section 14). Cement usage and stock also need no new schema — they use the
+  existing generic `RawMaterialUsage` and `RawMaterialStockBalance`/
+  `RawMaterialMovement` ledger built in Phase 6A/6B, the same as any other
+  raw material.
 - `deliveries`: transport snapshot columns (transport rate, number of trips,
   total transport cost, payee, and the vehicle-owner reference used at
   dispatch time) and the truck-capacity value used for `requiredTrips` at

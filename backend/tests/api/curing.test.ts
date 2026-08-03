@@ -37,6 +37,9 @@ async function seedProduct(overrides: Partial<{ name: string }> = {}) {
       category: 'HOLLOW_BLOCK',
       size: '6 × 9',
       isActive: true,
+      // Curing records are created via the real POST /production endpoint
+      // (see seedCuring below), which now requires a confirmed value.
+      piecesPerPallet: 12,
     },
   });
 }

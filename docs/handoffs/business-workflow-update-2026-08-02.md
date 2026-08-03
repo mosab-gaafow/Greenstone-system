@@ -119,7 +119,63 @@ never silently discard real data.
 **No unconfirmed rules remain from this decision as of 2026-08-02.** Any
 future rule change needs its own confirmation round.
 
-## 5. Exact next step
+## 5. Third-round clarifications (2026-08-03) — documentation only
+
+A third round of business clarifications was applied, again documentation
+only — no application code, migrations, or deletions. Full detail is in
+`docs/decisions/business-workflow-update-2026-08-02.md` sections 13 and 14.
+
+1. **230MM — pending product identification.** The company confirmed it uses
+   the label "230MM," but not which official product it refers to. Recorded
+   as an explicitly unresolved, non-blocking pending item — no `Product` row,
+   no seed entry, no connection to an existing Hollow Pot/Hollow Block, no
+   rename of an existing product. Must not be confused with the already
+   confirmed "300mm" operational name (Hollow Pot 380 × 200 × 300 mm).
+2. **Cement measurement unit corrected to "Sack."** Earlier documentation
+   (this file's section 2, and the blueprints) used "Bag" — the company
+   confirmed the company-facing name is "Sack." Measurement units remain
+   fully configurable (`MeasurementUnit`, already built in Phase 6A) — this
+   is a naming correction, not a schema or code change.
+3. **Cement usage rules confirmed.** The 170–190 sacks/day figure is
+   informational reference only: production always records the actual
+   number of sacks used; the system must never auto-consume 170/190, never
+   derive usage from a formula, never block production on the range, and
+   never auto-create a General Expense from daily usage.
+4. **Cement purchase/usage/stock separation confirmed.** Three distinct
+   records — purchase (supplier, sacks, unit cost, total cost, payment
+   status), usage (production record, date, actual sacks used), and stock
+   (`opening + purchased − used ± adjustments`, calculated, not manually
+   tracked). All three already map onto existing Phase 6A/6B generic
+   entities (`RawMaterial`, `RawMaterialUsage`,
+   `RawMaterialStockBalance`/`RawMaterialMovement`) — no new schema needed.
+   KES 850/sack is a reference cost only; every purchase must snapshot its
+   own unit cost, and a Cement purchase must never double as a General
+   Expense.
+
+None of this expands Phase 6D. Phase 6D still adds only
+`Product.operationalName`/`Product.maxPiecesPerTruck` for the products
+already confirmed in section 2 of the decision document, and does not touch
+Cement, Raw Materials, Purchases, or Production usage — that remains Phase 7.
+
+## 6. Phase 6D implemented (2026-08-03)
+
+Superseding section 6's original next-step guidance below: Phase 6C (all
+three sub-steps) and Phase 6D are now **both complete**.
+
+Phase 6D added `Product.operationalName`/`operationalNameNormalized`/
+`piecesPerPallet`/`maxPiecesPerTruck` (migration
+`20260803180000_phase6d_product_operational_fields`), backfilled the four
+confirmed products, removed the old global "12 pieces per pallet" rule from
+`production.service.ts` in favour of each product's own confirmed value, and
+updated the Product and Production frontend accordingly. 230MM remains
+unresolved and untouched, per section 13 of the decision document. Full
+detail is in `docs/implementation-plan.md`'s Phase 6D section.
+
+**Next available phases, unstarted:** 6E (customer credit projection formula
+and balance filters) and 6F (Vehicle Owners; rework Vehicle) — neither
+depends on the other; either may be planned next once explicitly requested.
+
+## 7. Exact next step (original, first-round session — historical)
 
 This session (including the second-round confirmations) still did not plan
 or approve any implementation phase — everything above is documentation and

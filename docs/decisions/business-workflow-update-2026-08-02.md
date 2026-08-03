@@ -239,7 +239,11 @@ number of loads, total volume, rate per cubic metre, and total cost. The rate
 must be configurable later; old purchases always keep the rate used at
 creation.
 
-## 9. Cement purchases (bag calculation)
+## 9. Cement purchases (sack calculation)
+
+**Corrected (2026-08-03): the company-facing unit name is "Sack," not "Bag."**
+See section 14 for the full, current cement rules — this section is left in
+place as the original record, but the unit name below is superseded.
 
 Cement's measurement unit is `BAG`.
 
@@ -462,3 +466,171 @@ migration process must:
 5. Never silently delete real data — if non-demo quotation or order-linkage
    data exists at migration time, surface it for a human decision rather
    than dropping it automatically.
+
+---
+
+## 13. Pending product identification — 230MM (2026-08-03)
+
+The company confirms it uses the label **230MM** somewhere in its product
+line, but has **not yet confirmed** which official product it refers to.
+
+**This is explicitly not resolved. Do not guess.**
+
+- Do not assume 230MM means the confirmed Hollow Pot 380 × 200 × 300 mm
+  operational name ("300mm," section 2) — 230MM is a different label and must
+  not be treated as a typo or rounding of it.
+- Do not create a new `Product` row for 230MM.
+- Do not connect 230MM to an existing Hollow Pot or Hollow Block product.
+- Do not rename any existing product's `operationalName` to 230MM.
+- Record 230MM only as a **pending product identification**, kept traceable
+  in documentation (this record and `docs/business-blueprint.md` section 2.3),
+  not in application data.
+
+The company will later confirm, for whatever product 230MM turns out to be:
+
+- Its official product name.
+- Its product category.
+- Its official dimensions.
+- Its pieces per pallet.
+- Its maximum pieces per truck.
+
+Until then, this pending item must not block development. Phase 6D (Product
+operational names and truck capacity) proceeds using only the products and
+operational names already confirmed in section 2 — it must not seed, create,
+or reserve a placeholder for 230MM.
+
+## 14. Cement measurement unit, usage, and purchase/stock separation (2026-08-03)
+
+### Measurement unit
+
+The company-facing unit name for Cement is **"Sack"** — not "Bag." This
+corrects section 9 above, written before this was confirmed. Measurement
+units remain fully configurable (`MeasurementUnit`, built in Phase 6A, is a
+plain configurable master-data table, not a fixed enum) — "Sack" is simply
+the confirmed initial value for Cement's unit, entered like any other
+`MeasurementUnit` row.
+
+```
+totalCost = numberOfSacks × unitCost
+```
+
+This is the same generic `quantity × unitCost = totalCost` shape every
+Purchase Item already has (technical-blueprint section 4.10) — no schema
+change beyond what was already planned for Cement.
+
+### Cement usage is operational reference only
+
+The company normally uses approximately **170 to 190 sacks per day**. This
+figure is informational context, never a calculation input:
+
+- Production must record the **actual** number of cement sacks used for that
+  production run — entered, never derived.
+- The system must **never** automatically consume 170 or 190 sacks, or any
+  other fixed quantity, from cement stock.
+- The system must **never** calculate cement usage from a fixed
+  product/formula relationship (this already matches business-blueprint
+  section 2.12's general raw-material rule).
+- The system must **never** block production because recorded usage falls
+  below 170 or above 190 sacks — the range is informational, not a
+  validation rule.
+- The system must **never** automatically create a General Expense from
+  daily cement usage — usage is a production/stock record, not a financial
+  transaction.
+- The 170–190 range may later be surfaced in the interface as helpful
+  reference text (e.g. "typical daily usage: 170–190 sacks") alongside the
+  actual recorded figure — display only, never a stored default or an
+  enforced bound.
+
+### Cement purchases, usage, and stock stay separate concepts
+
+Three distinct records, not one combined figure:
+
+**Cement purchase** — supplier, quantity purchased (sacks), unit cost per
+sack, total purchase cost, payment status. This is an ordinary Purchase/
+Purchase Item (technical-blueprint section 4.10) — no Cement-specific schema
+fields are needed beyond the existing generic quantity × unit-cost shape.
+
+**Cement usage** — a production record: date, actual sacks used. This is the
+existing generic `RawMaterialUsage` entry (technical-blueprint section 4.9),
+already built in Phase 6A/6B for every raw material — Cement needs no new
+usage schema.
+
+**Cement stock** — the current balance, calculated (not stored as an
+independent manual figure) as:
+
+```
+current stock = opening stock + purchased sacks − actual sacks used ± stock adjustments
+```
+
+This is exactly the existing generic `RawMaterialStockBalance`/
+`RawMaterialMovement` ledger already built in Phase 6A (`OPENING`,
+`PURCHASE_RECEIPT`, `PRODUCTION_USAGE`, `POSITIVE_ADJUSTMENT`,
+`NEGATIVE_ADJUSTMENT` movement types) — Cement uses that ledger like any
+other raw material, no new stock model is needed.
+
+### Cost reference, not a hard-coded value
+
+The currently known cost of **KES 850 per sack is a reference figure only**:
+
+- Do not permanently hard-code KES 850 anywhere in application code.
+- Every Cement purchase stores its **own** unit-cost snapshot at the time of
+  that purchase (the existing Purchase Item unit-cost snapshot pattern,
+  technical-blueprint section 4.10) — a later cost change must never rewrite
+  an old purchase's recorded cost.
+- A Cement purchase must never be recorded a second time as a General
+  Expense — purchase payments and general expenses stay separate accounts
+  (business-blueprint section 2.17, already an established rule for every
+  supplier purchase).
+
+### Scope discipline
+
+These clarifications describe confirmed business rules for a **future**
+phase (Phase 7 — Purchases and supplier balances, per
+`docs/implementation-plan.md`). They do not expand Phase 6D:
+
+- Phase 6D adds only `Product.operationalName`/`Product.piecesPerPallet`/
+  `Product.maxPiecesPerTruck` for the already-confirmed products (see
+  section 15 for `piecesPerPallet`, confirmed after this section was
+  written).
+- Phase 6D does not seed 230MM (section 13).
+- Phase 6D does not implement Cement, Raw Materials, Purchases, or
+  Production cement usage — that work remains Phase 7, unstarted.
+- No schema change is made by recording this section — `MeasurementUnit`,
+  `RawMaterial`, `RawMaterialStockBalance`, `RawMaterialMovement`, and
+  `RawMaterialUsage` already exist from Phase 6A/6B and already support
+  everything described above without modification.
+
+## 15. Product pieces per pallet (2026-08-03, implemented same day)
+
+The company confirmed pieces-per-pallet is **per product**, not the single
+global "12 pieces per pallet" figure business-blueprint section 2.7
+previously assumed for every product.
+
+Confirmed values:
+
+| Operational name | Pieces per pallet |
+|---|---|
+| 4-inch | 18 |
+| 6-inch | 12 |
+| 300mm | 6 |
+| 9-inch | Not confirmed — kept empty |
+
+Rules:
+
+- `Product.piecesPerPallet` is a nullable, configurable positive whole
+  number, added alongside `operationalName`/`maxPiecesPerTruck` in Phase 6D.
+- Production must use the selected product's own `piecesPerPallet` —
+  `producedQuantity = pallets × product.piecesPerPallet`. There is no
+  fixed, product-independent multiplier anywhere in the system any more.
+- Production is **blocked** (a rejected request, not a silent default) for a
+  product whose `piecesPerPallet` is not yet confirmed — currently the
+  9-inch product (Hollow Blocks 9 × 9).
+- Do not invent the 9-inch value. It stays empty until the company confirms
+  it, the same "leave empty, don't guess" rule already applied to the two
+  Hollow Pot operational names (section 12.1) and to 230MM (section 13).
+
+**Status: implemented.** Phase 6D (`docs/implementation-plan.md`) added this
+field, backfilled the three confirmed values plus left 9-inch's empty via
+migration `20260803180000_phase6d_product_operational_fields`, and updated
+`production.service.ts` to read it and block on `null`. See
+`docs/database-notes.md`'s `products` table section for the schema detail.

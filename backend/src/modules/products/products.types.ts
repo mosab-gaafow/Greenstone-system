@@ -14,6 +14,14 @@ export interface ProductSummary {
   category: ProductCategory;
   size: string;
   description: string | null;
+  /** Short day-to-day name (e.g. "4-inch"). Null until confirmed. */
+  operationalName: string | null;
+  /** Confirmed pieces one pallet holds. Null until confirmed — Production
+   *  refuses to run for a product with no value here. */
+  piecesPerPallet: number | null;
+  /** Confirmed max pieces of this single product one truck can carry. Null
+   *  until confirmed. Single-product only. */
+  maxPiecesPerTruck: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -24,6 +32,9 @@ export interface CreateProductInput {
   category: ProductCategory;
   size: string;
   description?: string | null | undefined;
+  operationalName?: string | null | undefined;
+  piecesPerPallet?: number | null | undefined;
+  maxPiecesPerTruck?: number | null | undefined;
 }
 
 export interface UpdateProductInput {
@@ -31,6 +42,9 @@ export interface UpdateProductInput {
   category?: ProductCategory | undefined;
   size?: string | undefined;
   description?: string | null | undefined;
+  operationalName?: string | null | undefined;
+  piecesPerPallet?: number | null | undefined;
+  maxPiecesPerTruck?: number | null | undefined;
 }
 
 export type ProductSortField = 'name' | 'category' | 'createdAt';

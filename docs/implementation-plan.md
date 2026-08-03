@@ -76,7 +76,7 @@ Claude must not:
 | 6C-1 | Quotation and Order data audit | COMPLETED |
 | 6C-2 | Direct Order foundation (status, paymentArrangement) | COMPLETED |
 | 6C-3 | Safe Quotation removal | COMPLETED |
-| 6D | Product operational names and truck capacity | NOT_STARTED |
+| 6D | Product operational names, pieces per pallet, and truck capacity | COMPLETED |
 | 6E | Customer credit projection formula and balance filters | NOT_STARTED |
 | 6F | Vehicle Owners; rework Vehicle | NOT_STARTED |
 | 7 | Purchases and supplier balances (Pumice/Cement calculations) | NOT_STARTED |
@@ -893,7 +893,10 @@ already used for Phase 4 (4A–4D) and Phase 5/6 (5A/5B, 6A/6B):
 - **Phase 6C-3 — Safe Quotation Removal (COMPLETED).** Removed the
   Quotation module, tables, and related code, after 6C-1 confirmed it was
   safe and 6C-2's `sourceQuotationId` removal had landed.
-- **Phase 6D — Product operational names and truck capacity (NOT_STARTED).**
+- **Phase 6D — Product operational names, pieces per pallet, and truck
+  capacity (COMPLETED).** Added `Product.operationalName`/
+  `piecesPerPallet`/`maxPiecesPerTruck`; removed the old global
+  "12 pieces per pallet" rule from Production.
 - **Phase 6E — Customer credit projection formula and balance filters
   (NOT_STARTED).**
 - **Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED).**
@@ -1216,24 +1219,58 @@ filters (Phase 6E), Vehicle Owners or Vehicle rework (Phase 6F), Production,
 Curing, Purchases, Deliveries, Invoices, or Payments. Each of those remains
 its own phase, unaffected by this split.
 
-## Phase 6D — Product operational names and truck capacity (NOT_STARTED)
+## Phase 6D — Product operational names, pieces per pallet, and truck capacity (COMPLETED)
 
-Not yet planned or approved for implementation — documentation only at this
-stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections 2
-and 3.
+See `docs/decisions/business-workflow-update-2026-08-02.md` sections 2, 3,
+12.2, 12.5, and 13. Migration `20260803180000_phase6d_product_operational_fields`
+applied to `greenstone_dev` (`prisma migrate deploy`), verified against the
+live database. Backend **481/481 tests passing**; frontend typecheck/lint
+(4 pre-existing informational warnings, 0 errors)/9 tests/build all clean —
+build generated the same 24 routes as before (no new route).
 
-Expected scope:
+Implemented:
 
-- Add `Product.operationalName` (optional string) and
-  `Product.maxPiecesPerTruck` (optional positive integer).
-- Set the four confirmed operational names and truck capacities (4-inch/
-  1,500; 6-inch/1,200; 9-inch/850; 300mm/750). Leave the two Hollow Pot
-  150mm/200mm operational names empty — not confirmed.
-- This is an additive migration only (two new nullable columns) — no data
-  loss, no existing column changes.
-- Any later delivery-trip calculation that reads `maxPiecesPerTruck` (Phase 8)
-  must snapshot the value used at that time, so a later product update never
-  changes an already-recorded delivery.
+- Added four nullable `Product` columns: `operationalName`,
+  `operationalNameNormalized` (unique when present, same dual-column pattern
+  as `Customer.emailNormalized`), `piecesPerPallet`, `maxPiecesPerTruck`.
+- Backfilled the four already-confirmed products, matched by
+  `nameNormalized`: 4-inch (18 pieces/pallet, 1,500 max/truck), 6-inch (12,
+  1,200), 9-inch (pieces-per-pallet **not confirmed**, left `null`; 850
+  max/truck), 300mm (6, 750). The two Hollow Pot 150mm/200mm rows are left
+  untouched — their operational name stays permanently empty, per section
+  12.1.
+- **Removed the old global "one pallet is always 12 pieces" rule.**
+  `production.service.ts`'s `resolveItem` now reads the selected product's
+  own `piecesPerPallet` and computes `producedQuantity = pallets ×
+  product.piecesPerPallet`, and rejects the request (`BUSINESS_RULE_VIOLATION`,
+  422) when that product has no confirmed value — including the 9-inch
+  product, which cannot be produced until the company confirms it.
+- `products` module: `operationalName`/`piecesPerPallet`/`maxPiecesPerTruck`
+  accepted on create/update, all nullable/clearable; a duplicate
+  `operationalName` (case/whitespace-insensitive) is rejected the same way a
+  duplicate `name` already was.
+- Production seed (`INITIAL_PRODUCTS`) updated with the same four confirmed
+  values, so a brand-new database gets them at insert time; the migration
+  backfill is what applies them to the already-seeded dev database.
+- Frontend: Product add/edit form and detail page gained the three fields
+  (each shows "Not confirmed" when empty); the Production form now shows the
+  selected product's actual pieces-per-pallet (or a clear "not confirmed"
+  message) instead of a hardcoded `× 12`, and blocks with an inline message
+  when the selected product has none.
+
+**230MM (2026-08-03):** not created, not connected to any existing product,
+not seeded, not backfilled anywhere in this phase — remains a pending
+product identification per section 13. No runtime guard rejects the literal
+string "230MM" from being typed into `operationalName` — only its omission
+from the seed/backfill was in scope; flagged as excluded, not assumed.
+
+### Excluded from Phase 6D
+
+Mixed-product truck-load calculation (still deferred, section 12.2).
+Delivery's `requiredTrips` calculation and its capacity snapshot (Phase 8 —
+only the source `maxPiecesPerTruck` column exists now). Vehicle
+Owner/Vehicle rework (6F). Customer-credit projection/balance filters (6E).
+Cement/Raw Materials/Purchases (Phase 7).
 
 ## Phase 6E — Customer credit projection formula and balance filters (NOT_STARTED)
 
@@ -1322,10 +1359,20 @@ Implement:
     the rate used at creation. This `1100` must never be confused with
     `Vehicle.calculationFactor`'s unrelated `1100` (kilograms per cubic
     metre, Phase 4C) — different unit, different meaning.
-  - Cement: measurement unit `BAG`, `totalCost = numberOfBags × unitCost`
-    (current unit cost KES 850/bag). This is the same generic
-    quantity × unit-cost shape every Purchase Item already has — no
-    additional schema fields needed for Cement.
+  - Cement: measurement unit **"Sack"** (unit name confirmed 2026-08-03 —
+    corrects the earlier "Bag" wording), `totalCost = numberOfSacks ×
+    unitCost` (current unit cost KES 850/sack, a reference figure only, never
+    hard-coded — every purchase snapshots its own unit cost). This is the
+    same generic quantity × unit-cost shape every Purchase Item already
+    has — no additional schema fields needed for Cement. Cement usage
+    (actual sacks used, recorded per production run — never the 170–190
+    reference range, never a fixed formula, never auto-created as a General
+    Expense) and Cement stock (`opening + purchased − used ± adjustments`)
+    reuse the existing generic `RawMaterialUsage` and
+    `RawMaterialStockBalance`/`RawMaterialMovement` ledger from Phase 6A/6B —
+    no new schema. See
+    `docs/decisions/business-workflow-update-2026-08-02.md` section 14. This
+    is Phase 7 scope, not part of Phase 6D.
 - Purchase receipt into stock (writes a `PURCHASE_RECEIPT` raw-material
   movement using the Phase 6A ledger).
 - Supplier opening balances.

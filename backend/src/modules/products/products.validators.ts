@@ -35,6 +35,23 @@ const descriptionSchema = z
   .trim()
   .max(500, 'Description must be 500 characters or fewer.');
 
+const operationalNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'Operational name cannot be blank.')
+  .max(60, 'Operational name must be 60 characters or fewer.')
+  .transform(normalizeText);
+
+const piecesPerPalletSchema = z.coerce
+  .number({ message: 'Enter pieces per pallet as a number.' })
+  .int('Pieces per pallet must be a whole number.')
+  .positive('Pieces per pallet must be greater than zero.');
+
+const maxPiecesPerTruckSchema = z.coerce
+  .number({ message: 'Enter max pieces per truck as a number.' })
+  .int('Max pieces per truck must be a whole number.')
+  .positive('Max pieces per truck must be greater than zero.');
+
 export const productIdParamsSchema = z.object({
   id: z.string().min(1, 'A product id is required.'),
 });
@@ -47,6 +64,9 @@ export const createProductBodySchema = z
     // Nullable as well as optional, so a form that clears the field can send
     // null on create exactly as it does on update.
     description: descriptionSchema.nullable().optional(),
+    operationalName: operationalNameSchema.nullable().optional(),
+    piecesPerPallet: piecesPerPalletSchema.nullable().optional(),
+    maxPiecesPerTruck: maxPiecesPerTruckSchema.nullable().optional(),
   })
   .strict();
 
@@ -55,8 +75,11 @@ export const updateProductBodySchema = z
     name: nameSchema.optional(),
     category: categorySchema.optional(),
     size: sizeSchema.optional(),
-    // Null clears the description; undefined leaves it unchanged.
+    // Null clears the field; undefined leaves it unchanged.
     description: descriptionSchema.nullable().optional(),
+    operationalName: operationalNameSchema.nullable().optional(),
+    piecesPerPallet: piecesPerPalletSchema.nullable().optional(),
+    maxPiecesPerTruck: maxPiecesPerTruckSchema.nullable().optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {

@@ -55,8 +55,9 @@ export async function deactivateProduct(id: string): Promise<Product> {
 }
 
 /**
- * An empty description clears the field, so it is sent as null rather than an
- * empty string. The backend rejects unknown fields, so nothing else is added.
+ * An empty description/operational name/pieces-per-pallet/max-pieces-per-truck
+ * clears the field, so each is sent as null rather than an empty string. The
+ * backend rejects unknown fields, so nothing else is added.
  */
 function normalise(values: ProductFormValues) {
   return {
@@ -64,5 +65,10 @@ function normalise(values: ProductFormValues) {
     category: values.category,
     size: values.size,
     description: values.description?.trim() ? values.description.trim() : null,
+    operationalName: values.operationalName?.trim() ? values.operationalName.trim() : null,
+    piecesPerPallet: values.piecesPerPallet?.trim() ? Number(values.piecesPerPallet) : null,
+    maxPiecesPerTruck: values.maxPiecesPerTruck?.trim()
+      ? Number(values.maxPiecesPerTruck)
+      : null,
   };
 }

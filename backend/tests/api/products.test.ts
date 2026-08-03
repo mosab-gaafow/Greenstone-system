@@ -26,7 +26,12 @@ async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
 }
 
 async function seedProduct(
-  overrides: Partial<{ name: string; size: string; isActive: boolean }> = {},
+  overrides: Partial<{
+    name: string;
+    size: string;
+    isActive: boolean;
+    operationalName: string;
+  }> = {},
 ) {
   const name = overrides.name ?? `Test Product ${Math.random().toString(36).slice(2, 8)}`;
 
@@ -37,6 +42,10 @@ async function seedProduct(
       category: 'HOLLOW_BLOCK',
       size: overrides.size ?? '6 × 9',
       isActive: overrides.isActive ?? true,
+      operationalName: overrides.operationalName ?? null,
+      operationalNameNormalized: overrides.operationalName
+        ? normalizeForComparison(overrides.operationalName)
+        : null,
     },
   });
 }
@@ -254,6 +263,139 @@ describe('products module', () => {
 
       expect(response.status).toBe(422);
       expect(response.body.error.fieldErrors).toHaveProperty('category');
+    });
+  });
+
+  describe('operational name, pieces per pallet, and truck capacity', () => {
+    it('creates a product with all three fields set', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'Hollow Blocks 4 × 9',
+        category: 'HOLLOW_BLOCK',
+        size: '4 × 9',
+        operationalName: '4-inch',
+        piecesPerPallet: 18,
+        maxPiecesPerTruck: 1500,
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data).toMatchObject({
+        operationalName: '4-inch',
+        piecesPerPallet: 18,
+        maxPiecesPerTruck: 1500,
+      });
+    });
+
+    it('creates a product with all three fields left empty', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'Hollow Pot 380 × 200 × 150 mm',
+        category: 'HOLLOW_POT',
+        size: '380 × 200 × 150 mm',
+      });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.operationalName).toBeNull();
+      expect(response.body.data.piecesPerPallet).toBeNull();
+      expect(response.body.data.maxPiecesPerTruck).toBeNull();
+    });
+
+    it('rejects a duplicate operational name', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      await seedProduct({ name: 'Existing', operationalName: '6-inch' });
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'New product',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+        operationalName: '6-inch',
+      });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    });
+
+    it('rejects a duplicate operational name differing only by case and spacing', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      await seedProduct({ name: 'Existing', operationalName: '6-inch' });
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'New product',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+        operationalName: ' 6-INCH ',
+      });
+
+      expect(response.status).toBe(422);
+    });
+
+    it('rejects zero or negative pieces per pallet', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'Bad pallet figure',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+        piecesPerPallet: 0,
+      });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.fieldErrors).toHaveProperty('piecesPerPallet');
+    });
+
+    it('rejects a non-integer max pieces per truck', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app).post(PRODUCTS).set(headers).send({
+        name: 'Bad truck figure',
+        category: 'HOLLOW_BLOCK',
+        size: '6 × 9',
+        maxPiecesPerTruck: 12.5,
+      });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.fieldErrors).toHaveProperty('maxPiecesPerTruck');
+    });
+
+    it('clears operationalName, piecesPerPallet, and maxPiecesPerTruck when null is sent', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const product = await seedProduct({ name: 'Has values', operationalName: '9-inch' });
+      await getTestPrisma().product.update({
+        where: { id: product.id },
+        data: { piecesPerPallet: 12, maxPiecesPerTruck: 850 },
+      });
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app)
+        .patch(`${PRODUCTS}/${product.id}`)
+        .set(headers)
+        .send({ operationalName: null, piecesPerPallet: null, maxPiecesPerTruck: null });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.operationalName).toBeNull();
+      expect(response.body.data.piecesPerPallet).toBeNull();
+      expect(response.body.data.maxPiecesPerTruck).toBeNull();
+    });
+
+    it('allows saving a product under its own unchanged operational name', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const product = await seedProduct({ name: 'Same op name', operationalName: '300mm' });
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app)
+        .patch(`${PRODUCTS}/${product.id}`)
+        .set(headers)
+        .send({ operationalName: '300mm', piecesPerPallet: 6 });
+
+      expect(response.status).toBe(200);
     });
   });
 

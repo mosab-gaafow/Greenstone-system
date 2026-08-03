@@ -2,6 +2,7 @@ import type { ProductRow } from './products.repository.js';
 import {
   findProductById,
   findProductByName,
+  findProductByOperationalName,
   findProducts,
   insertProduct,
   setProductActive,
@@ -62,6 +63,9 @@ export async function createProduct(
   context: RequestContext,
 ): Promise<ProductSummary> {
   await assertNameAvailable(input.name);
+  if (input.operationalName != null) {
+    await assertOperationalNameAvailable(input.operationalName);
+  }
 
   const created = await runInTransaction(async (tx: TransactionClient) => {
     const product = await insertProduct(input, tx);
@@ -92,6 +96,13 @@ export async function editProduct(
 
   if (input.name !== undefined && input.name !== existing.name) {
     await assertNameAvailable(input.name);
+  }
+  if (
+    input.operationalName !== undefined &&
+    input.operationalName !== existing.operationalName &&
+    input.operationalName != null
+  ) {
+    await assertOperationalNameAvailable(input.operationalName);
   }
 
   const updated = await runInTransaction(async (tx: TransactionClient) => {
@@ -190,6 +201,18 @@ async function assertNameAvailable(name: string): Promise<void> {
 }
 
 /**
+ * Rejects a duplicate operational name before the database does.
+ *
+ * Mirrors `assertNameAvailable` — the unique index on
+ * `operationalNameNormalized` is the real guarantee.
+ */
+async function assertOperationalNameAvailable(operationalName: string): Promise<void> {
+  if (await findProductByOperationalName(operationalName)) {
+    throw new BusinessRuleViolationError('A product with this operational name already exists.');
+  }
+}
+
+/**
  * Invalidates every cached product entry.
  *
  * Called after the transaction commits, never before — a failed write must not
@@ -218,6 +241,9 @@ function toSummary(row: ProductRow): ProductSummary {
     category: row.category,
     size: row.size,
     description: row.description,
+    operationalName: row.operationalName,
+    piecesPerPallet: row.piecesPerPallet,
+    maxPiecesPerTruck: row.maxPiecesPerTruck,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -230,6 +256,9 @@ function toAuditSnapshot(row: ProductRow): Record<string, unknown> {
     category: row.category,
     size: row.size,
     description: row.description,
+    operationalName: row.operationalName,
+    piecesPerPallet: row.piecesPerPallet,
+    maxPiecesPerTruck: row.maxPiecesPerTruck,
     isActive: row.isActive,
   };
 }

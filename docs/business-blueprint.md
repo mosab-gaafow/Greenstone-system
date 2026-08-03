@@ -17,6 +17,12 @@ around a new Vehicle Owner entity. See
 Sections below are updated to match it; where a section still describes prior
 behaviour, the amendment record is authoritative.
 
+**Further clarifications (2026-08-03):** the company confirmed the label
+"230MM" is in use but has not yet identified which product it refers to
+(pending, section 2.3), and confirmed Cement's company-facing measurement
+unit name is "Sack," not "Bag" (section 2.16). See
+`docs/decisions/business-workflow-update-2026-08-02.md` sections 13 and 14.
+
 Unknown company data will not block MVP development. Safe demo data may be used during development. Real data will be entered during production setup.
 
 The system must remain:
@@ -113,23 +119,28 @@ The product master must contain:
 - Active or inactive status.
 - Configurable operational name (2026-08-02) — the short name staff use day to
   day, separate from the official name.
+- Configurable pieces per pallet (2026-08-03, Phase 6D) — replaces the old
+  global "12 pieces per pallet" rule (section 2.7). Null until confirmed for
+  a given product; Production refuses to run for a product with no value.
 - Configurable maximum pieces per truck (2026-08-02) — see below.
 
 A fixed selling price is not required in the product master.
 
-### Operational names (2026-08-02)
+### Operational names and pieces per pallet (2026-08-02; pieces per pallet added 2026-08-03, Phase 6D — COMPLETED)
 
-| Official name | Operational name |
-|---|---|
-| Hollow Blocks 4 × 9 | 4-inch |
-| Hollow Blocks 6 × 9 | 6-inch |
-| Hollow Blocks 9 × 9 | 9-inch |
-| Hollow Pot 380 × 200 × 300 mm | 300mm |
+| Official name | Operational name | Pieces per pallet |
+|---|---|---|
+| Hollow Blocks 4 × 9 | 4-inch | 18 |
+| Hollow Blocks 6 × 9 | 6-inch | 12 |
+| Hollow Blocks 9 × 9 | 9-inch | Not confirmed — left empty |
+| Hollow Pot 380 × 200 × 300 mm | 300mm | 6 |
 
 The operational names for Hollow Pot 380 × 200 × 150 mm and 380 × 200 × 200 mm
-are **not confirmed**. Leave the field empty for those two until confirmed.
+are **confirmed to stay permanently empty** — not a placeholder awaiting a
+future value (see `docs/decisions/business-workflow-update-2026-08-02.md`
+section 12.1). Do not invent a value for them without a fresh confirmation.
 
-### Truck capacity (2026-08-02)
+### Truck capacity (2026-08-02; implemented 2026-08-03, Phase 6D)
 
 Each product may have a configurable maximum pieces one truck can carry of
 that single product:
@@ -154,6 +165,22 @@ Rules:
 
 See `docs/decisions/business-workflow-update-2026-08-02.md` section 3 for how
 this interacts with the existing Vehicle truck-load calculation.
+
+### Pending product identification — 230MM (2026-08-03)
+
+The company confirms it uses the label **230MM**, but the exact product this
+refers to is **not yet confirmed**. See
+`docs/decisions/business-workflow-update-2026-08-02.md` section 13 for the
+full rule.
+
+- No `Product` exists for 230MM yet.
+- 230MM must not be assumed to mean Hollow Pot 380 × 200 × 300 mm ("300mm")
+  or connected to any other existing Hollow Pot or Hollow Block.
+- No existing product may be renamed to 230MM.
+- The company will confirm the official product name, category, dimensions,
+  pieces per pallet, and maximum pieces per truck later.
+
+This pending identification must not block development.
 
 ---
 
@@ -277,13 +304,15 @@ Production may be created for:
 - A customer order.
 - General finished stock.
 
-One pallet always contains:
-
-**12 pieces**
+**Pieces per pallet is per product, not a single global figure (revised
+2026-08-03, Phase 6D)** — the old rule that "one pallet always contains 12
+pieces" applied to every product is no longer true. Each product has its own
+confirmed `piecesPerPallet` value (section 2.3), and Production refuses to
+run for a product whose value is not yet confirmed.
 
 Calculation:
 
-**Produced quantity = Number of pallets × 12**
+**Produced quantity = Number of pallets × the selected product's confirmed pieces per pallet**
 
 The system must display:
 
@@ -558,20 +587,39 @@ Every pumice purchase item snapshots: length, width, height, volume per load,
 number of loads, total volume, rate per cubic metre, and total cost. The rate
 must be configurable later; old purchases keep the rate used at creation.
 
-### Cement — bag calculation (2026-08-02)
+### Cement — sack calculation (2026-08-02, unit name confirmed 2026-08-03)
 
-Cement's measurement unit is `BAG`:
+Cement's measurement unit is **"Sack"** (company-facing name, confirmed
+2026-08-03 — corrects the earlier "Bag" wording). Measurement units remain
+configurable (section 2.13); "Sack" is simply the confirmed initial value for
+Cement.
 
 ```
-totalCost = numberOfBags × unitCost
+totalCost = numberOfSacks × unitCost
 ```
 
-Current known unit cost: **KES 850 per bag**, stored as a purchase-item
-snapshot (it may change; old purchases keep the cost used at creation).
+Current known unit cost: **KES 850 per sack**, stored as a purchase-item
+snapshot (it may change; old purchases keep the cost used at creation). This
+is a reference figure only — it must never be permanently hard-coded, and
+every purchase stores its own unit-cost snapshot.
 
-The reference figure of 170–190 bags used per day is informational only.
-Production must record the actual number of bags used — the system must
-never automatically consume 170 or 190 bags.
+The reference figure of 170–190 sacks used per day is informational only.
+Production must record the actual number of sacks used — the system must
+never automatically consume 170 or 190 sacks, never calculate usage from a
+fixed formula, and never block production based on this range.
+
+Cement purchases, usage, and stock are three separate concepts (see
+`docs/decisions/business-workflow-update-2026-08-02.md` section 14):
+
+- **Cement purchase** — supplier, quantity purchased (sacks), unit cost per
+  sack, total cost, payment status.
+- **Cement usage** — a production record: date, actual sacks used.
+- **Cement stock** — calculated as
+  `opening stock + purchased sacks − actual sacks used ± stock adjustments`,
+  never a manually maintained independent figure.
+
+A Cement purchase must never be recorded again as a General Expense (section
+2.27).
 
 ---
 

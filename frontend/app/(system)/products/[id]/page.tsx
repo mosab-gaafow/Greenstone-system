@@ -90,6 +90,23 @@ export default function ProductDetailPage({ params }: { params: Promise<{ id: st
             <DetailRow label="Description">
               {product.description ?? <span className="text-muted-foreground">None</span>}
             </DetailRow>
+            <DetailRow label="Operational name">
+              {product.operationalName ?? (
+                <span className="text-muted-foreground">Not confirmed</span>
+              )}
+            </DetailRow>
+            <DetailRow label="Pieces per pallet">
+              {product.piecesPerPallet ?? (
+                <span className="text-muted-foreground">
+                  Not confirmed — this product cannot be produced yet
+                </span>
+              )}
+            </DetailRow>
+            <DetailRow label="Max pieces per truck">
+              {product.maxPiecesPerTruck ?? (
+                <span className="text-muted-foreground">Not confirmed</span>
+              )}
+            </DetailRow>
             <DetailRow label="Price">
               {/* Stated explicitly, so nobody goes looking for a field that
                   deliberately does not exist. */}

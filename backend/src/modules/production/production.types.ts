@@ -13,7 +13,7 @@ import type {
 
 export interface ProductionItemInput {
   productId: string;
-  /** One pallet is always 12 pieces — the backend calculates `producedQuantity`. */
+  /** The backend calculates `producedQuantity` from the product's confirmed `piecesPerPallet`. */
   pallets: number;
   /** Broken before curing — a separate capture point from curing's own broken quantity. */
   brokenQuantity: number;

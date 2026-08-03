@@ -15,6 +15,14 @@ export interface Product {
   category: ProductCategory;
   size: string;
   description: string | null;
+  /** Short day-to-day name (e.g. "4-inch"). Null until confirmed. */
+  operationalName: string | null;
+  /** Confirmed pieces one pallet holds. Null until confirmed — Production
+   *  refuses to run for a product with no value here. */
+  piecesPerPallet: number | null;
+  /** Confirmed max pieces of this single product one truck can carry. Null
+   *  until confirmed. Single-product only. */
+  maxPiecesPerTruck: number | null;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

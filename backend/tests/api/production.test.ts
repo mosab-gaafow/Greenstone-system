@@ -25,7 +25,9 @@ async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
   };
 }
 
-async function seedProduct(overrides: Partial<{ name: string; isActive: boolean }> = {}) {
+async function seedProduct(
+  overrides: Partial<{ name: string; isActive: boolean; piecesPerPallet: number | null }> = {},
+) {
   const name = overrides.name ?? `Product ${Math.random().toString(36).slice(2, 8)}`;
 
   return getTestPrisma().product.create({
@@ -35,6 +37,7 @@ async function seedProduct(overrides: Partial<{ name: string; isActive: boolean 
       category: 'HOLLOW_BLOCK',
       size: '6 × 9',
       isActive: overrides.isActive ?? true,
+      piecesPerPallet: overrides.piecesPerPallet === undefined ? 12 : overrides.piecesPerPallet,
     },
   });
 }
@@ -195,6 +198,45 @@ describe('production module', () => {
       });
       expect(audit?.userId).toBe(user.id);
       expect(audit?.documentNumber).toMatch(/^PRD-/);
+    });
+
+    it('uses the product\'s own confirmed pieces-per-pallet value, not a fixed 12', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const product = await seedProduct({ piecesPerPallet: 18 });
+
+      const response = await request(app)
+        .post(PRODUCTION)
+        .set(headers)
+        .send({
+          productionDate: '2026-01-10',
+          purpose: 'GENERAL_STOCK',
+          items: [{ productId: product.id, pallets: 10, brokenQuantity: 0, curingDuration: 'TWO_DAYS' }],
+          rawMaterialUsages: [],
+        });
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.items[0].producedQuantity).toBe(180);
+    });
+
+    it('rejects production for a product with no confirmed pieces-per-pallet value', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const product = await seedProduct({ piecesPerPallet: null });
+
+      const response = await request(app)
+        .post(PRODUCTION)
+        .set(headers)
+        .send({
+          productionDate: '2026-01-10',
+          purpose: 'GENERAL_STOCK',
+          items: [{ productId: product.id, pallets: 1, brokenQuantity: 0, curingDuration: 'TWO_DAYS' }],
+          rawMaterialUsages: [],
+        });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.message).toMatch(/no confirmed pieces-per-pallet/i);
+      expect(await getTestPrisma().productionBatch.count()).toBe(0);
     });
 
     it('records a PRODUCTION-stage broken-product record', async () => {

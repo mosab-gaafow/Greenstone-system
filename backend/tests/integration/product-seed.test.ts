@@ -42,10 +42,50 @@ describe('production product seed', () => {
   });
 
   it('defines no price for any product', () => {
+    const allowedKeys = [
+      'category',
+      'name',
+      'size',
+      'operationalName',
+      'piecesPerPallet',
+      'maxPiecesPerTruck',
+    ];
+
     for (const product of INITIAL_PRODUCTS) {
       expect(product).not.toHaveProperty('price');
-      expect(Object.keys(product).sort()).toEqual(['category', 'name', 'size']);
+      for (const key of Object.keys(product)) {
+        expect(allowedKeys).toContain(key);
+      }
     }
+  });
+
+  it('confirms operational names, pieces per pallet, and truck capacity only for the four approved products', () => {
+    const byName = new Map(INITIAL_PRODUCTS.map((product) => [product.name, product]));
+
+    expect(byName.get('Hollow Blocks 4 × 9')).toMatchObject({
+      operationalName: '4-inch',
+      piecesPerPallet: 18,
+      maxPiecesPerTruck: 1500,
+    });
+    expect(byName.get('Hollow Blocks 6 × 9')).toMatchObject({
+      operationalName: '6-inch',
+      piecesPerPallet: 12,
+      maxPiecesPerTruck: 1200,
+    });
+    expect(byName.get('Hollow Blocks 9 × 9')).toMatchObject({
+      operationalName: '9-inch',
+      maxPiecesPerTruck: 850,
+    });
+    expect(byName.get('Hollow Blocks 9 × 9')?.piecesPerPallet).toBeUndefined();
+    expect(byName.get('Hollow Pot 380 × 200 × 300 mm')).toMatchObject({
+      operationalName: '300mm',
+      piecesPerPallet: 6,
+      maxPiecesPerTruck: 750,
+    });
+
+    // Deliberately empty — see business-blueprint section 2.3.
+    expect(byName.get('Hollow Pot 380 × 200 × 150 mm')?.operationalName).toBeUndefined();
+    expect(byName.get('Hollow Pot 380 × 200 × 200 mm')?.operationalName).toBeUndefined();
   });
 
   it('creates all six on an empty database', async () => {

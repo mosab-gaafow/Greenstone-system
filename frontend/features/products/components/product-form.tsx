@@ -45,6 +45,10 @@ export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFor
       category: product?.category ?? 'HOLLOW_BLOCK',
       size: product?.size ?? '',
       description: product?.description ?? '',
+      operationalName: product?.operationalName ?? '',
+      piecesPerPallet: product?.piecesPerPallet != null ? String(product.piecesPerPallet) : '',
+      maxPiecesPerTruck:
+        product?.maxPiecesPerTruck != null ? String(product.maxPiecesPerTruck) : '',
     },
   });
 
@@ -127,6 +131,47 @@ export function ProductForm({ product, onSubmit, pending, onCancel }: ProductFor
           error={errors.description?.message}
           {...register('description')}
         />
+      </FormSection>
+
+      <FormSection
+        title="Operational details"
+        description="Confirmed values for day-to-day use. Leave blank until the company confirms them — an empty field does not block anything except Production, which needs pieces per pallet."
+        icon={Package}
+      >
+        <TextField
+          id="operationalName"
+          label="Operational name"
+          placeholder="e.g. 4-inch"
+          hint="Short name staff use day to day. Optional."
+          error={errors.operationalName?.message}
+          {...register('operationalName')}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            id="piecesPerPallet"
+            label="Pieces per pallet"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            hint="Required before this product can be produced."
+            error={errors.piecesPerPallet?.message}
+            {...register('piecesPerPallet')}
+          />
+
+          <TextField
+            id="maxPiecesPerTruck"
+            label="Max pieces per truck"
+            type="number"
+            inputMode="numeric"
+            min={1}
+            step={1}
+            hint="One product type per truck trip. Optional."
+            error={errors.maxPiecesPerTruck?.message}
+            {...register('maxPiecesPerTruck')}
+          />
+        </div>
       </FormSection>
 
       <FormActions

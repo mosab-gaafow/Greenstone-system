@@ -683,7 +683,15 @@ Stores:
 - `operationalName` (2026-08-02) — a separate, configurable short name staff
   use day to day (e.g. "4-inch" for Hollow Blocks 4 × 9). Optional; left empty
   until confirmed for a given product. Does not replace the official product
-  name. Whether it must be unique is not yet confirmed.
+  name. Unique when present (`operationalNameNormalized`, confirmed
+  2026-08-02 second round — same dual-column pattern as
+  `Customer.emailNormalized`).
+- `piecesPerPallet` (2026-08-03, Phase 6D — COMPLETED) — a configurable
+  positive whole number, or empty when not yet confirmed for a given
+  product: the confirmed pieces one pallet of that product holds.
+  **Replaces the old global "one pallet is always 12 pieces" rule**
+  (business-blueprint section 2.7) — Production now reads this per-product
+  value and refuses to run for a product with no value here.
 - `maxPiecesPerTruck` (2026-08-02) — a configurable positive whole number, or
   empty when not yet known: the maximum pieces of this single product one
   truck can carry. Used only for single-product delivery trip calculation
@@ -691,6 +699,14 @@ Stores:
   4.11). An authorised user may update it later; already-recorded deliveries
   must keep the capacity value in effect at dispatch time as a snapshot, never
   recalculated retroactively.
+
+**Pending identification — 230MM (2026-08-03):** the company confirmed it
+uses the label "230MM," but the exact product it identifies is not yet
+confirmed. No `Product` row exists for it, it must not be assumed to be
+Hollow Pot 380 × 200 × 300 mm ("300mm") or any other existing product, and no
+existing product may be renamed to it. See
+`docs/decisions/business-workflow-update-2026-08-02.md` section 13. This does
+not block development.
 
 It does not require a fixed selling price.
 
@@ -1030,13 +1046,21 @@ purchases keep the rate used at creation. This value must never be confused
 with the unrelated `Vehicle.calculationFactor` default of `1100` (kilograms
 per cubic metre) — see the conflict note in section 4.11.
 
-**Cement (2026-08-02):** Cement's measurement unit is `BAG`.
-`totalCost = numberOfBags × unitCost`, using the generic quantity × unit-cost
+**Cement (2026-08-02; unit name confirmed 2026-08-03):** Cement's
+measurement unit is **"Sack"** (company-facing name — corrects the earlier
+"Bag" wording; `MeasurementUnit` is a configurable table, not a fixed enum,
+per section 4.9).
+`totalCost = numberOfSacks × unitCost`, using the generic quantity × unit-cost
 shape above — Cement needs **no** additional schema fields. Current known
-unit cost: KES 850 per bag, stored as the existing unit-cost snapshot. The
-reference figure of 170–190 bags used per day is informational only;
-production must record the actual number of bags used, never an automatic
-170 or 190.
+unit cost: KES 850 per sack, a reference figure only, stored as the existing
+unit-cost snapshot (never hard-coded). The reference figure of 170–190 sacks
+used per day is informational only; production must record the actual
+number of sacks used via the existing `RawMaterialUsage` entity (section
+4.9), never an automatic 170 or 190, and never a formula-derived value.
+Cement stock is the existing generic `RawMaterialStockBalance`/
+`RawMaterialMovement` ledger (section 4.9) — opening stock + purchased sacks
+− actual sacks used ± adjustments — not an independent model. See
+`docs/decisions/business-workflow-update-2026-08-02.md` section 14.
 
 ### Purchase Payment
 
@@ -2722,8 +2746,9 @@ Build:
 - Purchase records.
 - Purchase items, including Pumice's cubic-metre snapshot fields (length,
   width, height, volume per load, number of loads, total volume, rate per
-  cubic metre — 2026-08-02, see section 4.10) and Cement's bag-based
-  quantity × unit-cost (no additional fields needed).
+  cubic metre — 2026-08-02, see section 4.10) and Cement's sack-based
+  quantity × unit-cost (no additional fields needed; unit name confirmed
+  "Sack" 2026-08-03).
 - Purchase numbering.
 - Supplier opening balances.
 - Purchase payments.

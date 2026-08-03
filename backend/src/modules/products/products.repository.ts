@@ -76,6 +76,21 @@ export async function findProductByName(
   });
 }
 
+/**
+ * Finds a product by its normalised operational name.
+ *
+ * Mirrors `findProductByName` — comparing on the normalised column is what
+ * catches "4-Inch" against "4-inch" and against " 4-inch ".
+ */
+export async function findProductByOperationalName(
+  operationalName: string,
+  client: DbClient = getPrisma(),
+): Promise<ProductRow | null> {
+  return client.product.findUnique({
+    where: { operationalNameNormalized: normalizeForComparison(operationalName) },
+  });
+}
+
 export async function insertProduct(
   input: CreateProductInput,
   client: DbClient = getPrisma(),
@@ -87,6 +102,11 @@ export async function insertProduct(
       category: input.category,
       size: input.size,
       description: input.description ?? null,
+      operationalName: input.operationalName ?? null,
+      operationalNameNormalized:
+        input.operationalName != null ? normalizeForComparison(input.operationalName) : null,
+      piecesPerPallet: input.piecesPerPallet ?? null,
+      maxPiecesPerTruck: input.maxPiecesPerTruck ?? null,
     },
   });
 }
@@ -112,6 +132,17 @@ export async function updateProduct(
   }
   if (input.description !== undefined) {
     data.description = input.description;
+  }
+  if (input.operationalName !== undefined) {
+    data.operationalName = input.operationalName;
+    data.operationalNameNormalized =
+      input.operationalName != null ? normalizeForComparison(input.operationalName) : null;
+  }
+  if (input.piecesPerPallet !== undefined) {
+    data.piecesPerPallet = input.piecesPerPallet;
+  }
+  if (input.maxPiecesPerTruck !== undefined) {
+    data.maxPiecesPerTruck = input.maxPiecesPerTruck;
   }
 
   return client.product.update({ where: { id }, data });

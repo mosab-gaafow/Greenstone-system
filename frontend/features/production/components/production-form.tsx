@@ -63,6 +63,10 @@ export function ProductionForm({ onSubmit, pending }: ProductionFormProps) {
       })),
     [productsQuery.data],
   );
+  const productsById = useMemo(
+    () => new Map((productsQuery.data?.products ?? []).map((product) => [product.id, product])),
+    [productsQuery.data],
+  );
   const rawMaterialOptions = useMemo(
     () =>
       (rawMaterialsQuery.data?.rawMaterials ?? []).map((material) => ({
@@ -198,7 +202,9 @@ export function ProductionForm({ onSubmit, pending }: ProductionFormProps) {
             const item = watchedItems[index];
             const pallets = Number(item?.pallets) || 0;
             const broken = Number(item?.brokenQuantity) || 0;
-            const produced = pallets * 12;
+            const selectedProduct = item?.productId ? productsById.get(item.productId) : undefined;
+            const piecesPerPallet = selectedProduct?.piecesPerPallet ?? null;
+            const produced = piecesPerPallet !== null ? pallets * piecesPerPallet : 0;
             const usable = Math.max(0, produced - broken);
 
             return (
@@ -234,7 +240,13 @@ export function ProductionForm({ onSubmit, pending }: ProductionFormProps) {
                     inputMode="numeric"
                     min={1}
                     step={1}
-                    hint="12 pieces per pallet."
+                    hint={
+                      piecesPerPallet !== null
+                        ? `${String(piecesPerPallet)} pieces per pallet.`
+                        : selectedProduct
+                          ? 'This product has no confirmed pieces-per-pallet value yet.'
+                          : 'Select a product to see pieces per pallet.'
+                    }
                     error={errors.items?.[index]?.pallets?.message}
                     {...register(`items.${index}.pallets`)}
                   />
@@ -267,10 +279,17 @@ export function ProductionForm({ onSubmit, pending }: ProductionFormProps) {
                   />
                 </div>
 
-                <p className="text-muted-foreground text-xs">
-                  Produced {produced} · usable {usable}. Calculated — the saved figures come from
-                  the backend.
-                </p>
+                {selectedProduct && piecesPerPallet === null ? (
+                  <p className="text-destructive text-xs" role="alert">
+                    &ldquo;{selectedProduct.name}&rdquo; has no confirmed pieces-per-pallet value
+                    and cannot be produced yet.
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    Produced {produced} · usable {usable}. Calculated — the saved figures come from
+                    the backend.
+                  </p>
+                )}
               </div>
             );
           }}

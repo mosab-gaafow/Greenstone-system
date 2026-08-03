@@ -263,8 +263,13 @@ async function resolveItem(
   if (item.brokenQuantity < 0) {
     throw new BusinessRuleViolationError('Broken quantity cannot be negative.');
   }
+  if (product.piecesPerPallet === null) {
+    throw new BusinessRuleViolationError(
+      `"${product.name}" has no confirmed pieces-per-pallet value and cannot be produced yet.`,
+    );
+  }
 
-  const producedQuantity = item.pallets * 12;
+  const producedQuantity = item.pallets * product.piecesPerPallet;
 
   if (item.brokenQuantity > producedQuantity) {
     throw new BusinessRuleViolationError('Broken quantity cannot exceed produced quantity.');
