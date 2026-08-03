@@ -1,6 +1,7 @@
 import type { Driver, Prisma } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
 import type { DbClient } from '../../shared/database/transaction.js';
+import { normalizeNationalId } from '../../shared/utils/normalize.js';
 import type { CreateDriverInput, ListDriversFilters, UpdateDriverInput } from './drivers.types.js';
 
 /**
@@ -10,16 +11,6 @@ import type { CreateDriverInput, ListDriversFilters, UpdateDriverInput } from '.
  */
 
 export type DriverRow = Driver;
-
-/**
- * Normalises a national ID for the uniqueness check.
- *
- * Uppercased, with every space removed (not just collapsed) — an ID number
- * has no meaningful internal spacing, unlike a name or address.
- */
-export function normalizeNationalId(value: string): string {
-  return value.trim().replace(/\s+/g, '').toUpperCase();
-}
 
 function buildWhere(filters: ListDriversFilters): Prisma.DriverWhereInput {
   const where: Prisma.DriverWhereInput = {};

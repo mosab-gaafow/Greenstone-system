@@ -2,14 +2,17 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Save, Truck, Weight } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Save, Truck } from 'lucide-react';
+import { SearchableSelect } from '@/components/forms/searchable-select';
 import { TextField } from '@/components/forms/text-field';
 import { FormSection } from '@/components/forms/form-section';
 import { FormActions } from '@/components/forms/form-actions';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ApiError } from '@/lib/api-client';
+import * as vehicleOwnersApi from '@/features/vehicle-owners/api/vehicle-owners.api';
 import { vehicleFormSchema, type VehicleFormValues } from '../schemas/vehicle.schema';
 import type { Vehicle } from '../types/vehicle.types';
 
@@ -21,49 +24,37 @@ interface VehicleFormProps {
   onCancel?: () => void;
 }
 
-/**
- * Same formula the backend uses, for an immediate on-screen preview only.
- * The backend remains the sole authority for the saved value — this number
- * is never sent to the server.
- */
-const DEFAULT_CALCULATION_FACTOR = 1100;
-
 export function VehicleForm({ vehicle, onSubmit, pending, onCancel }: VehicleFormProps) {
   const router = useRouter();
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const vehicleOwnersQuery = useQuery({
+    queryKey: ['vehicles', 'vehicle-owner-options'],
+    queryFn: () => vehicleOwnersApi.fetchVehicleOwners({ page: 1, pageSize: 100, isActive: true }),
+  });
+
+  const vehicleOwnerOptions = useMemo(
+    () =>
+      (vehicleOwnersQuery.data?.vehicleOwners ?? []).map((owner) => ({
+        value: owner.id,
+        label: owner.name,
+      })),
+    [vehicleOwnersQuery.data],
+  );
+
   const {
     register,
+    control,
     handleSubmit,
-    watch,
     formState: { errors },
   } = useForm<VehicleFormValues>({
     resolver: zodResolver(vehicleFormSchema),
     defaultValues: {
       registrationNumber: vehicle?.registrationNumber ?? '',
       vehicleType: vehicle?.vehicleType ?? '',
-      truckLengthM: vehicle?.truckLengthM ?? '',
-      truckWidthM: vehicle?.truckWidthM ?? '',
-      truckHeightM: vehicle?.truckHeightM ?? '',
+      vehicleOwnerId: vehicle?.vehicleOwnerId ?? '',
     },
   });
-
-  const length = watch('truckLengthM');
-  const width = watch('truckWidthM');
-  const height = watch('truckHeightM');
-
-  const estimate = useMemo(() => {
-    const l = Number(length);
-    const w = Number(width);
-    const h = Number(height);
-
-    if (!length || !width || !height || !Number.isFinite(l) || !Number.isFinite(w) || !Number.isFinite(h)) {
-      return null;
-    }
-
-    const kg = l * w * h * DEFAULT_CALCULATION_FACTOR;
-    return { kg, tonnes: kg / 1000 };
-  }, [length, width, height]);
 
   return (
     <form
@@ -109,68 +100,32 @@ export function VehicleForm({ vehicle, onSubmit, pending, onCancel }: VehicleFor
           error={errors.vehicleType?.message}
           {...register('vehicleType')}
         />
-      </FormSection>
 
-      <FormSection
-        title="Load capacity"
-        description="All three dimensions are required to calculate the truck's load capacity."
-        icon={Weight}
-      >
-        <div className="grid gap-4 sm:grid-cols-3">
-          <TextField
-            id="truckLengthM"
-            label="Length (m)"
-            required
-            type="text"
-            inputMode="decimal"
-            placeholder="e.g. 6.00"
-            error={errors.truckLengthM?.message}
-            {...register('truckLengthM')}
-          />
-
-          <TextField
-            id="truckWidthM"
-            label="Width (m)"
-            required
-            type="text"
-            inputMode="decimal"
-            placeholder="e.g. 2.00"
-            error={errors.truckWidthM?.message}
-            {...register('truckWidthM')}
-          />
-
-          <TextField
-            id="truckHeightM"
-            label="Height (m)"
-            required
-            type="text"
-            inputMode="decimal"
-            placeholder="e.g. 1.50"
-            error={errors.truckHeightM?.message}
-            {...register('truckHeightM')}
-          />
-        </div>
-
-        <TextField
-          id="calculationFactor"
-          label="Calculation factor"
-          value={vehicle?.calculationFactor ?? String(DEFAULT_CALCULATION_FACTOR)}
-          hint="Fixed by the system. Not editable here."
-          disabled
-          readOnly
+        <Controller
+          name="vehicleOwnerId"
+          control={control}
+          render={({ field }) => (
+            <SearchableSelect
+              id="vehicleOwnerId"
+              label="Vehicle owner"
+              required
+              value={field.value}
+              onChange={field.onChange}
+              options={vehicleOwnerOptions}
+              placeholder={
+                vehicleOwnersQuery.isPending ? 'Loading vehicle owners…' : 'Select a vehicle owner'
+              }
+              searchPlaceholder="Search vehicle owners"
+              emptyMessage={
+                vehicleOwnersQuery.isError
+                  ? 'Vehicle owners could not be loaded.'
+                  : 'No active vehicle owners found.'
+              }
+              disabled={vehicleOwnersQuery.isPending}
+              error={errors.vehicleOwnerId?.message}
+            />
+          )}
         />
-
-        {estimate && (
-          <div className="bg-muted rounded-lg p-3 text-sm">
-            <span className="text-muted-foreground">Estimated load: </span>
-            <span className="font-semibold tabular-nums">
-              {estimate.kg.toLocaleString()} kg ({estimate.tonnes.toLocaleString()} t)
-            </span>
-            <p className="text-muted-foreground mt-1 text-xs">
-              Preview only — the saved figure always comes from the backend.
-            </p>
-          </div>
-        )}
       </FormSection>
 
       <FormActions

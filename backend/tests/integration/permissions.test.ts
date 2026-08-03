@@ -83,6 +83,14 @@ describe('role permissions', () => {
       expect(await hasPermission('accountant', 'customer', 'update')).toBe(true);
     });
 
+    it('may manage vehicle owners (Phase 6F)', async () => {
+      expect(await hasPermission('accountant', 'vehicle-owner', 'create')).toBe(true);
+      expect(await hasPermission('accountant', 'vehicle-owner', 'read')).toBe(true);
+      expect(await hasPermission('accountant', 'vehicle-owner', 'update')).toBe(true);
+      expect(await hasPermission('super_admin', 'vehicle-owner', 'create')).toBe(true);
+      expect(await hasPermission('admin', 'vehicle-owner', 'create')).toBe(true);
+    });
+
     it('may create orders and invoices', async () => {
       expect(await hasPermission('accountant', 'order', 'create')).toBe(true);
       expect(await hasPermission('accountant', 'invoice', 'create')).toBe(true);

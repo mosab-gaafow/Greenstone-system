@@ -52,6 +52,11 @@ what allows them to manage users.
 | `vehicle-owner`    | create, read, update | ✅          | ✅    | ✅         |
 | `vehicle`          | create, read, update | ✅          | ✅    | ✅         |
 
+**`vehicle-owner` implemented (2026-08-04, Phase 6F-1):** this resource was
+pre-declared ahead of its module, the same way `raw-material` and
+`customer-credit` were. The `vehicle-owners` module now exists, matching the
+`driver`/`vehicle` create/read/update pattern exactly, all three roles.
+
 **`customer:force-deactivate` (added 2026-08-03, Phase 6E addendum):** normal
 deactivation (`customer:update`, all three roles) is blocked in the service
 layer unless every Order is `COMPLETED`/`CANCELLED` and the accounting

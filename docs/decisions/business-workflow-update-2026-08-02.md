@@ -274,6 +274,15 @@ never automatically consume 170 or 190 bags on its own.
 
 ## 10. Drivers, Vehicle Owners, and Vehicles
 
+**Status: implemented (2026-08-04, Phase 6F).** `VehicleOwner` (name, phone,
+optional national ID, active status) and the reworked `Vehicle`
+(`registrationNumber`, `vehicleType`, `vehicleOwnerId`, `isActive`) both
+match this section exactly. The 3 pre-existing `Vehicle` rows (all
+non-production dev/demo data) were backfilled with two new demo
+`VehicleOwner` records rather than invented data. Driver and VehicleOwner
+remain separate, unlinked master-data records, exactly as required below —
+no automatic relationship was built between them.
+
 Drivers and Employees remain separate (already the case since Phase 4C — no
 change).
 
@@ -302,6 +311,11 @@ Vehicle are selected on every Delivery trip — this was already the confirmed
 Phase 4C design and does not change.
 
 ## 11. Transport payment
+
+**Status: not implemented — out of scope for Phase 6F.** Phase 6F built only
+the `VehicleOwner`/`Vehicle` master data described in section 10. Delivery,
+its trip snapshot fields, and transport-payment records belong to a later
+phase (Delivery, not yet approved or scheduled).
 
 Current transport rate: **KES 8,500 per trip.** The payee is always the
 Vehicle Owner (which may be the Driver, per section 10).
@@ -415,6 +429,12 @@ Rules:
   it.
 
 ### 12.4 Vehicle — remove the old volumetric calculation
+
+**Status: implemented (2026-08-04, Phase 6F-2).** Migration
+`20260804110000_phase6f2_vehicle_rework` dropped all six fields listed below
+and made `vehicleOwnerId` required, following the exact five-step sequence
+confirmed here — the 3 existing rows were backfilled (never deleted or
+silently discarded) before the column was made required.
 
 Confirmed: remove `truckLengthM`, `truckWidthM`, `truckHeightM`,
 `calculationFactor`, `calculatedLoadKg`, and `calculatedLoadTonnes` from the

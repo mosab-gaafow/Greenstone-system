@@ -222,6 +222,38 @@ section 16.
 **Next available phase, unstarted:** 6F (Vehicle Owners; rework Vehicle) —
 the only remaining sub-phase under the Phase 6 umbrella.
 
+## 6c. Phase 6F implemented (2026-08-04) — Vehicle Owners; rework Vehicle
+
+Phase 6F is now **complete**, closing out the last remaining sub-phase under
+the Phase 6 umbrella. Two migrations, run in sequence:
+`20260804100000_phase6f1_vehicle_owners` (new `vehicle_owners` table, new
+`vehicles.vehicleOwnerId` added nullable) and
+`20260804110000_phase6f2_vehicle_rework` (column made required, old
+`ownershipType` enum and all six Phase 4C volumetric fields dropped).
+
+New `vehicle-owners` backend module (six files, mirroring `drivers` exactly)
+and matching frontend feature/pages/nav entry. `Vehicle` now requires an
+active `VehicleOwner`, validated via a one-directional
+`vehicles → vehicle-owners` service import — never the reverse, to avoid a
+circular module dependency; the trade-off (a renamed/deactivated owner's
+name can be briefly stale in a cached vehicle list) self-heals within the
+existing 300s TTL and was accepted deliberately rather than fought.
+
+The 3 pre-existing `Vehicle` rows (all confirmed non-production dev/demo
+data) had no owner information anywhere to derive from safely — flagged per
+the migration-safety rule, then backfilled with two new demo `VehicleOwner`
+records via a one-off script (deleted after use), never inventing
+production data. Backend 534/534 tests passing (one confirmed-transient
+CSRF-cookie flake under full-suite load, not a regression). Frontend
+typecheck/lint/9 tests/26-route build all clean. Full detail in
+`docs/implementation-plan.md`'s Phase 6F section.
+
+**Next available phase, unstarted (at the time of writing):** none approved.
+Phase 6F was the last remaining sub-phase under the Phase 6 umbrella —
+Phase 7 (Purchases and Supplier Balances) is the next item in
+`docs/implementation-plan.md`'s progress table, but it has not been
+discussed, planned, or approved.
+
 ## 7. Exact next step (original, first-round session — historical)
 
 This session (including the second-round confirmations) still did not plan

@@ -4,7 +4,7 @@ import { API_BASE_PATH, createApp } from '../../src/app.js';
 import { CSRF_HEADER_NAME } from '../../src/config/security.js';
 import { disconnectPrisma } from '../../src/shared/database/prisma.js';
 import { createSignedInUser } from '../setup/auth-helpers.js';
-import { normalizeNationalId } from '../../src/modules/drivers/drivers.repository.js';
+import { normalizeNationalId } from '../../src/shared/utils/normalize.js';
 import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-database.js';
 
 const app = createApp();

@@ -1,13 +1,12 @@
 import { z } from 'zod';
-import { normalizeText } from '../../shared/utils/normalize.js';
+import { formatRegistrationDisplay, normalizeText } from '../../shared/utils/normalize.js';
 
 /**
  * Vehicle request schemas.
  *
  * Bodies are `.strict()`, so an unexpected field is rejected rather than
- * silently ignored — this is also what refuses `ownershipType`/`hireCost` on
- * a request: every vehicle is HIRED for the MVP, decided server-side, never
- * accepted from the client.
+ * silently ignored — this also refuses `ownershipType` and any of the old
+ * volumetric fields, all removed in Phase 6F.
  */
 
 const registrationNumberSchema = z
@@ -15,7 +14,7 @@ const registrationNumberSchema = z
   .trim()
   .min(2, 'Registration number must be at least 2 characters.')
   .max(20, 'Registration number must be 20 characters or fewer.')
-  .transform(normalizeText);
+  .transform(formatRegistrationDisplay);
 
 const vehicleTypeSchema = z
   .string()
@@ -24,23 +23,7 @@ const vehicleTypeSchema = z
   .max(60, 'Vehicle type must be 60 characters or fewer.')
   .transform(normalizeText);
 
-/**
- * Truck dimensions, in metres, up to two decimal places. Required — every
- * vehicle needs a known load capacity.
- *
- * Capped at 50m — far beyond any real truck, but without a bound a data-entry
- * slip (e.g. "600" instead of "6.00") multiplies out to a load figure that
- * overflows the database column, which previously surfaced as an opaque 500
- * error rather than a clear validation message.
- */
-const dimensionSchema = z
-  .string()
-  .trim()
-  .regex(/^\d+(\.\d{1,2})?$/, 'Enter a measurement with up to two decimal places.')
-  .refine((value) => Number(value) > 0, { message: 'Dimensions must be greater than zero.' })
-  .refine((value) => Number(value) <= 50, {
-    message: 'Enter a realistic measurement in metres (up to 50).',
-  });
+const vehicleOwnerIdSchema = z.string().min(1, 'Select a vehicle owner.');
 
 export const vehicleIdParamsSchema = z.object({
   id: z.string().min(1, 'A vehicle id is required.'),
@@ -50,9 +33,7 @@ export const createVehicleBodySchema = z
   .object({
     registrationNumber: registrationNumberSchema,
     vehicleType: vehicleTypeSchema,
-    truckLengthM: dimensionSchema,
-    truckWidthM: dimensionSchema,
-    truckHeightM: dimensionSchema,
+    vehicleOwnerId: vehicleOwnerIdSchema,
   })
   .strict();
 
@@ -60,9 +41,7 @@ export const updateVehicleBodySchema = z
   .object({
     registrationNumber: registrationNumberSchema.optional(),
     vehicleType: vehicleTypeSchema.optional(),
-    truckLengthM: dimensionSchema.optional(),
-    truckWidthM: dimensionSchema.optional(),
-    truckHeightM: dimensionSchema.optional(),
+    vehicleOwnerId: vehicleOwnerIdSchema.optional(),
   })
   .strict()
   .refine((body) => Object.keys(body).length > 0, {

@@ -61,13 +61,11 @@ export function VehicleList() {
     },
     { key: 'vehicleType', header: 'Type', card: 'subtitle', render: (vehicle) => vehicle.vehicleType },
     {
-      key: 'load',
-      header: 'Load capacity',
+      key: 'owner',
+      header: 'Owner',
       card: 'meta',
-      align: 'right',
-      className: 'tabular-nums',
-      render: (vehicle) => `${vehicle.calculatedLoadTonnes} t`,
-      sortValue: (vehicle) => Number(vehicle.calculatedLoadTonnes),
+      render: (vehicle) => vehicle.vehicleOwnerName,
+      sortValue: (vehicle) => vehicle.vehicleOwnerName.toLowerCase(),
     },
     {
       key: 'status',

@@ -40,6 +40,7 @@ export const statement = {
   supplier: ['create', 'read', 'update'],
   employee: ['create', 'read', 'update'],
   driver: ['create', 'read', 'update'],
+  'vehicle-owner': ['create', 'read', 'update'],
   vehicle: ['create', 'read', 'update'],
 
   // Sales and credit
@@ -92,6 +93,7 @@ export const accountant = ac.newRole({
   supplier: ['create', 'read', 'update'],
   employee: ['read'],
   driver: ['create', 'read', 'update'],
+  'vehicle-owner': ['create', 'read', 'update'],
   vehicle: ['create', 'read', 'update'],
 
   order: ['create', 'read', 'update', 'cancel'],
@@ -134,6 +136,7 @@ const fullBusinessAccess = {
   supplier: ['create', 'read', 'update'],
   employee: ['create', 'read', 'update'],
   driver: ['create', 'read', 'update'],
+  'vehicle-owner': ['create', 'read', 'update'],
   vehicle: ['create', 'read', 'update'],
 
   order: ['create', 'read', 'update', 'cancel'],

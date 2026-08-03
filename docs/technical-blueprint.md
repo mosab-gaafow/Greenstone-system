@@ -1084,25 +1084,31 @@ May connect a purchase payment to purchase records.
 
 It allows payment history to remain traceable without changing the purchase itself.
 
-## 4.11 Deliveries, vehicles, vehicle owners, and drivers (revised 2026-08-02)
+## 4.11 Deliveries, vehicles, vehicle owners, and drivers (revised 2026-08-02; implemented 2026-08-04, Phase 6F)
 
-### Vehicle Owner (new — 2026-08-02)
+### Vehicle Owner (new — 2026-08-02; implemented Phase 6F)
 
 Master-data entity. Stores:
 
 - Name.
-- Phone number.
-- Optional national ID.
+- Phone number (dual-column normalised, unique — same pattern as Customer).
+- Optional national ID (dual-column normalised, unique when present — same
+  pattern as Driver's, but optional here).
 - Active status.
 
-### Vehicle (revised 2026-08-02)
+New backend module `vehicle-owners` (six files, matching the exact
+`driver`/`vehicle` architecture — routes → controller → service →
+repository → Prisma). Permission resource `vehicle-owner`
+(create/read/update, all three roles — matching `driver`/`vehicle`).
+
+### Vehicle (revised 2026-08-02; implemented Phase 6F)
 
 Stores:
 
 - Registration number.
 - Vehicle type.
 - Vehicle Owner (replaces `ownershipType`/`hireCost` entirely — every vehicle
-  now has a registered owner instead of an ownership category).
+  now has a registered, active owner instead of an ownership category).
 - Active status.
 
 If the Driver owns the Vehicle, the Driver is also registered as a separate
@@ -1110,17 +1116,18 @@ Vehicle Owner record (not automatically linked or merged with the Driver
 record). A Driver is never permanently attached to one Vehicle — the actual
 Driver and Vehicle are selected on every Delivery trip.
 
-**Conflict with the existing volumetric calculation:** Phase 4C added a
-vehicle-level truck-capacity model (`truckLengthM`, `truckWidthM`,
-`truckHeightM`, `calculationFactor` defaulting to `1100` kilograms per cubic
-metre, `calculatedLoadKg`, `calculatedLoadTonnes`) that this document did not
-originally describe. The new per-product `maxPiecesPerTruck` (section 4.4)
-conflicts with it in two ways: the value `1100` also appears as the Pumice
-purchase rate (KES per cubic metre, section 4.10) — a different unit that
-must never be confused with `calculationFactor` — and the per-product model
-may make the entire volumetric Vehicle calculation redundant for
-delivery-trip planning. Whether to remove the volumetric fields is **not yet
-confirmed** — see `docs/decisions/business-workflow-update-2026-08-02.md`.
+**Resolved (2026-08-04, Phase 6F): the Phase 4C volumetric truck-capacity
+model was removed entirely** — `truckLengthM`, `truckWidthM`, `truckHeightM`,
+`calculationFactor` (which defaulted to `1100` kilograms per cubic metre),
+`calculatedLoadKg`, and `calculatedLoadTonnes` no longer exist on `Vehicle`.
+The calculation was based on a misunderstanding: `1100` is the Pumice
+purchase rate (KES per cubic metre, section 4.10), not a vehicle capacity
+factor. Truck dimensions belong to a future Pumice purchase/load record, not
+the Vehicle master. `vehicles.service.ts` now validates the referenced
+Vehicle Owner exists and is active (via `vehicle-owners.service.ts`'s
+exported `requireActiveVehicleOwner` — the one-directional dependency
+`vehicles` → `vehicle-owners`, never the reverse, avoiding a circular module
+dependency) before creating or reassigning a vehicle.
 
 ### Driver
 

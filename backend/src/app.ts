@@ -8,6 +8,7 @@ import { productsRoutes } from './modules/products/products.routes.js';
 import { customersRoutes } from './modules/customers/customers.routes.js';
 import { employeesRoutes } from './modules/employees/employees.routes.js';
 import { driversRoutes } from './modules/drivers/drivers.routes.js';
+import { vehicleOwnersRoutes } from './modules/vehicle-owners/vehicle-owners.routes.js';
 import { vehiclesRoutes } from './modules/vehicles/vehicles.routes.js';
 import { suppliersRoutes } from './modules/suppliers/suppliers.routes.js';
 import { settingsRoutes } from './modules/settings/settings.routes.js';
@@ -78,6 +79,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/customers`, customerCreditRoutes());
   app.use(`${API_BASE_PATH}/employees`, employeesRoutes());
   app.use(`${API_BASE_PATH}/drivers`, driversRoutes());
+  app.use(`${API_BASE_PATH}/vehicle-owners`, vehicleOwnersRoutes());
   app.use(`${API_BASE_PATH}/vehicles`, vehiclesRoutes());
   app.use(`${API_BASE_PATH}/suppliers`, suppliersRoutes());
   app.use(`${API_BASE_PATH}/settings`, settingsRoutes());

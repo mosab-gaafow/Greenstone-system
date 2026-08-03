@@ -1,49 +1,30 @@
-import type { Vehicle, Prisma } from '../../generated/prisma/client.js';
+import type { Prisma, Vehicle } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
 import type { DbClient } from '../../shared/database/transaction.js';
+import { normalizeRegistration } from '../../shared/utils/normalize.js';
 import type { ListVehiclesFilters } from './vehicles.types.js';
 
 /**
  * Vehicle database access.
  *
- * Queries only. No business decisions, no HTTP, no permission checks. The
- * truck-load calculation happens in the service layer — this file only
- * persists whatever values it is given.
+ * Queries only. No business decisions, no HTTP, no permission checks. Owner
+ * validation (exists, active) happens in the service layer, via
+ * `vehicle-owners.service.ts`'s exported `requireActiveVehicleOwner` — this
+ * file only persists whatever `vehicleOwnerId` it is given.
  */
 
-export type VehicleRow = Vehicle;
-
-/**
- * Normalises a registration number for the uniqueness check.
- *
- * Unlike `normalizeForComparison` (used for names and labels, where a single
- * space is meaningful), a plate written "KDA 123X" and "kda123x" is the same
- * plate — so every space is removed, not just collapsed.
- */
-export function normalizeRegistration(value: string): string {
-  return value.replace(/\s+/g, '').toLowerCase();
-}
+export type VehicleRow = Vehicle & { vehicleOwner: { name: string } };
 
 export interface VehicleWriteFields {
   registrationNumber: string;
   vehicleType: string;
-  truckLengthM: Prisma.Decimal;
-  truckWidthM: Prisma.Decimal;
-  truckHeightM: Prisma.Decimal;
-  calculationFactor: Prisma.Decimal;
-  calculatedLoadKg: Prisma.Decimal;
-  calculatedLoadTonnes: Prisma.Decimal;
+  vehicleOwnerId: string;
 }
 
 export interface VehicleUpdateFields {
   registrationNumber?: string | undefined;
   vehicleType?: string | undefined;
-  truckLengthM?: Prisma.Decimal | undefined;
-  truckWidthM?: Prisma.Decimal | undefined;
-  truckHeightM?: Prisma.Decimal | undefined;
-  calculationFactor?: Prisma.Decimal | undefined;
-  calculatedLoadKg?: Prisma.Decimal | undefined;
-  calculatedLoadTonnes?: Prisma.Decimal | undefined;
+  vehicleOwnerId?: string | undefined;
 }
 
 function buildWhere(filters: ListVehiclesFilters): Prisma.VehicleWhereInput {
@@ -53,6 +34,7 @@ function buildWhere(filters: ListVehiclesFilters): Prisma.VehicleWhereInput {
     where.OR = [
       { registrationNumber: { contains: filters.search } },
       { vehicleType: { contains: filters.search } },
+      { vehicleOwner: { name: { contains: filters.search } } },
     ];
   }
 
@@ -75,6 +57,7 @@ export async function findVehicles(
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
       orderBy: { [filters.sortBy]: filters.sortDirection },
+      include: { vehicleOwner: { select: { name: true } } },
     }),
     client.vehicle.count({ where }),
   ]);
@@ -86,7 +69,10 @@ export async function findVehicleById(
   id: string,
   client: DbClient = getPrisma(),
 ): Promise<VehicleRow | null> {
-  return client.vehicle.findUnique({ where: { id } });
+  return client.vehicle.findUnique({
+    where: { id },
+    include: { vehicleOwner: { select: { name: true } } },
+  });
 }
 
 /** Finds a vehicle by normalised registration number. The real duplicate check. */
@@ -96,10 +82,10 @@ export async function findVehicleByRegistration(
 ): Promise<VehicleRow | null> {
   return client.vehicle.findUnique({
     where: { registrationNormalized: normalizeRegistration(registrationNumber) },
+    include: { vehicleOwner: { select: { name: true } } },
   });
 }
 
-/** Every registered vehicle is HIRED for the MVP — see vehicles.types.ts. */
 export async function insertVehicle(
   data: VehicleWriteFields,
   client: DbClient = getPrisma(),
@@ -109,14 +95,9 @@ export async function insertVehicle(
       registrationNumber: data.registrationNumber,
       registrationNormalized: normalizeRegistration(data.registrationNumber),
       vehicleType: data.vehicleType,
-      ownershipType: 'HIRED',
-      truckLengthM: data.truckLengthM,
-      truckWidthM: data.truckWidthM,
-      truckHeightM: data.truckHeightM,
-      calculationFactor: data.calculationFactor,
-      calculatedLoadKg: data.calculatedLoadKg,
-      calculatedLoadTonnes: data.calculatedLoadTonnes,
+      vehicleOwnerId: data.vehicleOwnerId,
     },
+    include: { vehicleOwner: { select: { name: true } } },
   });
 }
 
@@ -134,26 +115,15 @@ export async function updateVehicle(
   if (data.vehicleType !== undefined) {
     update.vehicleType = data.vehicleType;
   }
-  if (data.truckLengthM !== undefined) {
-    update.truckLengthM = data.truckLengthM;
-  }
-  if (data.truckWidthM !== undefined) {
-    update.truckWidthM = data.truckWidthM;
-  }
-  if (data.truckHeightM !== undefined) {
-    update.truckHeightM = data.truckHeightM;
-  }
-  if (data.calculationFactor !== undefined) {
-    update.calculationFactor = data.calculationFactor;
-  }
-  if (data.calculatedLoadKg !== undefined) {
-    update.calculatedLoadKg = data.calculatedLoadKg;
-  }
-  if (data.calculatedLoadTonnes !== undefined) {
-    update.calculatedLoadTonnes = data.calculatedLoadTonnes;
+  if (data.vehicleOwnerId !== undefined) {
+    update.vehicleOwner = { connect: { id: data.vehicleOwnerId } };
   }
 
-  return client.vehicle.update({ where: { id }, data: update });
+  return client.vehicle.update({
+    where: { id },
+    data: update,
+    include: { vehicleOwner: { select: { name: true } } },
+  });
 }
 
 export async function setVehicleActive(
@@ -161,5 +131,9 @@ export async function setVehicleActive(
   isActive: boolean,
   client: DbClient = getPrisma(),
 ): Promise<VehicleRow> {
-  return client.vehicle.update({ where: { id }, data: { isActive } });
+  return client.vehicle.update({
+    where: { id },
+    data: { isActive },
+    include: { vehicleOwner: { select: { name: true } } },
+  });
 }

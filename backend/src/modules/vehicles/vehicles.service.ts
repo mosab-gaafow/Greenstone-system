@@ -1,5 +1,4 @@
-import { Prisma } from '../../generated/prisma/client.js';
-import type { VehicleRow, VehicleUpdateFields, VehicleWriteFields } from './vehicles.repository.js';
+import type { VehicleRow } from './vehicles.repository.js';
 import {
   findVehicleById,
   findVehicleByRegistration,
@@ -14,6 +13,7 @@ import { cache } from '../../shared/cache/cache.service.js';
 import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-keys.js';
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
 import { BusinessRuleViolationError, ResourceNotFoundError } from '../../shared/errors/app-error.js';
+import { requireActiveVehicleOwner } from '../vehicle-owners/vehicle-owners.service.js';
 import type {
   CreateVehicleInput,
   ListVehiclesFilters,
@@ -28,23 +28,16 @@ import type {
  * Vehicles are never deleted, only activated and deactivated — delivery
  * history will reference them permanently once deliveries exist.
  *
- * The truck-load calculation is the one piece of real arithmetic here. Every
- * vehicle requires all three dimensions; the factor and calculated figures
- * are a backend-only snapshot — see docs/implementation-plan.md Phase 4C. A
- * future change to the default factor must never rewrite an already-saved
- * vehicle's stored figures.
+ * Phase 6F: every vehicle requires a registered, active `VehicleOwner` —
+ * confirmed via the `vehicle-owners` module's own service
+ * (`requireActiveVehicleOwner`), never a direct query into that module's
+ * repository. The old volumetric truck-load calculation is gone entirely;
+ * see the `Vehicle` model's doc comment in schema.prisma for why.
  */
 
 const AUDIT_MODULE = 'vehicles';
 const CACHE_MODULE = 'vehicles';
 const LIST_TTL_SECONDS = 300;
-
-/**
- * The sole authority for the calculation factor. Never accepted from a
- * request — the frontend may preview the same formula, but the value a
- * vehicle is saved with always comes from here.
- */
-const DEFAULT_CALCULATION_FACTOR = 1100;
 
 export async function listVehicles(filters: ListVehiclesFilters): Promise<ListVehiclesResult> {
   const key = buildCacheKey({
@@ -68,18 +61,14 @@ export async function createVehicle(
   context: RequestContext,
 ): Promise<VehicleSummary> {
   await assertRegistrationAvailable(input.registrationNumber);
-
-  const load = calculateTruckLoad(input.truckLengthM, input.truckWidthM, input.truckHeightM);
+  await requireActiveVehicleOwner(input.vehicleOwnerId);
 
   const created = await runInTransaction(async (tx: TransactionClient) => {
     const vehicle = await insertVehicle(
       {
         registrationNumber: input.registrationNumber,
         vehicleType: input.vehicleType,
-        truckLengthM: new Prisma.Decimal(input.truckLengthM),
-        truckWidthM: new Prisma.Decimal(input.truckWidthM),
-        truckHeightM: new Prisma.Decimal(input.truckHeightM),
-        ...load,
+        vehicleOwnerId: input.vehicleOwnerId,
       },
       tx,
     );
@@ -115,32 +104,20 @@ export async function editVehicle(
     await assertRegistrationAvailable(input.registrationNumber, id);
   }
 
-  const dimensionsChanged =
-    input.truckLengthM !== undefined ||
-    input.truckWidthM !== undefined ||
-    input.truckHeightM !== undefined;
-
-  const writeFields: VehicleUpdateFields = {
-    registrationNumber: input.registrationNumber,
-    vehicleType: input.vehicleType,
-  };
-
-  if (dimensionsChanged) {
-    const length = input.truckLengthM ?? existing.truckLengthM.toString();
-    const width = input.truckWidthM ?? existing.truckWidthM.toString();
-    const height = input.truckHeightM ?? existing.truckHeightM.toString();
-    const load = calculateTruckLoad(length, width, height);
-
-    writeFields.truckLengthM = new Prisma.Decimal(length);
-    writeFields.truckWidthM = new Prisma.Decimal(width);
-    writeFields.truckHeightM = new Prisma.Decimal(height);
-    writeFields.calculationFactor = load.calculationFactor;
-    writeFields.calculatedLoadKg = load.calculatedLoadKg;
-    writeFields.calculatedLoadTonnes = load.calculatedLoadTonnes;
+  if (input.vehicleOwnerId !== undefined && input.vehicleOwnerId !== existing.vehicleOwnerId) {
+    await requireActiveVehicleOwner(input.vehicleOwnerId);
   }
 
   const updated = await runInTransaction(async (tx: TransactionClient) => {
-    const vehicle = await updateVehicle(id, writeFields, tx);
+    const vehicle = await updateVehicle(
+      id,
+      {
+        registrationNumber: input.registrationNumber,
+        vehicleType: input.vehicleType,
+        vehicleOwnerId: input.vehicleOwnerId,
+      },
+      tx,
+    );
 
     await recordAudit(tx, {
       ...toAuditContext(context),
@@ -233,18 +210,14 @@ async function assertRegistrationAvailable(
   }
 }
 
-function calculateTruckLoad(
-  lengthM: string,
-  widthM: string,
-  heightM: string,
-): Pick<VehicleWriteFields, 'calculationFactor' | 'calculatedLoadKg' | 'calculatedLoadTonnes'> {
-  const factor = new Prisma.Decimal(DEFAULT_CALCULATION_FACTOR);
-  const kg = new Prisma.Decimal(lengthM).mul(widthM).mul(heightM).mul(factor);
-
-  return { calculationFactor: factor, calculatedLoadKg: kg, calculatedLoadTonnes: kg.div(1000) };
-}
-
-async function invalidateVehicleCache(): Promise<void> {
+/**
+ * Invalidates every cached vehicle list entry.
+ *
+ * Exported so `vehicle-owners.service.ts` can invalidate it after its own
+ * writes commit — a Vehicle Owner's name/active-status change must
+ * invalidate this list too, since it denormalises `vehicleOwnerName`.
+ */
+export async function invalidateVehicleCache(): Promise<void> {
   await cache.delByPrefix(buildCacheKeyPrefix(CACHE_MODULE));
 }
 
@@ -263,13 +236,8 @@ function toSummary(row: VehicleRow): VehicleSummary {
     id: row.id,
     registrationNumber: row.registrationNumber,
     vehicleType: row.vehicleType,
-    ownershipType: row.ownershipType,
-    truckLengthM: row.truckLengthM.toFixed(2),
-    truckWidthM: row.truckWidthM.toFixed(2),
-    truckHeightM: row.truckHeightM.toFixed(2),
-    calculationFactor: row.calculationFactor.toFixed(2),
-    calculatedLoadKg: row.calculatedLoadKg.toFixed(2),
-    calculatedLoadTonnes: row.calculatedLoadTonnes.toFixed(3),
+    vehicleOwnerId: row.vehicleOwnerId,
+    vehicleOwnerName: row.vehicleOwner.name,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -280,12 +248,8 @@ function toAuditSnapshot(row: VehicleRow): Record<string, unknown> {
   return {
     registrationNumber: row.registrationNumber,
     vehicleType: row.vehicleType,
-    truckLengthM: row.truckLengthM.toFixed(2),
-    truckWidthM: row.truckWidthM.toFixed(2),
-    truckHeightM: row.truckHeightM.toFixed(2),
-    calculationFactor: row.calculationFactor.toFixed(2),
-    calculatedLoadKg: row.calculatedLoadKg.toFixed(2),
-    calculatedLoadTonnes: row.calculatedLoadTonnes.toFixed(3),
+    vehicleOwnerId: row.vehicleOwnerId,
+    vehicleOwnerName: row.vehicleOwner.name,
     isActive: row.isActive,
   };
 }

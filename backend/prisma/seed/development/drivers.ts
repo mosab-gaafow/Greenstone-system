@@ -1,5 +1,5 @@
 import type { DbClient } from '../../../src/shared/database/transaction.js';
-import { normalizeNationalId } from '../../../src/modules/drivers/drivers.repository.js';
+import { normalizeNationalId } from '../../../src/shared/utils/normalize.js';
 
 /**
  * Demo drivers. Fixed national ID values make the seed idempotent — see

@@ -25,6 +25,7 @@ import { disconnectPrisma, getPrisma } from '../../../src/shared/database/prisma
 import { seedDemoCustomers } from './customers.js';
 import { seedDemoEmployees } from './employees.js';
 import { seedDemoDrivers } from './drivers.js';
+import { seedDemoVehicleOwners } from './vehicle-owners.js';
 import { seedDemoVehicles } from './vehicles.js';
 import { seedDemoSuppliers } from './suppliers.js';
 
@@ -61,6 +62,7 @@ async function main(): Promise<void> {
   const customers = await seedDemoCustomers(prisma);
   const employees = await seedDemoEmployees(prisma);
   const drivers = await seedDemoDrivers(prisma);
+  const vehicleOwners = await seedDemoVehicleOwners(prisma);
   const vehicles = await seedDemoVehicles(prisma);
   const suppliers = await seedDemoSuppliers(prisma);
 
@@ -68,6 +70,7 @@ async function main(): Promise<void> {
   console.log(`  Customers: ${String(customers.created)} created, ${String(customers.skipped)} already present.`);
   console.log(`  Employees: ${String(employees.created)} created, ${String(employees.skipped)} already present.`);
   console.log(`  Drivers: ${String(drivers.created)} created, ${String(drivers.skipped)} already present.`);
+  console.log(`  Vehicle owners: ${String(vehicleOwners.created)} created, ${String(vehicleOwners.skipped)} already present.`);
   console.log(`  Vehicles: ${String(vehicles.created)} created, ${String(vehicles.skipped)} already present.`);
   console.log(`  Suppliers: ${String(suppliers.created)} created, ${String(suppliers.skipped)} already present.`);
 }

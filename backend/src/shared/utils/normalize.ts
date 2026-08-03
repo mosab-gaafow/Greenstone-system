@@ -73,3 +73,45 @@ export function normalizePhone(value: string): string {
 export function normalizeEmail(value: string): string {
   return value.trim().toLowerCase();
 }
+
+/**
+ * Normalises a national ID for the uniqueness check.
+ *
+ * Uppercased, with every space removed (not just collapsed) — an ID number
+ * has no meaningful internal spacing, unlike a name or address. Shared by
+ * `Driver` and `VehicleOwner` (Phase 6F), both of which use the same
+ * "readable value + normalised unique column" pattern for this field.
+ */
+export function normalizeNationalId(value: string): string {
+  return value.trim().replace(/\s+/g, '').toUpperCase();
+}
+
+/**
+ * Normalises a vehicle registration number for the uniqueness check.
+ *
+ * A plate has no meaningful separators — "KDM 293E", "kdm-293e", and
+ * "KDM293E" are the same plate. Every character that is not a letter or
+ * digit is stripped, not just whitespace, so a hyphen or stray punctuation
+ * mark cannot slip a duplicate past the unique index (the bug that let
+ * "KDM 293E" and "kdm-293e" both be created as separate Vehicle rows —
+ * the previous function only removed whitespace, leaving the hyphen in
+ * place).
+ */
+export function normalizeRegistration(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+/**
+ * Formats a vehicle registration number for company-facing display.
+ *
+ * Uppercased and trimmed, with any run of separator characters (hyphens,
+ * extra spaces, and similar) collapsed to a single space — "kdm-293e" is
+ * stored and displayed as "KDM 293E", the same plate written by hand.
+ */
+export function formatRegistrationDisplay(value: string): string {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim();
+}

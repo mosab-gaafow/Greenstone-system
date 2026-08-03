@@ -35,7 +35,7 @@ export function VehicleFormDialog({
   const title = vehicle ? `Edit ${vehicle.registrationNumber}` : 'Add vehicle';
   const description = vehicle
     ? 'Update the vehicle details.'
-    : 'Register a company or hired vehicle.';
+    : 'Register a hired vehicle.';
 
   const form = (
     <VehicleForm

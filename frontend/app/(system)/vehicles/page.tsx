@@ -19,7 +19,7 @@ export default function VehiclesPage() {
       <PageHeader
         icon={Truck}
         title="Vehicles"
-        description="Company and hired vehicles Greenstone uses for deliveries."
+        description="Hired vehicles Greenstone uses for deliveries."
         secondaryActions={
           <Button
             variant="outline"

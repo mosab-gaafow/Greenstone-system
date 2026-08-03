@@ -59,6 +59,7 @@ const TABLES = [
   'employees',
   'drivers',
   'vehicles',
+  'vehicle_owners',
   'suppliers',
   'company_settings',
   'generated_documents',

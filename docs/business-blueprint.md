@@ -763,7 +763,7 @@ general expense.
 
 ---
 
-## 2.20 Drivers, Vehicle Owners, and vehicles (revised 2026-08-02)
+## 2.20 Drivers, Vehicle Owners, and vehicles (revised 2026-08-02; implemented 2026-08-04, Phase 6F)
 
 The system must allow registration of:
 
@@ -804,6 +804,13 @@ Vehicle are selected on every delivery trip.
 Safe demo records may be used during development.
 
 Real records will be entered during production setup.
+
+**Implementation note (2026-08-04, Phase 6F):** the 3 existing (development
+demo) Vehicle rows had no owner information anywhere to derive one from and
+were backfilled with real demo `VehicleOwner` records, never invented ones —
+see `docs/database-notes.md`'s `vehicles`/`vehicle_owners` table notes. A
+Driver may also be a Vehicle Owner in real life, but no automatic link or
+merge is created between the two records.
 
 ---
 

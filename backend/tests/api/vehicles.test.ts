@@ -4,7 +4,7 @@ import { API_BASE_PATH, createApp } from '../../src/app.js';
 import { CSRF_HEADER_NAME } from '../../src/config/security.js';
 import { disconnectPrisma } from '../../src/shared/database/prisma.js';
 import { createSignedInUser } from '../setup/auth-helpers.js';
-import { normalizeRegistration } from '../../src/modules/vehicles/vehicles.repository.js';
+import { normalizePhone, normalizeRegistration } from '../../src/shared/utils/normalize.js';
 import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-database.js';
 
 const app = createApp();
@@ -25,36 +25,41 @@ async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
   };
 }
 
+async function seedVehicleOwner(overrides: Partial<{ name: string; isActive: boolean }> = {}) {
+  const phone = `07${String(Math.floor(10000000 + Math.random() * 89999999))}`;
+
+  return getTestPrisma().vehicleOwner.create({
+    data: {
+      name: overrides.name ?? `Vehicle Owner ${Math.random().toString(36).slice(2, 8)}`,
+      phone,
+      phoneNormalized: normalizePhone(phone),
+      isActive: overrides.isActive ?? true,
+    },
+  });
+}
+
 /** Standard body for a vehicle create request — every field is required. */
 function vehicleBody(overrides: Partial<Record<string, string>> = {}) {
   return {
     registrationNumber: `K${Math.floor(100 + Math.random() * 899)}A`,
     vehicleType: 'Truck',
-    truckLengthM: '6.00',
-    truckWidthM: '2.00',
-    truckHeightM: '1.50',
     ...overrides,
   };
 }
 
 async function seedVehicle(
-  overrides: Partial<{ registrationNumber: string; isActive: boolean }> = {},
+  overrides: Partial<{ registrationNumber: string; isActive: boolean; vehicleOwnerId: string }> = {},
 ) {
   const registrationNumber =
     overrides.registrationNumber ?? `K${Math.floor(100 + Math.random() * 899)}A`;
+  const vehicleOwnerId = overrides.vehicleOwnerId ?? (await seedVehicleOwner()).id;
 
   return getTestPrisma().vehicle.create({
     data: {
       registrationNumber,
       registrationNormalized: normalizeRegistration(registrationNumber),
       vehicleType: 'Truck',
-      ownershipType: 'HIRED',
-      truckLengthM: '6.00',
-      truckWidthM: '2.00',
-      truckHeightM: '1.50',
-      calculationFactor: '1100.00',
-      calculatedLoadKg: '19800.00',
-      calculatedLoadTonnes: '19.800',
+      vehicleOwnerId,
       isActive: overrides.isActive ?? true,
     },
   });
@@ -80,61 +85,115 @@ describe('vehicles module', () => {
       // The approved matrix gives the Accountant full vehicle management.
       const { cookie } = await createSignedInUser('accountant');
       const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
 
-      const response = await request(app).post(VEHICLES).set(headers).send(vehicleBody());
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send(vehicleBody({ vehicleOwnerId: owner.id }));
 
       expect(response.status).toBe(201);
     });
 
     it('rejects a mutation with no CSRF token', async () => {
       const { cookie } = await createSignedInUser('admin');
+      const owner = await seedVehicleOwner();
 
-      const response = await request(app).post(VEHICLES).set('Cookie', cookie).send(vehicleBody());
+      const response = await request(app)
+        .post(VEHICLES)
+        .set('Cookie', cookie)
+        .send(vehicleBody({ vehicleOwnerId: owner.id }));
 
       expect(response.status).toBe(403);
     });
   });
 
   describe('creating and listing', () => {
-    it('creates a vehicle as HIRED, decided server-side', async () => {
+    it('creates a vehicle with a registered, active owner', async () => {
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner({ name: 'Kamau Transporters' });
 
       const response = await request(app)
         .post(VEHICLES)
         .set(headers)
-        .send(vehicleBody({ registrationNumber: 'KDA 123X' }));
+        .send(vehicleBody({ registrationNumber: 'KDA 123X', vehicleOwnerId: owner.id }));
 
       expect(response.status).toBe(201);
       expect(response.body.data).toMatchObject({
         registrationNumber: 'KDA 123X',
-        ownershipType: 'HIRED',
+        vehicleOwnerId: owner.id,
+        vehicleOwnerName: 'Kamau Transporters',
         isActive: true,
       });
     });
 
-    it('rejects an ownershipType field on the request', async () => {
-      // Hired-only for the MVP — ownership is never client-controlled.
+    it('rejects an unknown vehicle owner', async () => {
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
 
       const response = await request(app)
         .post(VEHICLES)
         .set(headers)
-        .send({ ...vehicleBody(), ownershipType: 'COMPANY' });
+        .send(vehicleBody({ vehicleOwnerId: 'does-not-exist' }));
+
+      expect(response.status).toBe(404);
+    });
+
+    it('rejects an inactive vehicle owner', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner({ isActive: false });
+
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send(vehicleBody({ vehicleOwnerId: owner.id }));
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.message).toMatch(/inactive/i);
+    });
+
+    it('rejects a missing vehicle owner', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const body = vehicleBody() as Record<string, unknown>;
+
+      const response = await request(app).post(VEHICLES).set(headers).send(body);
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.fieldErrors).toHaveProperty('vehicleOwnerId');
+    });
+
+    it('rejects an ownershipType field on the request', async () => {
+      // Removed entirely in Phase 6F — no ownership category exists any more.
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
+
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send({ ...vehicleBody({ vehicleOwnerId: owner.id }), ownershipType: 'COMPANY' });
 
       expect(response.status).toBe(422);
     });
 
-    it('rejects a hireCost field on the request', async () => {
-      // hireCost was removed from the Vehicle master entirely.
+    it('rejects truck dimension fields on the request', async () => {
+      // The Phase 4C volumetric calculation was removed entirely in Phase 6F.
       const { cookie } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
 
       const response = await request(app)
         .post(VEHICLES)
         .set(headers)
-        .send({ ...vehicleBody(), hireCost: '15000.00' });
+        .send({
+          ...vehicleBody({ vehicleOwnerId: owner.id }),
+          truckLengthM: '6.00',
+          truckWidthM: '2.00',
+          truckHeightM: '1.50',
+        });
 
       expect(response.status).toBe(422);
     });
@@ -143,14 +202,79 @@ describe('vehicles module', () => {
       const { cookie } = await createSignedInUser('admin');
       await seedVehicle({ registrationNumber: 'KDA 123X' });
       const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
 
       const response = await request(app)
         .post(VEHICLES)
         .set(headers)
-        .send(vehicleBody({ registrationNumber: 'kda123x' }));
+        .send(vehicleBody({ registrationNumber: 'kda123x', vehicleOwnerId: owner.id }));
 
       expect(response.status).toBe(422);
       expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    });
+
+    it('rejects a duplicate registration number when the second entry uses hyphens (KDM 293E, then kdm-293e)', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      await seedVehicle({ registrationNumber: 'KDM 293E' });
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
+
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send(vehicleBody({ registrationNumber: 'kdm-293e', vehicleOwnerId: owner.id }));
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    });
+
+    it('rejects a duplicate registration number with mixed hyphen and space separators (KDM 293E, then KDM-293 E)', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      await seedVehicle({ registrationNumber: 'KDM 293E' });
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
+
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send(vehicleBody({ registrationNumber: 'KDM-293 E', vehicleOwnerId: owner.id }));
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    });
+
+    it('creates a vehicle with a normal registration number and stores a clean display value', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
+
+      const response = await request(app)
+        .post(VEHICLES)
+        .set(headers)
+        .send(vehicleBody({ registrationNumber: 'kdm-293e', vehicleOwnerId: owner.id }));
+
+      expect(response.status).toBe(201);
+      expect(response.body.data.registrationNumber).toBe('KDM 293E');
+    });
+
+    it('rejects a duplicate registration number at the database level, bypassing the service check', async () => {
+      const vehicle = await seedVehicle({ registrationNumber: 'KDN 555F' });
+      const owner = await seedVehicleOwner();
+
+      await expect(
+        getTestPrisma().vehicle.create({
+          data: {
+            registrationNumber: 'kdn-555f',
+            registrationNormalized: normalizeRegistration('kdn-555f'),
+            vehicleType: 'Truck',
+            vehicleOwnerId: owner.id,
+          },
+        }),
+      ).rejects.toThrow();
+
+      // The original row is untouched — nothing was silently merged or dropped.
+      const stillThere = await getTestPrisma().vehicle.findUnique({ where: { id: vehicle.id } });
+      expect(stillThere).not.toBeNull();
     });
 
     it('filters by active state', async () => {
@@ -163,112 +287,108 @@ describe('vehicles module', () => {
       expect(response.body.data).toHaveLength(1);
       expect(response.body.data[0].registrationNumber).toBe('Retired One');
     });
-  });
 
-  describe('truck load calculation', () => {
-    it('calculates load from length, width and height', async () => {
+    it('searches by owner name', async () => {
       const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner({ name: 'Otieno Haulage' });
+      await seedVehicle({ registrationNumber: 'KDF 333C', vehicleOwnerId: owner.id });
+      await seedVehicle({ registrationNumber: 'KDG 444D' });
 
       const response = await request(app)
-        .post(VEHICLES)
-        .set(headers)
-        .send(
-          vehicleBody({
-            registrationNumber: 'KDD 111A',
-            truckLengthM: '6.00',
-            truckWidthM: '2.00',
-            truckHeightM: '1.50',
-          }),
-        );
-
-      expect(response.status).toBe(201);
-      // 6 * 2 * 1.5 * 1100 = 19800 kg = 19.8 tonnes
-      expect(response.body.data.calculationFactor).toBe('1100.00');
-      expect(response.body.data.calculatedLoadKg).toBe('19800.00');
-      expect(response.body.data.calculatedLoadTonnes).toBe('19.800');
-    });
-
-    it('rejects a missing dimension', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-      const body = vehicleBody({ registrationNumber: 'KDE 222B' }) as Record<string, unknown>;
-      delete body['truckHeightM'];
-
-      const response = await request(app).post(VEHICLES).set(headers).send(body);
-
-      expect(response.status).toBe(422);
-      expect(response.body.error.fieldErrors).toHaveProperty('truckHeightM');
-    });
-
-    it('rejects an unrealistic dimension instead of overflowing the database', async () => {
-      // A data-entry slip like "600" instead of "6.00" must fail validation
-      // with a clear message, not reach the database and overflow the
-      // calculated-load column.
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-
-      const response = await request(app).post(VEHICLES).set(headers).send(
-        vehicleBody({
-          registrationNumber: 'KDZ 999Z',
-          truckLengthM: '600',
-          truckWidthM: '200',
-          truckHeightM: '150',
-        }),
-      );
-
-      expect(response.status).toBe(422);
-      expect(response.body.error.fieldErrors).toHaveProperty('truckLengthM');
-    });
-
-    it('recalculates when a dimension changes on update', async () => {
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-
-      const created = await request(app)
-        .post(VEHICLES)
-        .set(headers)
-        .send(vehicleBody({ registrationNumber: 'KDG 444D' }));
-
-      const response = await request(app)
-        .patch(`${VEHICLES}/${created.body.data.id}`)
-        .set(headers)
-        .send({ truckHeightM: '2.00' });
-
-      // 6 * 2 * 2 * 1100 = 26400 kg
-      expect(response.body.data.calculatedLoadKg).toBe('26400.00');
-      expect(response.body.data.calculatedLoadTonnes).toBe('26.400');
-    });
-
-    it('does not change a previously saved vehicle when a later vehicle uses different dimensions', async () => {
-      // Stands in for "a future factor change must not rewrite old records":
-      // each vehicle's snapshot is independent and is never recalculated by
-      // anything other than its own create/update call.
-      const { cookie } = await createSignedInUser('admin');
-      const headers = await csrfHeaders(cookie);
-
-      const first = await request(app)
-        .post(VEHICLES)
-        .set(headers)
-        .send(vehicleBody({ registrationNumber: 'KDI 666F' }));
-
-      await request(app)
-        .post(VEHICLES)
-        .set(headers)
-        .send(
-          vehicleBody({
-            registrationNumber: 'KDJ 777G',
-            truckLengthM: '10.00',
-            truckWidthM: '2.50',
-            truckHeightM: '2.00',
-          }),
-        );
-
-      const refetched = await request(app)
-        .get(`${VEHICLES}/${first.body.data.id}`)
+        .get(`${VEHICLES}?search=Otieno`)
         .set('Cookie', cookie);
 
-      expect(refetched.body.data.calculatedLoadKg).toBe('19800.00');
+      expect(response.body.data).toHaveLength(1);
+      expect(response.body.data[0].registrationNumber).toBe('KDF 333C');
+    });
+  });
+
+  describe('updating', () => {
+    it('changes the vehicle owner', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const firstOwner = await seedVehicleOwner({ name: 'First Owner' });
+      const secondOwner = await seedVehicleOwner({ name: 'Second Owner' });
+      const vehicle = await seedVehicle({ vehicleOwnerId: firstOwner.id });
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/${vehicle.id}`)
+        .set(headers)
+        .send({ vehicleOwnerId: secondOwner.id });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.vehicleOwnerId).toBe(secondOwner.id);
+      expect(response.body.data.vehicleOwnerName).toBe('Second Owner');
+    });
+
+    it('rejects changing to an inactive vehicle owner', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const activeOwner = await seedVehicleOwner();
+      const inactiveOwner = await seedVehicleOwner({ isActive: false });
+      const vehicle = await seedVehicle({ vehicleOwnerId: activeOwner.id });
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/${vehicle.id}`)
+        .set(headers)
+        .send({ vehicleOwnerId: inactiveOwner.id });
+
+      expect(response.status).toBe(422);
+    });
+
+    it('allows saving a vehicle under its own unchanged owner', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
+      const vehicle = await seedVehicle({ vehicleOwnerId: owner.id });
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/${vehicle.id}`)
+        .set(headers)
+        .send({ vehicleOwnerId: owner.id, vehicleType: 'Updated type' });
+
+      expect(response.status).toBe(200);
+    });
+
+    it('returns 404 for an unknown vehicle', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/does-not-exist`)
+        .set(headers)
+        .send({ vehicleType: 'Truck' });
+
+      expect(response.status).toBe(404);
+    });
+
+    it('rejects an update that would turn one vehicle into another vehicle\'s normalized registration number', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      await seedVehicle({ registrationNumber: 'KDM 293E' });
+      const other = await seedVehicle({ registrationNumber: 'KDP 111G' });
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/${other.id}`)
+        .set(headers)
+        .send({ registrationNumber: 'kdm-293e' });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+    });
+
+    it('allows a vehicle to update without changing its own registration number, even re-typed in a different format', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const vehicle = await seedVehicle({ registrationNumber: 'KDM 293E' });
+
+      const response = await request(app)
+        .patch(`${VEHICLES}/${vehicle.id}`)
+        .set(headers)
+        .send({ registrationNumber: 'kdm-293e' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.registrationNumber).toBe('KDM 293E');
     });
   });
 
@@ -303,11 +423,12 @@ describe('vehicles module', () => {
     it('records the create with the actor', async () => {
       const { cookie, user } = await createSignedInUser('admin');
       const headers = await csrfHeaders(cookie);
+      const owner = await seedVehicleOwner();
 
       await request(app)
         .post(VEHICLES)
         .set(headers)
-        .send(vehicleBody({ registrationNumber: 'Audited' }));
+        .send(vehicleBody({ registrationNumber: 'Audited', vehicleOwnerId: owner.id }));
 
       const audit = await getTestPrisma().auditLog.findFirst({ where: { action: 'CREATE_VEHICLE' } });
 

@@ -33,6 +33,8 @@ records what exists in code and why.
 | `20260802170000_phase6c3_remove_quotations`          | 6C-3  | Deletes the one `QUOTATION`-type `generated_documents`/`stored_files` row, narrows `GeneratedDocumentType`, drops `quotations` and `quotation_items` |
 | `20260803180000_phase6d_product_operational_fields` | 6D    | `products.operationalName`/`operationalNameNormalized`/`piecesPerPallet`/`maxPiecesPerTruck` added (all nullable); backfills the four confirmed products by `nameNormalized` |
 | `20260803190000_phase6e_customer_deactivation_reason` | 6E addendum | `customers.deactivationReason` added (nullable) |
+| `20260804100000_phase6f1_vehicle_owners`             | 6F-1  | `vehicle_owners` created; `vehicles.vehicleOwnerId` added (nullable) |
+| `20260804110000_phase6f2_vehicle_rework`             | 6F-2  | `vehicles.vehicleOwnerId` made required; `ownershipType` and the Phase 4C volumetric fields dropped |
 
 Commands:
 
@@ -77,30 +79,71 @@ the application.
 - Indexed on `(entityType, entityId)`, `userId`, `(module, action)` and
   `createdAt`, which are the ways audit history is searched.
 
-### `vehicles`
+### `vehicle_owners` (Phase 6F-1)
 
-Hired-only for the MVP: `ownershipType` defaults to `HIRED` and is never
-accepted from a request — the column and enum stay in the schema so `COMPANY`
-support needs no migration later. There is no `hireCost` column; a vehicle
-does not have one permanent hire cost, and actual transport cost belongs to a
-later Delivery/Expense/transport-payment workflow.
+Master-data entity, same shape as `drivers` for the readable/normalised
+national-ID column, except `nationalId`/`nationalIdNormalized` are both
+**nullable** here (unique when present) — a Vehicle Owner may not have one on
+file, unlike a Driver, where it's required. `phone`/`phoneNormalized` follow
+the same dual-column pattern as `customers`/`suppliers` (required, unique).
 
-The truck-load fields (`truckLengthM`, `truckWidthM`, `truckHeightM`,
-`calculationFactor`, `calculatedLoadKg`, `calculatedLoadTonnes`) are **all
-required** — every vehicle needs a known load capacity — and are a snapshot,
-not a live computation. `vehicles.service.ts` calculates them from the
-backend-only `DEFAULT_CALCULATION_FACTOR` (1100) whenever a vehicle is
-created or that specific vehicle's dimensions change — never in bulk, never
-on a read, and never from a request field. This is deliberate: a future
-change to the default factor must not silently rewrite figures already saved
-on other vehicles.
+### `vehicles` (reworked 2026-08-04, Phase 6F-2)
+
+**`ownershipType` and the Phase 4C volumetric truck-load fields
+(`truckLengthM`, `truckWidthM`, `truckHeightM`, `calculationFactor`,
+`calculatedLoadKg`, `calculatedLoadTonnes`) were removed entirely** — the
+calculation was based on a misunderstanding (`1100` is the Pumice purchase
+rate, KES per cubic metre, not a vehicle capacity factor; see
+`docs/decisions/business-workflow-update-2026-08-02.md` sections 3 and
+12.4). `vehicleOwnerId` (required, FK to `vehicle_owners`, `onDelete:
+Restrict`) replaces all of it — every vehicle now has a registered, active
+owner instead of an ownership category or a stored capacity snapshot.
+
+Migration sequence, exactly as planned and never editing an already-applied
+migration:
+
+1. `20260804100000_phase6f1_vehicle_owners` — created `vehicle_owners`;
+   added `vehicles.vehicleOwnerId` as **nullable**, since the 3 existing
+   Vehicle rows (2 from the development demo seed, 1 ad hoc) had no owner
+   information anywhere to derive one from safely.
+2. A one-off script backfilled those 3 rows with the same two demo
+   `VehicleOwner` records the development seed now defines
+   (`prisma/seed/development/vehicle-owners.ts`) — confirmed safe since all
+   3 are non-production dev/demo data, never invented owners.
+3. `20260804110000_phase6f2_vehicle_rework` — made `vehicleOwnerId`
+   required and dropped the obsolete columns, only once every row had a
+   valid value.
+
+`vehicles.service.ts` validates the referenced owner exists and is active
+via `vehicle-owners.service.ts`'s exported `requireActiveVehicleOwner` —
+`vehicles` depends on `vehicle-owners`, never the reverse (avoiding a
+circular module dependency; see the cache note below).
 
 `registrationNormalized` uses a dedicated normaliser
-(`normalizeRegistration` in `vehicles.repository.ts`), not the shared
-`normalizeForComparison`. A registration plate written "KDA 123X" and
-"kda123x" is the same plate, so every space is stripped — the shared
-normaliser only collapses repeated whitespace, which is correct for names and
-labels but not for this case.
+(`normalizeRegistration` in `shared/utils/normalize.ts`), not
+`normalizeForComparison` (which only collapses whitespace — correct for
+names and labels, not a plate). Every character that is not a letter or
+digit is stripped, and the result is uppercased, so "KDA 123X", "kda-123x",
+and "kda123x" are all the same plate.
+
+**Bug fixed 2026-08-04:** the original version only removed whitespace,
+leaving hyphens and other separators in place — "KDM 293E" and "kdm-293e"
+normalised to two different values and were both accepted as separate
+`Vehicle` rows, even though `registrationNormalized` already carried a
+database-level `@unique` constraint (the constraint was never the problem;
+the value being compared was wrong). `formatRegistrationDisplay` (same
+file) now also cleans the stored display value the same way — uppercased,
+trimmed, separators collapsed to single spaces — so "kdm-293e" is both
+stored and shown as "KDM 293E".
+
+**Cache note:** the vehicle list denormalises the owner's name for display.
+A Vehicle Owner rename/deactivation does **not** invalidate the `vehicles`
+list cache — doing so would require `vehicle-owners.service.ts` to import
+`vehicles.service.ts`, creating a two-module cycle (since `vehicles` already
+imports `vehicle-owners`). A stale denormalised name/status self-heals
+within the list's own 300s TTL — the same "missed invalidation self-heals"
+trade-off `docs/technical-blueprint.md` section 4A.4 already accepts
+elsewhere.
 
 ### `products`
 

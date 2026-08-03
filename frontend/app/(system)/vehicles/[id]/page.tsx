@@ -84,12 +84,13 @@ export default function VehicleDetailPage({ params }: { params: Promise<{ id: st
 
         <Card>
           <CardContent className="space-y-4">
-            <DetailRow label="Length">{vehicle.truckLengthM} m</DetailRow>
-            <DetailRow label="Width">{vehicle.truckWidthM} m</DetailRow>
-            <DetailRow label="Height">{vehicle.truckHeightM} m</DetailRow>
-            <DetailRow label="Calculation factor">{vehicle.calculationFactor}</DetailRow>
-            <DetailRow label="Calculated load">
-              {vehicle.calculatedLoadKg} kg ({vehicle.calculatedLoadTonnes} t)
+            <DetailRow label="Vehicle owner">
+              <Link
+                href={`/vehicle-owners/${vehicle.vehicleOwnerId}`}
+                className="text-primary hover:underline"
+              >
+                {vehicle.vehicleOwnerName}
+              </Link>
             </DetailRow>
           </CardContent>
         </Card>

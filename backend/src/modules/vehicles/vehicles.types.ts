@@ -1,30 +1,21 @@
-import type { VehicleOwnershipType } from '../../generated/prisma/client.js';
-
 /**
  * Vehicle module types. See business-blueprint section 2.20 and
- * docs/implementation-plan.md Phase 4C for the truck-load calculation.
+ * docs/decisions/business-workflow-update-2026-08-02.md sections 10-12.4.
  *
- * Hired-only for the MVP: `ownershipType` is never accepted from a request —
- * every vehicle is created as HIRED. The column and enum stay so COMPANY
- * support needs no schema change later.
- *
- * There is deliberately no hire-cost field. A vehicle does not have one
- * permanent hire cost; actual transport cost varies per delivery trip and
- * belongs to a later Delivery/Expense/transport-payment workflow.
+ * Phase 6F removed `ownershipType` and the Phase 4C volumetric truck-load
+ * fields entirely — every vehicle now has a registered `vehicleOwnerId`
+ * instead. There is deliberately no transport-rate or hire-cost field; a
+ * vehicle does not have one permanent price (Delivery/transport-payment,
+ * not implemented here).
  */
 
 export interface VehicleSummary {
   id: string;
   registrationNumber: string;
   vehicleType: string;
-  ownershipType: VehicleOwnershipType;
-  /** Decimal strings, never floats. */
-  truckLengthM: string;
-  truckWidthM: string;
-  truckHeightM: string;
-  calculationFactor: string;
-  calculatedLoadKg: string;
-  calculatedLoadTonnes: string;
+  vehicleOwnerId: string;
+  /** Denormalised for list display — avoids a second lookup per row. */
+  vehicleOwnerName: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
@@ -33,17 +24,13 @@ export interface VehicleSummary {
 export interface CreateVehicleInput {
   registrationNumber: string;
   vehicleType: string;
-  truckLengthM: string;
-  truckWidthM: string;
-  truckHeightM: string;
+  vehicleOwnerId: string;
 }
 
 export interface UpdateVehicleInput {
   registrationNumber?: string | undefined;
   vehicleType?: string | undefined;
-  truckLengthM?: string | undefined;
-  truckWidthM?: string | undefined;
-  truckHeightM?: string | undefined;
+  vehicleOwnerId?: string | undefined;
 }
 
 export type VehicleSortField = 'registrationNumber' | 'createdAt';

@@ -78,7 +78,7 @@ Claude must not:
 | 6C-3 | Safe Quotation removal | COMPLETED |
 | 6D | Product operational names, pieces per pallet, and truck capacity | COMPLETED |
 | 6E | Customer credit projection formula and balance filters | COMPLETED |
-| 6F | Vehicle Owners; rework Vehicle | NOT_STARTED |
+| 6F | Vehicle Owners; rework Vehicle | COMPLETED |
 | 7 | Purchases and supplier balances (Pumice/Cement calculations) | NOT_STARTED |
 | 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
@@ -900,7 +900,10 @@ already used for Phase 4 (4A–4D) and Phase 5/6 (5A/5B, 6A/6B):
 - **Phase 6E — Customer credit projection formula and balance filters
   (COMPLETED).** Split accounting outstanding balance from projected credit
   exposure; added the customer-list balance filter.
-- **Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED).**
+- **Phase 6F — Vehicle Owners; rework Vehicle (COMPLETED).** New
+  `vehicle-owners` module; `Vehicle` now requires a registered, active
+  owner instead of `ownershipType`; the Phase 4C volumetric truck-load
+  calculation removed entirely.
 
 ## Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED)
 
@@ -1393,31 +1396,101 @@ until Phases 8/9 ship — revisit `assertCustomerDeactivatable` then. Vehicle
 Owner/Vehicle rework (6F), Cement/Raw Materials/Purchases (Phase 7) —
 untouched.
 
-## Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED)
+## Phase 6F — Vehicle Owners; rework Vehicle (COMPLETED)
 
-Not yet planned or approved for implementation — documentation only at this
-stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections
-10 and 11, and the impact report's note on the `calculationFactor` conflict.
+See `docs/decisions/business-workflow-update-2026-08-02.md` sections 10,
+11, and 12.4. Split into two sub-steps, the same pattern as 4A–4D, 6A/6B,
+and 6C-1–3, so the new module shipped and could be reviewed independently
+before the existing, working Vehicle feature was touched:
 
-Expected scope:
+- **Phase 6F-1 — Vehicle Owners module (COMPLETED).**
+- **Phase 6F-2 — Vehicle rework (COMPLETED).**
 
-- Add a new `vehicle-owners` backend module and `VehicleOwner` model (name,
-  phone, optional national ID, active status).
-- Replace `Vehicle.ownershipType`/its `COMPANY`/`HIRED` enum with a
-  `vehicleOwnerId` foreign key to `VehicleOwner`.
-- Decide (with the business owner, not assumed) whether to remove the
-  existing Phase 4C volumetric fields (`truckLengthM`, `truckWidthM`,
-  `truckHeightM`, `calculationFactor`, `calculatedLoadKg`,
-  `calculatedLoadTonnes`) now that per-product `maxPiecesPerTruck` (Phase 6D)
-  supersedes them for delivery-trip planning — **not yet confirmed**, do not
-  remove them until confirmed.
-- Add the `vehicle-owners` resource to the permissions matrix, matching the
-  existing `driver`/`vehicle` create/read/update pattern for all three roles.
-- Rework `vehicles.test.ts`, which currently asserts `ownershipType`,
-  `hireCost`, and the volumetric fields extensively.
-- This is a schema migration (new table, new FK column, drop of
-  `ownershipType`) — existing `Vehicle` rows need a `vehicleOwnerId` backfill
-  strategy before the column can be made required.
+Backend **534/534 tests passing** (one transient CSRF-cookie flake under
+full-suite load, confirmed not a regression by two clean re-runs — an
+infrastructure characteristic, not a logic bug). Frontend typecheck/lint (3
+pre-existing informational warnings, 0 errors — one fewer than before, since
+the removed truck-dimension `watch()` calls no longer trigger one)/9 tests/
+build all clean — 26 routes (up from 24, the four new `/vehicle-owners`
+routes).
+
+### Phase 6F-1 — Vehicle Owners module
+
+Migration `20260804100000_phase6f1_vehicle_owners` — created `vehicle_owners`
+(name, phone/phoneNormalized required and unique, optional
+nationalId/nationalIdNormalized unique when present, active status) and
+added `vehicles.vehicleOwnerId` as nullable (not yet required — see 6F-2).
+
+New backend module `vehicle-owners` (six files:
+`vehicle-owners.{routes,controller,service,repository,validators,types}.ts`),
+mirroring the `drivers` module's architecture exactly, mounted at
+`/api/v1/vehicle-owners`. `vehicle-owner` permission
+(create/read/update, all three roles) added to `shared/auth/permissions.ts`
+— the resource itself was already pre-declared in
+`docs/permissions-matrix.md` ahead of this phase.
+
+`normalizeNationalId` (previously local to `drivers.repository.ts`) was
+extracted to `shared/utils/normalize.ts`, since `vehicle-owners.repository.ts`
+needed the identical function — removes a duplicate, not a new abstraction.
+
+New development demo seed (`prisma/seed/development/vehicle-owners.ts`),
+wired into `index.ts` ahead of the vehicles seed. New frontend feature
+`features/vehicle-owners/` and `app/(system)/vehicle-owners/` (list, detail,
+add/edit Dialog-on-desktop/Sheet-on-mobile), mirroring `drivers`/`features/
+drivers` file-for-file. New "Vehicle owners" nav entry.
+
+### Phase 6F-2 — Vehicle rework
+
+**The 3 existing Vehicle rows (2 from the development demo seed — `KAA
+000A`, `KAA 000B` — and 1 ad hoc — `KDA123`) had no owner information
+anywhere in the schema to derive one from safely.** Per the migration-safety
+rule, this was reported rather than assumed: all 3 are confirmed
+non-production dev/demo data, so a one-off script created the same two demo
+`VehicleOwner` records the development seed defines and assigned them to
+the 3 vehicles — never invented owners, and never done silently (reported
+here and in `docs/database-notes.md`).
+
+Once every row had a valid `vehicleOwnerId`, migration
+`20260804110000_phase6f2_vehicle_rework` made the column **required** and
+dropped `ownershipType` (and its `COMPANY`/`HIRED` enum) and all six Phase
+4C volumetric fields (`truckLengthM`, `truckWidthM`, `truckHeightM`,
+`calculationFactor`, `calculatedLoadKg`, `calculatedLoadTonnes`) — the
+calculation those fields drove was based on a misunderstanding, per section
+12.4 of the decision document.
+
+`vehicles.service.ts` now validates the referenced Vehicle Owner exists and
+is active via `vehicle-owners.service.ts`'s exported
+`requireActiveVehicleOwner` before creating or reassigning a vehicle — the
+one-directional dependency `vehicles` → `vehicle-owners`, never the
+reverse. `vehicles.test.ts` was fully rewritten (previously asserted
+`ownershipType`/`hireCost`/the volumetric fields extensively). Frontend
+`vehicle-form.tsx` replaced the three dimension fields with a searchable
+Vehicle Owner select; `vehicle-list.tsx`'s "Load capacity" column became an
+"Owner" column; the detail page links through to the owner's own page.
+
+**Deliberate decision, flagged rather than silently done:** the vehicle
+list's cached `vehicleOwnerName` is **not** invalidated when a Vehicle Owner
+is renamed or deactivated — doing so would require
+`vehicle-owners.service.ts` to import `vehicles.service.ts`, creating a
+circular module dependency (since `vehicles` already imports
+`vehicle-owners` for the validation above). A stale name/status in a cached
+vehicle list self-heals within the list's own 300s TTL, matching this
+project's existing cache-invalidation philosophy
+(`docs/technical-blueprint.md` section 4A.4) — the owner-active check
+itself is never affected, since it always reads live, uncached data.
+
+### Excluded from Phase 6F
+
+Delivery and its Driver+Vehicle+Owner-per-trip selection (Phase 8) — this
+phase only documents the future relationship (one Driver may use many
+Vehicles; one Vehicle may use many Drivers; the pairing is chosen per
+Delivery trip), it does not build it. Transport-payment records/rates (KES
+8,500 vs 8,000 per trip seen in the workbook) — Phase 8/9, not implemented.
+Future Delivery snapshot fields (driver, vehicle registration, vehicle
+owner, product truck capacity used, transport rate, number of trips, total
+transport cost, payee) — documented as a future requirement, not built.
+Pumice purchase/load records (Phase 7) — the `1100` KES/m³ rate and truck
+dimensions for Pumice belong there, not on Vehicle.
 
 ---
 

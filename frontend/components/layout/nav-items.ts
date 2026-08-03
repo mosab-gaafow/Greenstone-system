@@ -1,6 +1,7 @@
 import {
   BadgeDollarSign,
   Boxes,
+  Building2,
   ClipboardList,
   Factory,
   FlaskConical,
@@ -85,6 +86,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Stock', href: '/stock', icon: Boxes, available: false },
       { label: 'Deliveries', href: '/deliveries', icon: Truck, available: false },
       { label: 'Drivers', href: '/drivers', icon: Users, available: true },
+      { label: 'Vehicle owners', href: '/vehicle-owners', icon: Building2, available: true },
       { label: 'Vehicles', href: '/vehicles', icon: Truck, available: true },
     ],
   },

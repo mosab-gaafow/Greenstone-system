@@ -1,27 +1,19 @@
 /**
- * Vehicle types. Mirrors the backend contract, including the truck-load
- * calculation snapshot fields.
+ * Vehicle types. Mirrors the backend contract.
  *
- * Hired-only for the MVP: `ownershipType` is informational only (always
- * "HIRED") — there is no ownership choice in the create/edit form, and
- * `hireCost` does not exist on the Vehicle master at all. See
- * docs/implementation-plan.md Phase 4C.
+ * Phase 6F removed `ownershipType` and the Phase 4C truck-load calculation
+ * fields entirely — every vehicle now has a registered `vehicleOwnerId`
+ * instead. See docs/decisions/business-workflow-update-2026-08-02.md
+ * sections 10-12.4.
  */
-
-export type OwnershipType = 'COMPANY' | 'HIRED';
 
 export interface Vehicle {
   id: string;
   registrationNumber: string;
   vehicleType: string;
-  ownershipType: OwnershipType;
-  /** Decimal strings, never floats. Always present — every vehicle requires dimensions. */
-  truckLengthM: string;
-  truckWidthM: string;
-  truckHeightM: string;
-  calculationFactor: string;
-  calculatedLoadKg: string;
-  calculatedLoadTonnes: string;
+  vehicleOwnerId: string;
+  /** Denormalised for display. */
+  vehicleOwnerName: string;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
