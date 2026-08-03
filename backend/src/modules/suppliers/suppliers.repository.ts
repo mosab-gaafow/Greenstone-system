@@ -138,6 +138,32 @@ export async function findSupplierOpeningBalance(
  * Corrects the supplier's opening balance in place — one row per supplier,
  * the same shape as `customer-credit.repository.ts`'s `upsertOpeningBalance`.
  */
+/**
+ * Sum of every Purchase's `totalCost` for this supplier. See
+ * `customer-credit.repository.ts`'s `sumActiveCreditOrderTotals` — the same
+ * "read the other module's table directly with a plain aggregate query, not
+ * a cross-module service call" pattern, so this module never has to depend
+ * on `purchases` (which depends on `suppliers` the other way, to validate
+ * the supplier exists and is active).
+ *
+ * "Eligible unpaid" (business-blueprint section 2.17) reduces to "every
+ * purchase" today: a Purchase carries no paid/partial status of its own —
+ * that will live entirely on Purchase Payment (Phase 7D) — so until then
+ * every purchase counts, the same interim reasoning Phase 5B/6E already
+ * applied to uninvoiced customer orders.
+ */
+export async function sumPurchaseTotals(
+  supplierId: string,
+  client: DbClient = getPrisma(),
+): Promise<Prisma.Decimal> {
+  const result = await client.purchase.aggregate({
+    where: { supplierId },
+    _sum: { totalCost: true },
+  });
+
+  return result._sum.totalCost ?? new Prisma.Decimal(0);
+}
+
 export async function upsertSupplierOpeningBalance(
   supplierId: string,
   input: SetSupplierOpeningBalanceInput,

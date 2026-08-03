@@ -355,6 +355,36 @@ export async function recordProductionUsage(
   });
 }
 
+/**
+ * Records a purchase receipt inside the caller's existing transaction. Used
+ * by `purchases.service.ts` when a purchase is created — creating a purchase
+ * is receiving it (business-blueprint section 2.16), so this always credits
+ * stock immediately, the same "accept a caller-supplied `tx`" pattern
+ * `recordProductionUsage` above already uses, just adding instead of
+ * subtracting.
+ */
+export async function recordPurchaseReceipt(
+  tx: TransactionClient,
+  rawMaterialId: string,
+  quantity: Prisma.Decimal,
+  relatedEntityId: string,
+  context: RequestContext,
+): Promise<void> {
+  const balance = await lockStockBalance(tx, rawMaterialId);
+  const newQuantity = balance.quantity.add(quantity);
+
+  await setStockBalanceQuantity(tx, rawMaterialId, newQuantity);
+
+  await insertMovement(tx, {
+    rawMaterialId,
+    movementType: 'PURCHASE_RECEIPT',
+    quantity,
+    balanceAfter: newQuantity,
+    relatedEntityId,
+    createdByUserId: context.user.id,
+  });
+}
+
 // --- Helpers ----------------------------------------------------------------
 
 export async function requireRawMaterial(id: string): Promise<RawMaterialRow> {

@@ -556,7 +556,7 @@ describe('suppliers module', () => {
         });
       });
 
-      it('equals the opening balance until purchases and payments exist (Phase 7A scope)', async () => {
+      it('equals the opening balance alone when there are no purchases', async () => {
         const { cookie } = await createSignedInUser('admin');
         const headers = await csrfHeaders(cookie);
         const supplier = await seedSupplier();
@@ -574,6 +574,66 @@ describe('suppliers module', () => {
           openingBalance: '320000.00',
           outstandingBalance: '320000.00',
         });
+      });
+
+      it('adds every Purchase total to the outstanding balance (Phase 7C)', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'Setup' });
+
+        // Inserted directly — this test only needs the raw aggregate, not a
+        // full purchase-creation flow (already covered in purchases.test.ts).
+        await getTestPrisma().purchase.createMany({
+          data: [
+            {
+              purchaseNumber: 'PUR-TEST-0001',
+              supplierId: supplier.id,
+              purchaseDate: new Date('2026-01-05'),
+              totalCost: '50000.00',
+            },
+            {
+              purchaseNumber: 'PUR-TEST-0002',
+              supplierId: supplier.id,
+              purchaseDate: new Date('2026-01-06'),
+              totalCost: '25000.00',
+            },
+          ],
+        });
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.body.data).toMatchObject({
+          openingBalance: '100000.00',
+          outstandingBalance: '175000.00',
+        });
+      });
+
+      it('never counts a purchase belonging to a different supplier', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const supplier = await seedSupplier();
+        const otherSupplier = await seedSupplier();
+
+        await getTestPrisma().purchase.create({
+          data: {
+            purchaseNumber: 'PUR-TEST-0003',
+            supplierId: otherSupplier.id,
+            purchaseDate: new Date('2026-01-05'),
+            totalCost: '999999.00',
+          },
+        });
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.body.data.outstandingBalance).toBe('0.00');
       });
 
       it('rejects an unknown supplier', async () => {

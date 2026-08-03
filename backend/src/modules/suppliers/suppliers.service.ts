@@ -7,6 +7,7 @@ import {
   findSuppliers,
   insertSupplier,
   setSupplierActive,
+  sumPurchaseTotals,
   updateSupplier,
   upsertSupplierOpeningBalance,
   type SupplierOpeningBalanceRow,
@@ -221,20 +222,27 @@ export async function setSupplierOpeningBalance(
  * The supplier's outstanding balance. Never cached — always read live from
  * MySQL, the same as `customer-credit.service.ts`'s `computeCreditStatus`.
  *
- * `outstandingBalance` equals `openingBalance` alone until Phase 7C/7D add
- * Purchases and Purchase Payments — see `SupplierBalanceResult`'s doc
- * comment for the full formula that applies once they exist.
+ * `outstandingBalance = openingBalance + Σ(Purchase.totalCost)` (Phase 7C).
+ * `openingBalance` in the response stays the opening balance alone — only
+ * `outstandingBalance` combines both terms, the same split
+ * `CreditStatusResult`/`openingBalance` vs `outstandingBalance` already uses
+ * for customers. Purchase-payment deductions are Phase 7D — see
+ * `SupplierBalanceResult`'s doc comment for the full formula once they exist.
  */
 export async function getSupplierBalance(supplierId: string): Promise<SupplierBalanceResult> {
   await requireSupplier(supplierId);
 
-  const openingBalanceRow = await findSupplierOpeningBalance(supplierId);
+  const [openingBalanceRow, purchaseTotals] = await Promise.all([
+    findSupplierOpeningBalance(supplierId),
+    sumPurchaseTotals(supplierId),
+  ]);
   const openingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
+  const outstandingBalance = openingBalance.add(purchaseTotals);
 
   return {
     supplierId,
     openingBalance: openingBalance.toFixed(2),
-    outstandingBalance: openingBalance.toFixed(2),
+    outstandingBalance: outstandingBalance.toFixed(2),
   };
 }
 

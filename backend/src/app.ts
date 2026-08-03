@@ -16,6 +16,7 @@ import { ordersRoutes } from './modules/orders/orders.routes.js';
 import { customerCreditRoutes } from './modules/customer-credit/customer-credit.routes.js';
 import { measurementUnitsRoutes } from './modules/measurement-units/measurement-units.routes.js';
 import { rawMaterialsRoutes } from './modules/raw-materials/raw-materials.routes.js';
+import { purchasesRoutes } from './modules/purchases/purchases.routes.js';
 import { finishedStockRoutes } from './modules/finished-stock/finished-stock.routes.js';
 import { brokenProductsRoutes } from './modules/broken-products/broken-products.routes.js';
 import { productionRoutes } from './modules/production/production.routes.js';
@@ -86,6 +87,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/orders`, ordersRoutes());
   app.use(`${API_BASE_PATH}/measurement-units`, measurementUnitsRoutes());
   app.use(`${API_BASE_PATH}/raw-materials`, rawMaterialsRoutes());
+  app.use(`${API_BASE_PATH}/purchases`, purchasesRoutes());
   app.use(`${API_BASE_PATH}/broken-products`, brokenProductsRoutes());
   app.use(`${API_BASE_PATH}/production`, productionRoutes());
   app.use(`${API_BASE_PATH}/curing`, curingRoutes());
