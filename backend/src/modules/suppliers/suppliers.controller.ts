@@ -3,7 +3,12 @@ import { getRequestContext } from '../../shared/auth/session.middleware.js';
 import { buildPaginationMeta, sendCreated, sendSuccess } from '../../shared/responses/api-response.js';
 import { getValidatedQuery } from '../../shared/validation/validate.js';
 import * as suppliersService from './suppliers.service.js';
-import type { CreateSupplierInput, ListSuppliersFilters, UpdateSupplierInput } from './suppliers.types.js';
+import type {
+  CreateSupplierInput,
+  ListSuppliersFilters,
+  SetSupplierOpeningBalanceInput,
+  UpdateSupplierInput,
+} from './suppliers.types.js';
 
 /**
  * HTTP handling for suppliers.
@@ -77,6 +82,33 @@ export async function deactivate(req: Request, res: Response, next: NextFunction
       res,
       await suppliersService.deactivateSupplier(req.params['id'] as string, getRequestContext(res)),
     );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function setOpeningBalance(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await suppliersService.setSupplierOpeningBalance(
+        req.params['id'] as string,
+        req.body as SetSupplierOpeningBalanceInput,
+        getRequestContext(res),
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function getBalance(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, await suppliersService.getSupplierBalance(req.params['id'] as string));
   } catch (error) {
     next(error);
   }

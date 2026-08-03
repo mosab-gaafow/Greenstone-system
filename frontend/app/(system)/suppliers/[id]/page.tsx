@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
+import { SupplierBalanceCard } from '@/features/suppliers/components/supplier-balance-card';
 import { useSupplier } from '@/features/suppliers/hooks/use-suppliers';
 
 export default function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -75,17 +76,21 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         }
       />
 
-      <Card className="max-w-2xl">
-        <CardContent className="space-y-4">
-          <DetailRow label="Phone">{supplier.phone}</DetailRow>
-          <DetailRow label="Email">
-            {supplier.email ?? <span className="text-muted-foreground">Not provided</span>}
-          </DetailRow>
-          <DetailRow label="Address">
-            {supplier.address ?? <span className="text-muted-foreground">Not provided</span>}
-          </DetailRow>
-        </CardContent>
-      </Card>
+      <div className="max-w-2xl space-y-6">
+        <Card>
+          <CardContent className="space-y-4">
+            <DetailRow label="Phone">{supplier.phone}</DetailRow>
+            <DetailRow label="Email">
+              {supplier.email ?? <span className="text-muted-foreground">Not provided</span>}
+            </DetailRow>
+            <DetailRow label="Address">
+              {supplier.address ?? <span className="text-muted-foreground">Not provided</span>}
+            </DetailRow>
+          </CardContent>
+        </Card>
+
+        <SupplierBalanceCard supplierId={supplier.id} />
+      </div>
     </div>
   );
 }

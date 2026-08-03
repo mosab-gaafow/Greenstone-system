@@ -309,6 +309,296 @@ describe('suppliers module', () => {
     });
   });
 
+  describe('opening balance and supplier balance (Phase 7A)', () => {
+    describe('authentication and permissions', () => {
+      it('rejects an unauthenticated request to set the opening balance', async () => {
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'Migration' });
+
+        expect(response.status).toBe(401);
+      });
+
+      it('rejects an unauthenticated request to read the balance', async () => {
+        const supplier = await seedSupplier();
+
+        const response = await request(app).get(`${SUPPLIERS}/${supplier.id}/balance`);
+
+        expect(response.status).toBe(401);
+      });
+
+      it('lets an accountant set the opening balance (supplier:update is granted to all three roles)', async () => {
+        const { cookie } = await createSignedInUser('accountant');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'Migration' });
+
+        expect(response.status).toBe(200);
+      });
+
+      it('lets an accountant read the balance', async () => {
+        const { cookie } = await createSignedInUser('accountant');
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.status).toBe(200);
+      });
+
+      it('rejects a mutation with no CSRF token', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set('Cookie', cookie)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'No CSRF' });
+
+        expect(response.status).toBe(403);
+      });
+    });
+
+    describe('setting the opening balance', () => {
+      it('creates the opening balance and records an audit entry', async () => {
+        const { cookie, user } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '250000.00', effectiveDate: '2026-01-01', reason: 'Carried over from the previous system' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.amount).toBe('250000.00');
+
+        const audit = await getTestPrisma().auditLog.findFirst({
+          where: { action: 'SET_SUPPLIER_OPENING_BALANCE' },
+        });
+        expect(audit?.userId).toBe(user.id);
+        expect(audit?.module).toBe('suppliers');
+        expect(audit?.reason).toBe('Carried over from the previous system');
+      });
+
+      it('accepts a zero opening balance', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '0.00', effectiveDate: '2026-01-01', reason: 'No balance carried over' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.amount).toBe('0.00');
+      });
+
+      it('accepts a positive opening balance', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '75000.50', effectiveDate: '2026-01-01', reason: 'Outstanding invoice from before go-live' });
+
+        expect(response.status).toBe(200);
+        expect(response.body.data.amount).toBe('75000.50');
+      });
+
+      it('rejects a negative amount', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '-100.00', effectiveDate: '2026-01-01', reason: 'Should be rejected' });
+
+        expect(response.status).toBe(422);
+      });
+
+      it('rejects a missing effective date', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', reason: 'Missing effective date' });
+
+        expect(response.status).toBe(422);
+      });
+
+      it('rejects a missing reason', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: '' });
+
+        expect(response.status).toBe(422);
+      });
+
+      it('rejects an unknown supplier', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/does-not-exist/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'Test' });
+
+        expect(response.status).toBe(404);
+      });
+
+      it('corrects the opening balance in place, keeping one row per supplier', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'First entry' });
+
+        await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '150000.00', effectiveDate: '2026-01-02', reason: 'Correction' });
+
+        const rows = await getTestPrisma().supplierOpeningBalance.count({
+          where: { supplierId: supplier.id },
+        });
+        expect(rows).toBe(1);
+
+        const audits = await getTestPrisma().auditLog.findMany({
+          where: { action: 'SET_SUPPLIER_OPENING_BALANCE' },
+          orderBy: { createdAt: 'asc' },
+        });
+        expect(audits.length).toBe(2);
+
+        // No duplicate counting: the balance reflects only the latest
+        // correction, never a sum of both entries.
+        const balance = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+        expect(balance.body.data.outstandingBalance).toBe('150000.00');
+      });
+
+      it('remains settable and traceable after the supplier is deactivated', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier({ isActive: false });
+
+        const response = await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '50000.00', effectiveDate: '2026-01-01', reason: 'Entered after deactivation' });
+
+        expect(response.status).toBe(200);
+      });
+
+      it('creates no Purchase, Purchase Payment or General Expense side effect', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '100000.00', effectiveDate: '2026-01-01', reason: 'Setup' });
+
+        // Only one opening-balance row and one matching audit entry exist for
+        // this supplier — no Purchase, Purchase Payment, or Expense model
+        // exists yet, and this action must never create one once they do
+        // (business-blueprint section 2.18).
+        const balances = await getTestPrisma().supplierOpeningBalance.count({
+          where: { supplierId: supplier.id },
+        });
+        const audits = await getTestPrisma().auditLog.count({
+          where: { action: 'SET_SUPPLIER_OPENING_BALANCE', entityType: 'SupplierOpeningBalance' },
+        });
+        expect(balances).toBe(1);
+        expect(audits).toBe(1);
+      });
+    });
+
+    describe('reading the balance', () => {
+      it('reports zero when no opening balance has been entered', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const supplier = await seedSupplier();
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.status).toBe(200);
+        expect(response.body.data).toMatchObject({
+          supplierId: supplier.id,
+          openingBalance: '0.00',
+          outstandingBalance: '0.00',
+        });
+      });
+
+      it('equals the opening balance until purchases and payments exist (Phase 7A scope)', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const headers = await csrfHeaders(cookie);
+        const supplier = await seedSupplier();
+
+        await request(app)
+          .patch(`${SUPPLIERS}/${supplier.id}/opening-balance`)
+          .set(headers)
+          .send({ amount: '320000.00', effectiveDate: '2026-01-01', reason: 'Setup' });
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.body.data).toMatchObject({
+          openingBalance: '320000.00',
+          outstandingBalance: '320000.00',
+        });
+      });
+
+      it('rejects an unknown supplier', async () => {
+        const { cookie } = await createSignedInUser('admin');
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/does-not-exist/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.status).toBe(404);
+      });
+
+      it('remains readable after the supplier is deactivated', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const supplier = await seedSupplier({ isActive: false });
+
+        const response = await request(app)
+          .get(`${SUPPLIERS}/${supplier.id}/balance`)
+          .set('Cookie', cookie);
+
+        expect(response.status).toBe(200);
+      });
+    });
+  });
+
   it('normalises email lowercase for comparison', () => {
     expect(normalizeEmail('ORDERS@Gamma.CO.KE')).toBe('orders@gamma.co.ke');
   });

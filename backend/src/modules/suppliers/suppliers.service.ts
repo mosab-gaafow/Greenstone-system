@@ -1,11 +1,15 @@
+import { Prisma } from '../../generated/prisma/client.js';
 import {
   findSupplierByEmail,
   findSupplierByPhone,
   findSupplierById,
+  findSupplierOpeningBalance,
   findSuppliers,
   insertSupplier,
   setSupplierActive,
   updateSupplier,
+  upsertSupplierOpeningBalance,
+  type SupplierOpeningBalanceRow,
   type SupplierRow,
 } from './suppliers.repository.js';
 import { recordAudit } from '../../shared/audit/audit.service.js';
@@ -18,6 +22,9 @@ import type {
   CreateSupplierInput,
   ListSuppliersFilters,
   ListSuppliersResult,
+  SetSupplierOpeningBalanceInput,
+  SupplierBalanceResult,
+  SupplierOpeningBalanceDetail,
   SupplierSummary,
   UpdateSupplierInput,
 } from './suppliers.types.js';
@@ -25,9 +32,18 @@ import type {
 /**
  * Supplier business logic.
  *
- * Master record only, per business-blueprint section 2.16. Suppliers are
- * never deleted, only activated and deactivated — purchases and purchase
- * payments (Phase 7) will reference them permanently.
+ * Master record, per business-blueprint section 2.16. Suppliers are never
+ * deleted, only activated and deactivated — purchases and purchase payments
+ * (Phase 7C/7D) will reference them permanently.
+ *
+ * Opening balance and outstanding balance (Phase 7A, business-blueprint
+ * section 2.18) live in this same module rather than a separate one: unlike
+ * customer opening balance (a distinct `customer-credit` permission
+ * resource, Admin/Super Admin only), supplier opening balance uses the
+ * existing `supplier:update`/`supplier:read` permissions — all three roles —
+ * so there is no separate permission resource that would require a second
+ * six-file module. The balance figure is never cached, the same as customer
+ * credit status — see docs/technical-blueprint.md section 4A.3.
  */
 
 const AUDIT_MODULE = 'suppliers';
@@ -159,6 +175,87 @@ async function changeActiveState(
   await invalidateSupplierCache();
 
   return toSummary(updated);
+}
+
+/**
+ * Sets or corrects the supplier's opening balance — money already owed
+ * before this system started (business-blueprint section 2.18). Corrected
+ * in place, one row per supplier, full before/after history in the audit
+ * log — the same pattern `customer-credit.service.ts`'s `setOpeningBalance`
+ * already established.
+ *
+ * Deliberately does not require the supplier to be active: a supplier's
+ * opening balance must remain traceable even after it is deactivated.
+ */
+export async function setSupplierOpeningBalance(
+  supplierId: string,
+  input: SetSupplierOpeningBalanceInput,
+  context: RequestContext,
+): Promise<SupplierOpeningBalanceDetail> {
+  await requireSupplier(supplierId);
+  const existing = await findSupplierOpeningBalance(supplierId);
+
+  const updated = await runInTransaction(async (tx: TransactionClient) => {
+    const balance = await upsertSupplierOpeningBalance(supplierId, input, context.user.id, tx);
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'SET_SUPPLIER_OPENING_BALANCE',
+      module: AUDIT_MODULE,
+      entityType: 'SupplierOpeningBalance',
+      entityId: balance.id,
+      reason: input.reason,
+      previousData: existing ? toOpeningBalanceAuditSnapshot(existing) : null,
+      updatedData: toOpeningBalanceAuditSnapshot(balance),
+    });
+
+    return balance;
+  });
+
+  await invalidateSupplierCache();
+
+  return toOpeningBalanceDetail(updated);
+}
+
+/**
+ * The supplier's outstanding balance. Never cached — always read live from
+ * MySQL, the same as `customer-credit.service.ts`'s `computeCreditStatus`.
+ *
+ * `outstandingBalance` equals `openingBalance` alone until Phase 7C/7D add
+ * Purchases and Purchase Payments — see `SupplierBalanceResult`'s doc
+ * comment for the full formula that applies once they exist.
+ */
+export async function getSupplierBalance(supplierId: string): Promise<SupplierBalanceResult> {
+  await requireSupplier(supplierId);
+
+  const openingBalanceRow = await findSupplierOpeningBalance(supplierId);
+  const openingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
+
+  return {
+    supplierId,
+    openingBalance: openingBalance.toFixed(2),
+    outstandingBalance: openingBalance.toFixed(2),
+  };
+}
+
+function toOpeningBalanceDetail(row: SupplierOpeningBalanceRow): SupplierOpeningBalanceDetail {
+  return {
+    supplierId: row.supplierId,
+    amount: row.amount.toFixed(2),
+    effectiveDate: row.effectiveDate.toISOString(),
+    reason: row.reason,
+    enteredByUserId: row.enteredByUserId,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+function toOpeningBalanceAuditSnapshot(row: SupplierOpeningBalanceRow): Record<string, unknown> {
+  return {
+    amount: row.amount.toFixed(2),
+    effectiveDate: row.effectiveDate.toISOString(),
+    reason: row.reason,
+  };
 }
 
 async function requireSupplier(id: string): Promise<SupplierRow> {

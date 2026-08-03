@@ -61,6 +61,27 @@ export const updateSupplierBodySchema = z
     message: 'Provide at least one field to update.',
   });
 
+/**
+ * Money must be zero or greater — see business-blueprint section 2.18, and
+ * the explicit "Amount must be zero or greater" requirement for Phase 7A.
+ * Unlike the customer opening-balance schema, negative amounts are rejected
+ * here, not just left permissive.
+ */
+export const setSupplierOpeningBalanceBodySchema = z
+  .object({
+    amount: z
+      .string()
+      .trim()
+      .regex(/^\d+(\.\d{1,2})?$/, 'Enter an amount of zero or greater, with up to two decimal places.'),
+    effectiveDate: z.coerce.date(),
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'A reason is required.')
+      .max(500, 'Reason must be 500 characters or fewer.'),
+  })
+  .strict();
+
 export const listSuppliersQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),

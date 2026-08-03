@@ -65,6 +65,17 @@ export function canSetOpeningBalance(user: Pick<CurrentUser, 'role'> | null | un
 }
 
 /**
+ * May set or correct a supplier's opening balance. Every role holds this —
+ * unlike the customer equivalent, `supplier:update` is granted to Super
+ * Admin, Admin, and Accountant alike (docs/permissions-matrix.md).
+ */
+export function canSetSupplierOpeningBalance(
+  user: Pick<CurrentUser, 'role'> | null | undefined,
+): boolean {
+  return isRole(user?.role);
+}
+
+/**
  * May force-deactivate a customer, bypassing the normal deactivation
  * safeguards (Phase 6E addendum). Never the Accountant.
  */

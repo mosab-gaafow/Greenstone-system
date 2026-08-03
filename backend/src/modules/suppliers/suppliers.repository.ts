@@ -1,8 +1,13 @@
-import type { Prisma, Supplier } from '../../generated/prisma/client.js';
+import { Prisma, type Supplier, type SupplierOpeningBalance } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
 import type { DbClient } from '../../shared/database/transaction.js';
 import { normalizeEmail, normalizePhone } from '../../shared/utils/normalize.js';
-import type { CreateSupplierInput, ListSuppliersFilters, UpdateSupplierInput } from './suppliers.types.js';
+import type {
+  CreateSupplierInput,
+  ListSuppliersFilters,
+  SetSupplierOpeningBalanceInput,
+  UpdateSupplierInput,
+} from './suppliers.types.js';
 
 /**
  * Supplier database access.
@@ -11,6 +16,7 @@ import type { CreateSupplierInput, ListSuppliersFilters, UpdateSupplierInput } f
  */
 
 export type SupplierRow = Supplier;
+export type SupplierOpeningBalanceRow = SupplierOpeningBalance;
 
 function buildWhere(filters: ListSuppliersFilters): Prisma.SupplierWhereInput {
   const where: Prisma.SupplierWhereInput = {};
@@ -119,4 +125,39 @@ export async function findSupplierByEmail(
   client: DbClient = getPrisma(),
 ): Promise<SupplierRow | null> {
   return client.supplier.findUnique({ where: { emailNormalized: normalizeEmail(email) } });
+}
+
+export async function findSupplierOpeningBalance(
+  supplierId: string,
+  client: DbClient = getPrisma(),
+): Promise<SupplierOpeningBalanceRow | null> {
+  return client.supplierOpeningBalance.findUnique({ where: { supplierId } });
+}
+
+/**
+ * Corrects the supplier's opening balance in place — one row per supplier,
+ * the same shape as `customer-credit.repository.ts`'s `upsertOpeningBalance`.
+ */
+export async function upsertSupplierOpeningBalance(
+  supplierId: string,
+  input: SetSupplierOpeningBalanceInput,
+  enteredByUserId: string | null,
+  client: DbClient = getPrisma(),
+): Promise<SupplierOpeningBalanceRow> {
+  return client.supplierOpeningBalance.upsert({
+    where: { supplierId },
+    create: {
+      supplierId,
+      amount: new Prisma.Decimal(input.amount),
+      effectiveDate: input.effectiveDate,
+      reason: input.reason,
+      enteredByUserId,
+    },
+    update: {
+      amount: new Prisma.Decimal(input.amount),
+      effectiveDate: input.effectiveDate,
+      reason: input.reason,
+      enteredByUserId,
+    },
+  });
 }

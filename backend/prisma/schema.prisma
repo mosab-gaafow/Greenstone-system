@@ -16,14 +16,16 @@
 //           BrokenProductRecord.
 // Phase 6B: ProductionBatch, ProductionItem, ProductionOrderAllocation,
 //           RawMaterialUsage, CuringRecord.
+// Phase 7A: SupplierOpeningBalance.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
-// Deferred: Purchases and Supplier balances (Phase 7 — will add a
+// Deferred: Purchases and Purchase Payments (Phase 7B–7D — will add a
 // PURCHASE_RECEIPT writer on top of the raw-material ledger already built in
-// Phase 6A). Stock reservation and delivery dispatch (Phase 8 — will add a
-// DELIVERY_DISPATCH writer on top of the finished-stock ledger already built
-// in Phase 6A). See docs/implementation-plan.md.
+// Phase 6A, and complete the supplier outstanding-balance formula on top of
+// SupplierOpeningBalance added in 7A). Stock reservation and delivery dispatch
+// (Phase 8 — will add a DELIVERY_DISPATCH writer on top of the finished-stock
+// ledger already built in Phase 6A). See docs/implementation-plan.md.
 //
 // The Better Auth models are regenerated with:
 //   pnpm --filter backend auth:generate
@@ -214,19 +216,20 @@ model User {
   accounts      Account[]
 
   // Greenstone relations
-  auditLogs                AuditLog[]
-  capabilityGrants         UserCapabilityGrant[]    @relation("CapabilityHolder")
-  capabilitiesGranted      UserCapabilityGrant[]    @relation("CapabilityGranter")
-  storedFiles              StoredFile[]
-  openingBalancesEntered   CustomerOpeningBalance[]
-  creditOverridesApproved  CustomerCreditOverride[]
-  rawMaterialMovements     RawMaterialMovement[]
-  finishedStockMovements   FinishedStockMovement[]
-  brokenProductRecords     BrokenProductRecord[]
-  productionBatchesCreated ProductionBatch[]
-  curingRecordsCreated     CuringRecord[]           @relation("CuringCreatedBy")
-  curingRecordsChanged     CuringRecord[]           @relation("CuringDurationChangedBy")
-  curingRecordsReleased    CuringRecord[]           @relation("CuringReleasedBy")
+  auditLogs                      AuditLog[]
+  capabilityGrants               UserCapabilityGrant[]    @relation("CapabilityHolder")
+  capabilitiesGranted            UserCapabilityGrant[]    @relation("CapabilityGranter")
+  storedFiles                    StoredFile[]
+  openingBalancesEntered         CustomerOpeningBalance[]
+  supplierOpeningBalancesEntered SupplierOpeningBalance[]
+  creditOverridesApproved        CustomerCreditOverride[]
+  rawMaterialMovements           RawMaterialMovement[]
+  finishedStockMovements         FinishedStockMovement[]
+  brokenProductRecords           BrokenProductRecord[]
+  productionBatchesCreated       ProductionBatch[]
+  curingRecordsCreated           CuringRecord[]           @relation("CuringCreatedBy")
+  curingRecordsChanged           CuringRecord[]           @relation("CuringDurationChangedBy")
+  curingRecordsReleased          CuringRecord[]           @relation("CuringReleasedBy")
 
   @@unique([email])
   @@map("user")
@@ -554,9 +557,38 @@ model Supplier {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
+  openingBalance SupplierOpeningBalance?
+
   @@index([isActive])
   @@index([name])
   @@map("suppliers")
+}
+
+/// The supplier's opening balance — money Greenstone already owed the
+/// supplier before this system started. See business-blueprint section 2.18
+/// and docs/implementation-plan.md Phase 7A.
+///
+/// Corrected in place rather than accumulated as history rows — one row per
+/// supplier — with full before/after history in the audit log. Identical
+/// shape to `CustomerOpeningBalance`, which established this pattern in
+/// Phase 5B.
+///
+/// It is not a Purchase, not a Purchase Payment, and not a General Expense —
+/// it exists so the supplier's outstanding balance calculation has a
+/// traceable starting point, nothing more.
+model SupplierOpeningBalance {
+  id              String   @id @default(uuid())
+  supplierId      String   @unique
+  supplier        Supplier @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount          Decimal  @db.Decimal(14, 2)
+  effectiveDate   DateTime
+  reason          String   @db.Text
+  enteredByUserId String?
+  enteredByUser   User?    @relation(fields: [enteredByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("supplier_opening_balances")
 }
 
 /// Company settings. See business-blueprint section 9.5 (technical blueprint)

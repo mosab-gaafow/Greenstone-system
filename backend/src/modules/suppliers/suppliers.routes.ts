@@ -7,6 +7,7 @@ import * as suppliersController from './suppliers.controller.js';
 import {
   createSupplierBodySchema,
   listSuppliersQuerySchema,
+  setSupplierOpeningBalanceBodySchema,
   supplierIdParamsSchema,
   updateSupplierBodySchema,
 } from './suppliers.validators.js';
@@ -66,6 +67,21 @@ export function suppliersRoutes(): Router {
     requirePermission('supplier', 'update'),
     validate({ params: supplierIdParamsSchema }),
     suppliersController.deactivate,
+  );
+
+  router.get(
+    '/:id/balance',
+    requirePermission('supplier', 'read'),
+    validate({ params: supplierIdParamsSchema }),
+    suppliersController.getBalance,
+  );
+
+  router.patch(
+    '/:id/opening-balance',
+    csrfProtection(),
+    requirePermission('supplier', 'update'),
+    validate({ params: supplierIdParamsSchema, body: setSupplierOpeningBalanceBodySchema }),
+    suppliersController.setOpeningBalance,
   );
 
   return router;
