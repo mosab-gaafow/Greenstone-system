@@ -8,6 +8,8 @@ import type { OpeningBalanceFormValues } from '../schemas/customer-credit.schema
 
 export const customerCreditKeys = {
   status: (customerId: string) => ['customers', customerId, 'credit-status'] as const,
+  projection: (customerId: string, newOrderTotal: string) =>
+    ['customers', customerId, 'credit-projection', newOrderTotal] as const,
 };
 
 export function useCreditStatus(customerId: string | undefined) {
@@ -15,6 +17,18 @@ export function useCreditStatus(customerId: string | undefined) {
     queryKey: customerCreditKeys.status(customerId ?? ''),
     queryFn: () => customerCreditApi.fetchCreditStatus(customerId as string),
     enabled: Boolean(customerId),
+  });
+}
+
+/**
+ * Projected exposure for a new CREDIT order being drafted. Preview only —
+ * `createOrder` always recalculates and enforces this again on the backend.
+ */
+export function useCreditProjection(customerId: string | undefined, newOrderTotal: string) {
+  return useQuery({
+    queryKey: customerCreditKeys.projection(customerId ?? '', newOrderTotal),
+    queryFn: () => customerCreditApi.fetchCreditProjection(customerId as string, newOrderTotal),
+    enabled: Boolean(customerId) && Number(newOrderTotal) > 0,
   });
 }
 

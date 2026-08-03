@@ -1,10 +1,12 @@
 import {
+  findActiveOrdersByCustomerId,
   findAddressByLabel,
   findAddressById,
   findCustomerByEmail,
   findCustomerByPhone,
   findCustomerById,
   findCustomers,
+  findOpeningBalanceAmount,
   insertAddress,
   insertCustomer,
   setAddressActive,
@@ -22,14 +24,17 @@ import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-key
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
 import {
   BusinessRuleViolationError,
+  CustomerDeactivationBlockedError,
   ResourceNotFoundError,
 } from '../../shared/errors/app-error.js';
 import type {
+  ActiveOrderSummary,
   CreateAddressInput,
   CreateCustomerInput,
   CustomerAddressSummary,
   CustomerDetail,
   CustomerSummary,
+  ForceDeactivateCustomerInput,
   ListCustomersFilters,
   ListCustomersResult,
   UpdateAddressInput,
@@ -145,10 +150,17 @@ export async function activateCustomer(
   return changeCustomerActiveState(id, true, context);
 }
 
+/**
+ * Normal deactivation — blocked unless every deactivation safeguard passes
+ * (Phase 6E addendum, business-blueprint section 2.2/2.24). Never silent:
+ * a failing condition always rejects with a clear business error.
+ */
 export async function deactivateCustomer(
   id: string,
   context: RequestContext,
 ): Promise<CustomerDetail> {
+  await assertCustomerDeactivatable(id);
+
   return changeCustomerActiveState(id, false, context);
 }
 
@@ -170,7 +182,7 @@ async function changeCustomerActiveState(
   }
 
   await runInTransaction(async (tx: TransactionClient) => {
-    await setCustomerActive(id, isActive, tx);
+    await setCustomerActive(id, isActive, null, tx);
 
     await recordAudit(tx, {
       ...toAuditContext(context),
@@ -180,6 +192,57 @@ async function changeCustomerActiveState(
       entityId: id,
       previousData: { isActive: existing.isActive },
       updatedData: { isActive },
+    });
+  });
+
+  await invalidateCustomerCache();
+
+  return getCustomer(id);
+}
+
+/**
+ * Force-deactivation (Phase 6E addendum) — Super Admin/Admin only
+ * (`customer:force-deactivate`, checked by route middleware, not here).
+ * Deliberately skips `assertCustomerDeactivatable` — that is the entire
+ * point of "force" — but still requires a written reason, and always
+ * records a full snapshot (previous status, active-order summary,
+ * outstanding balance) in the audit log. Never auto-cancels active Orders,
+ * auto-releases stock reservations, or auto-erases the outstanding balance
+ * — those remain separate, deliberate actions by an authorised user.
+ */
+export async function forceDeactivateCustomer(
+  id: string,
+  input: ForceDeactivateCustomerInput,
+  context: RequestContext,
+): Promise<CustomerDetail> {
+  const existing = await requireCustomer(id);
+
+  if (!existing.isActive) {
+    throw new BusinessRuleViolationError('This customer is already inactive.');
+  }
+
+  const reason = input.reason.trim();
+  const [activeOrders, openingBalance] = await Promise.all([
+    findActiveOrdersByCustomerId(id),
+    findOpeningBalanceAmount(id),
+  ]);
+
+  await runInTransaction(async (tx: TransactionClient) => {
+    await setCustomerActive(id, false, reason, tx);
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'FORCE_DEACTIVATE_CUSTOMER',
+      module: AUDIT_MODULE,
+      entityType: 'Customer',
+      entityId: id,
+      reason,
+      previousData: {
+        isActive: existing.isActive,
+        activeOrders: formatActiveOrders(activeOrders),
+        outstandingBalance: openingBalance.toFixed(2),
+      },
+      updatedData: { isActive: false, deactivationReason: reason },
     });
   });
 
@@ -357,7 +420,59 @@ async function assertLabelAvailable(customerId: string, label: string): Promise<
   }
 }
 
-async function invalidateCustomerCache(): Promise<void> {
+/**
+ * Normal-deactivation safeguards (Phase 6E addendum,
+ * docs/decisions/business-workflow-update-2026-08-02.md section 16).
+ * Never silent: every failing condition is reported together, not one at a
+ * time, so an authorised user sees the full picture before trying again.
+ *
+ * Checkable today: every Order must be `COMPLETED`/`CANCELLED`, and the
+ * accounting outstanding balance must be exactly KES 0. Unfinished Delivery
+ * records, reserved stock for this customer, and pending/unapproved
+ * Customer payments cannot be checked yet — Delivery, Stock Reservation,
+ * and Customer Payment do not exist in the schema (Phases 8 and 9) — so
+ * those three conditions are vacuously satisfied until then. This is a
+ * deliberate, documented gap, not an oversight; revisit when those phases
+ * ship.
+ */
+async function assertCustomerDeactivatable(customerId: string): Promise<void> {
+  const [activeOrders, openingBalance] = await Promise.all([
+    findActiveOrdersByCustomerId(customerId),
+    findOpeningBalanceAmount(customerId),
+  ]);
+
+  const problems: string[] = [];
+
+  if (activeOrders.length > 0) {
+    problems.push(
+      `${String(activeOrders.length)} active order(s) not yet completed or cancelled: ` +
+        formatActiveOrders(activeOrders).join(', '),
+    );
+  }
+
+  if (!openingBalance.isZero()) {
+    problems.push(`an outstanding balance of KES ${openingBalance.toFixed(2)}`);
+  }
+
+  if (problems.length > 0) {
+    throw new CustomerDeactivationBlockedError(
+      `This customer cannot be deactivated: ${problems.join('; ')}.`,
+    );
+  }
+}
+
+function formatActiveOrders(orders: ActiveOrderSummary[]): string[] {
+  return orders.map((order) => `${order.orderNumber} (${order.status})`);
+}
+
+/**
+ * Invalidates every cached customer list entry.
+ *
+ * Exported so other modules can invalidate it after their own writes commit
+ * — `customer-credit.service.ts`'s `setOpeningBalance` calls this, since the
+ * customer list can filter by outstanding balance (Phase 6E).
+ */
+export async function invalidateCustomerCache(): Promise<void> {
   await cache.delByPrefix(buildCacheKeyPrefix(CACHE_MODULE));
 }
 
@@ -367,6 +482,7 @@ function buildListIdentifier(filters: ListCustomersFilters): string {
     `s=${String(filters.pageSize)}`,
     `q=${filters.search ?? ''}`,
     `a=${filters.isActive === undefined ? '' : String(filters.isActive)}`,
+    `b=${filters.hasOutstandingBalance === undefined ? '' : String(filters.hasOutstandingBalance)}`,
     `o=${filters.sortBy}.${filters.sortDirection}`,
   ].join('&');
 }
@@ -378,6 +494,7 @@ function toSummary(row: CustomerRow, addressCount: number): CustomerSummary {
     phone: row.phone,
     email: row.email,
     isActive: row.isActive,
+    deactivationReason: row.deactivationReason,
     addressCount,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),

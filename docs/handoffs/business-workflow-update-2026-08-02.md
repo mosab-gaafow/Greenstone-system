@@ -171,9 +171,56 @@ updated the Product and Production frontend accordingly. 230MM remains
 unresolved and untouched, per section 13 of the decision document. Full
 detail is in `docs/implementation-plan.md`'s Phase 6D section.
 
-**Next available phases, unstarted:** 6E (customer credit projection formula
-and balance filters) and 6F (Vehicle Owners; rework Vehicle) — neither
-depends on the other; either may be planned next once explicitly requested.
+**Next available phases, unstarted (at the time of writing):** 6E (customer
+credit projection formula and balance filters) and 6F (Vehicle Owners;
+rework Vehicle) — neither depends on the other; either may be planned next
+once explicitly requested.
+
+## 6a. Phase 6E implemented (2026-08-03, same day)
+
+Superseding the note above: Phase 6E is now also **complete**. No migration
+— pure service-logic plus one new read-only endpoint.
+
+Split the accounting outstanding balance (`openingBalance` alone today —
+orders are never part of it) from the projected credit exposure (adds
+active, non-cancelled CREDIT orders and the new order's own total — the real
+fix for the gap Phase 5B left, per section 6 of the decision document). Added
+`GET /customers/:id/credit-projection`, wired `orders.service.ts`'s
+order-creation check to it, and added the customer-list
+`hasOutstandingBalance` filter. Full detail is in
+`docs/implementation-plan.md`'s Phase 6E section.
+
+**Next available phase, unstarted (at the time of writing):** 6F (Vehicle
+Owners; rework Vehicle) — the only remaining sub-phase under the Phase 6
+umbrella.
+
+## 6b. Phase 6E addendum implemented (2026-08-03, same day) — Customer deactivation safeguards
+
+A new confirmed business rule, added after 6E's original scope shipped:
+migration `20260803190000_phase6e_customer_deactivation_reason` (adds
+`Customer.deactivationReason`, nullable).
+
+Normal deactivation is now blocked in the service layer
+(`assertCustomerDeactivatable`) unless every Order is
+`COMPLETED`/`CANCELLED` and the accounting outstanding balance is exactly
+KES 0 — never silent, always a clear composed error naming the active
+orders and/or balance. New `POST /customers/:id/force-deactivate`
+(`customer:force-deactivate`, Super Admin/Admin only) bypasses this for an
+exceptional reason, always audited with a full snapshot, and never
+auto-cancels Orders or auto-erases the balance.
+
+**Important, confirmed-before-implementing consequence:** Delivery, Stock
+Reservation, Invoice, and Customer Payment don't exist yet (Phases 8/9), so
+three of the six conditions are vacuously satisfied — genuinely unchecked,
+not simulated — until those phases ship. And because no code path sets
+`Order.status` to anything but `PENDING`/`CANCELLED` today, a customer with
+any non-cancelled order cannot be normally deactivated right now, only
+force-deactivated. Full detail in `docs/implementation-plan.md`'s Phase 6E
+addendum section and `docs/decisions/business-workflow-update-2026-08-02.md`
+section 16.
+
+**Next available phase, unstarted:** 6F (Vehicle Owners; rework Vehicle) —
+the only remaining sub-phase under the Phase 6 umbrella.
 
 ## 7. Exact next step (original, first-round session — historical)
 

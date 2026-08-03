@@ -85,6 +85,9 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             <DetailRow label="Email">
               {customer.email ?? <span className="text-muted-foreground">Not provided</span>}
             </DetailRow>
+            {!customer.isActive && customer.deactivationReason && (
+              <DetailRow label="Deactivation reason">{customer.deactivationReason}</DetailRow>
+            )}
           </CardContent>
         </Card>
 

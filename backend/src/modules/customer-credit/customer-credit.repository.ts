@@ -8,7 +8,7 @@ import type { CreateCreditOverrideInput, SetOpeningBalanceInput } from './custom
  *
  * Queries only. No business decisions, no HTTP, no permission checks.
  *
- * `sumCreditOrderTotals` reads the `orders` table directly with a plain
+ * `sumActiveCreditOrderTotals` reads the `orders` table directly with a plain
  * aggregate query — not a cross-module service call into `orders` — so credit
  * status computation never depends on the orders module, and `orders` can
  * safely depend on this module the other way for its own credit check
@@ -49,16 +49,31 @@ export async function upsertOpeningBalance(
 }
 
 /**
- * Sum of the customer's `CREDIT` orders. Every order counts as
- * "not-yet-invoiced" for this interim formula, because Invoices do not exist
- * yet (Phase 9) — see docs/implementation-plan.md Phase 5B.
+ * Sum of the customer's active `CREDIT` orders not yet invoiced — used only
+ * for the projected-exposure check on a *new* credit order (Phase 6E).
+ *
+ * "Active" excludes `CANCELLED` orders. Every other status counts as
+ * "not-yet-invoiced" today, because Invoices do not exist yet (Phase 9) to
+ * mark any of them as actually invoiced.
+ *
+ * `excludeOrderId` lets a caller editing an existing order exclude that
+ * order's own total from the sum, so it is never counted twice. Nothing
+ * calls this with a real id yet — order editing does not exist — but the
+ * parameter exists so a future edit flow does not have to re-derive this
+ * rule.
  */
-export async function sumCreditOrderTotals(
+export async function sumActiveCreditOrderTotals(
   customerId: string,
+  options: { excludeOrderId?: string } = {},
   client: DbClient = getPrisma(),
 ): Promise<Prisma.Decimal> {
   const result = await client.order.aggregate({
-    where: { customerId, paymentArrangement: 'CREDIT' },
+    where: {
+      customerId,
+      paymentArrangement: 'CREDIT',
+      status: { not: 'CANCELLED' },
+      ...(options.excludeOrderId ? { id: { not: options.excludeOrderId } } : {}),
+    },
     _sum: { totalAmount: true },
   });
 

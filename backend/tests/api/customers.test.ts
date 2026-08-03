@@ -4,7 +4,7 @@ import { API_BASE_PATH, createApp } from '../../src/app.js';
 import { CSRF_HEADER_NAME } from '../../src/config/security.js';
 import { disconnectPrisma } from '../../src/shared/database/prisma.js';
 import { createSignedInUser } from '../setup/auth-helpers.js';
-import { normalizePhone } from '../../src/shared/utils/normalize.js';
+import { normalizeForComparison, normalizePhone } from '../../src/shared/utils/normalize.js';
 import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-database.js';
 
 const app = createApp();
@@ -37,6 +37,46 @@ async function seedCustomer(
       phoneNormalized: normalizePhone(phone),
       isActive: overrides.isActive ?? true,
     },
+  });
+}
+
+async function seedAddress(customerId: string) {
+  const label = `Site ${Math.random().toString(36).slice(2, 8)}`;
+
+  return getTestPrisma().customerAddress.create({
+    data: {
+      customerId,
+      label,
+      labelNormalized: normalizeForComparison(label),
+      addressLine: '123 Industrial Road',
+      isActive: true,
+    },
+  });
+}
+
+/** Inserted directly — the deactivation check only needs the raw row. */
+async function seedOrder(
+  customerId: string,
+  addressId: string,
+  overrides: Partial<{ status: 'PENDING' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED' }> = {},
+) {
+  return getTestPrisma().order.create({
+    data: {
+      orderNumber: `ORD-TEST-${Math.random().toString(36).slice(2, 8)}`,
+      customerId,
+      customerAddressId: addressId,
+      addressLabel: 'Site',
+      addressLine: '123 Industrial Road',
+      paymentArrangement: 'PREPAID',
+      status: overrides.status ?? 'PENDING',
+      totalAmount: '10000.00',
+    },
+  });
+}
+
+async function seedOpeningBalance(customerId: string, amount: string) {
+  await getTestPrisma().customerOpeningBalance.create({
+    data: { customerId, amount, effectiveDate: new Date(), reason: 'Test seed' },
   });
 }
 
@@ -190,6 +230,84 @@ describe('customers module', () => {
 
       expect(response.body.data).toHaveLength(1);
       expect(response.body.data[0].name).toBe('Retired');
+    });
+
+    describe('outstanding balance filter (Phase 6E)', () => {
+      it('treats a customer with no opening-balance row as no outstanding balance', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const noRow = await seedCustomer({ name: 'No balance row' });
+        const zeroRow = await seedCustomer({ name: 'Zero balance row' });
+        await getTestPrisma().customerOpeningBalance.create({
+          data: {
+            customerId: zeroRow.id,
+            amount: '0.00',
+            effectiveDate: new Date(),
+            reason: 'Test seed',
+          },
+        });
+        const withBalance = await seedCustomer({ name: 'Has balance' });
+        await getTestPrisma().customerOpeningBalance.create({
+          data: {
+            customerId: withBalance.id,
+            amount: '500000.00',
+            effectiveDate: new Date(),
+            reason: 'Test seed',
+          },
+        });
+
+        const noBalance = await request(app)
+          .get(`${CUSTOMERS}?hasOutstandingBalance=false`)
+          .set('Cookie', cookie);
+        const hasBalance = await request(app)
+          .get(`${CUSTOMERS}?hasOutstandingBalance=true`)
+          .set('Cookie', cookie);
+
+        const noBalanceNames = (noBalance.body.data as { name: string }[]).map((c) => c.name);
+        expect(noBalanceNames).toEqual(expect.arrayContaining([noRow.name, zeroRow.name]));
+        expect(noBalanceNames).not.toContain(withBalance.name);
+
+        expect(hasBalance.body.data).toHaveLength(1);
+        expect(hasBalance.body.data[0].name).toBe(withBalance.name);
+      });
+
+      it('returns every customer when no balance filter is given', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        await seedCustomer({ name: 'A' });
+        const withBalance = await seedCustomer({ name: 'B' });
+        await getTestPrisma().customerOpeningBalance.create({
+          data: {
+            customerId: withBalance.id,
+            amount: '10000.00',
+            effectiveDate: new Date(),
+            reason: 'Test seed',
+          },
+        });
+
+        const response = await request(app).get(CUSTOMERS).set('Cookie', cookie);
+
+        expect(response.body.data).toHaveLength(2);
+      });
+
+      it('combines the balance filter with search', async () => {
+        const { cookie } = await createSignedInUser('admin');
+        const match = await seedCustomer({ name: 'Kamau Contractors' });
+        await getTestPrisma().customerOpeningBalance.create({
+          data: {
+            customerId: match.id,
+            amount: '20000.00',
+            effectiveDate: new Date(),
+            reason: 'Test seed',
+          },
+        });
+        await seedCustomer({ name: 'Kamau Builders' });
+
+        const response = await request(app)
+          .get(`${CUSTOMERS}?search=Kamau&hasOutstandingBalance=true`)
+          .set('Cookie', cookie);
+
+        expect(response.body.data).toHaveLength(1);
+        expect(response.body.data[0].name).toBe('Kamau Contractors');
+      });
     });
 
     it('counts only active addresses in the list', async () => {
@@ -473,6 +591,194 @@ describe('customers module', () => {
       const response = await request(app).get(`${CUSTOMERS}/does-not-exist`).set('Cookie', cookie);
 
       expect(response.status).toBe(404);
+    });
+  });
+
+  describe('deactivation safeguards (Phase 6E addendum)', () => {
+    it('blocks normal deactivation while an active order exists', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      await seedOrder(customer.id, address.id, { status: 'PENDING' });
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('CUSTOMER_DEACTIVATION_BLOCKED');
+      expect(response.body.error.message).toMatch(/1 active order/i);
+      expect(response.body.error.message).toMatch(/PENDING/);
+
+      const stillActive = await getTestPrisma().customer.findUnique({ where: { id: customer.id } });
+      expect(stillActive?.isActive).toBe(true);
+    });
+
+    it('reports every active order, by number and status', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const first = await seedOrder(customer.id, address.id, { status: 'PENDING' });
+      const second = await seedOrder(customer.id, address.id, { status: 'IN_PRODUCTION' });
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.body.error.message).toMatch(/2 active order/i);
+      expect(response.body.error.message).toContain(`${first.orderNumber} (PENDING)`);
+      expect(response.body.error.message).toContain(`${second.orderNumber} (IN_PRODUCTION)`);
+    });
+
+    it('blocks normal deactivation with a non-zero outstanding balance', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      await seedOpeningBalance(customer.id, '50000.00');
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('CUSTOMER_DEACTIVATION_BLOCKED');
+      expect(response.body.error.message).toMatch(/50000\.00/);
+    });
+
+    it('allows normal deactivation once every order is completed or cancelled and the balance is zero', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      await seedOrder(customer.id, address.id, { status: 'COMPLETED' });
+      await seedOrder(customer.id, address.id, { status: 'CANCELLED' });
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.isActive).toBe(false);
+    });
+
+    it('never deletes or hides completed/cancelled orders after deactivation', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const completed = await seedOrder(customer.id, address.id, { status: 'COMPLETED' });
+
+      await request(app).post(`${CUSTOMERS}/${customer.id}/deactivate`).set(headers).send({});
+
+      const order = await getTestPrisma().order.findUnique({ where: { id: completed.id } });
+      expect(order).not.toBeNull();
+      expect(order?.status).toBe('COMPLETED');
+    });
+  });
+
+  describe('force deactivation (Phase 6E addendum)', () => {
+    it('refuses an accountant force-deactivating a customer', async () => {
+      const { cookie } = await createSignedInUser('accountant');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/force-deactivate`)
+        .set(headers)
+        .send({ reason: 'Exceptional business reason.' });
+
+      expect(response.status).toBe(403);
+    });
+
+    it('rejects a missing reason', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/force-deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(422);
+    });
+
+    it('lets an admin force-deactivate despite an active order and a balance, without touching either', async () => {
+      const { cookie, user } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const order = await seedOrder(customer.id, address.id, { status: 'PENDING' });
+      await seedOpeningBalance(customer.id, '75000.00');
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/force-deactivate`)
+        .set(headers)
+        .send({ reason: 'Customer under investigation.' });
+
+      expect(response.status).toBe(200);
+      expect(response.body.data.isActive).toBe(false);
+      expect(response.body.data.deactivationReason).toBe('Customer under investigation.');
+
+      // Never auto-cancelled, never auto-erased.
+      const untouchedOrder = await getTestPrisma().order.findUnique({ where: { id: order.id } });
+      expect(untouchedOrder?.status).toBe('PENDING');
+      const untouchedBalance = await getTestPrisma().customerOpeningBalance.findUnique({
+        where: { customerId: customer.id },
+      });
+      expect(untouchedBalance?.amount.toFixed(2)).toBe('75000.00');
+
+      const audit = await getTestPrisma().auditLog.findFirst({
+        where: { action: 'FORCE_DEACTIVATE_CUSTOMER', entityId: customer.id },
+      });
+      expect(audit?.userId).toBe(user.id);
+      expect(audit?.reason).toBe('Customer under investigation.');
+      expect(audit?.previousData).toMatchObject({
+        isActive: true,
+        activeOrders: [`${order.orderNumber} (PENDING)`],
+        outstandingBalance: '75000.00',
+      });
+      expect(audit?.updatedData).toMatchObject({
+        isActive: false,
+        deactivationReason: 'Customer under investigation.',
+      });
+    });
+
+    it('rejects force-deactivating an already inactive customer', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer({ isActive: false });
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/force-deactivate`)
+        .set(headers)
+        .send({ reason: 'Any reason.' });
+
+      expect(response.status).toBe(422);
+    });
+
+    it('clears the deactivation reason on reactivation', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+
+      await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/force-deactivate`)
+        .set(headers)
+        .send({ reason: 'Temporary hold.' });
+
+      const reactivated = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/activate`)
+        .set(headers)
+        .send({});
+
+      expect(reactivated.body.data.deactivationReason).toBeNull();
     });
   });
 

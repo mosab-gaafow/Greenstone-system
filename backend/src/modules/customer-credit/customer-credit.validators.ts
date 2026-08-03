@@ -25,3 +25,10 @@ export const setOpeningBalanceBodySchema = z
       .max(500, 'Reason must be 500 characters or fewer.'),
   })
   .strict();
+
+export const getCreditProjectionQuerySchema = z.object({
+  newOrderTotal: z
+    .string()
+    .trim()
+    .regex(/^\d+(\.\d{1,2})?$/, 'Enter an amount with up to two decimal places.'),
+});

@@ -65,6 +65,16 @@ export function canSetOpeningBalance(user: Pick<CurrentUser, 'role'> | null | un
 }
 
 /**
+ * May force-deactivate a customer, bypassing the normal deactivation
+ * safeguards (Phase 6E addendum). Never the Accountant.
+ */
+export function canForceDeactivateCustomer(
+  user: Pick<CurrentUser, 'role'> | null | undefined,
+): boolean {
+  return isAdministrator(user);
+}
+
+/**
  * May set opening raw-material or finished stock. Admin/Super Admin only —
  * the Accountant may adjust stock but not set its opening quantity.
  */

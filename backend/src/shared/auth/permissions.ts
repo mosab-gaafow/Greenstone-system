@@ -32,7 +32,7 @@ export const statement = {
   'audit-log': ['read'],
 
   // Master data
-  customer: ['create', 'read', 'update'],
+  customer: ['create', 'read', 'update', 'force-deactivate'],
   'customer-address': ['create', 'read', 'update'],
   product: ['create', 'read', 'update'],
   'measurement-unit': ['create', 'read', 'update'],
@@ -126,7 +126,7 @@ const fullBusinessAccess = {
   settings: ['read', 'update'],
   'audit-log': ['read'],
 
-  customer: ['create', 'read', 'update'],
+  customer: ['create', 'read', 'update', 'force-deactivate'],
   'customer-address': ['create', 'read', 'update'],
   product: ['create', 'read', 'update'],
   'measurement-unit': ['create', 'read', 'update'],

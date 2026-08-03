@@ -19,7 +19,7 @@ import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
 import { canOverrideCredit } from '@/lib/permissions';
 import * as customersApi from '@/features/customers/api/customers.api';
 import * as productsApi from '@/features/products/api/products.api';
-import { useCreditStatus } from '@/features/customers/hooks/use-customer-credit';
+import { useCreditProjection } from '@/features/customers/hooks/use-customer-credit';
 import { creditStatusLabel } from '@/features/customers/types/customer-credit.types';
 import {
   orderFormSchema,
@@ -82,8 +82,18 @@ export function OrderForm({ onSubmit, pending }: OrderFormProps) {
     enabled: Boolean(customerId),
   });
 
-  const creditStatusQuery = useCreditStatus(
+  const total = watchedItems.reduce((sum, item) => {
+    const quantity = Number(item?.quantity) || 0;
+    const price = Number(item?.agreedUnitPrice) || 0;
+    return sum + quantity * price;
+  }, 0);
+
+  // Preview only — `createOrder` always recalculates and enforces the
+  // projected exposure again on the backend, including this order's own
+  // total (Phase 6E).
+  const creditProjectionQuery = useCreditProjection(
     watchedPaymentArrangement === 'CREDIT' ? customerId : undefined,
+    total.toFixed(2),
   );
 
   const customerOptions = useMemo(
@@ -110,16 +120,10 @@ export function OrderForm({ onSubmit, pending }: OrderFormProps) {
     [customerDetailQuery.data],
   );
 
-  const total = watchedItems.reduce((sum, item) => {
-    const quantity = Number(item?.quantity) || 0;
-    const price = Number(item?.agreedUnitPrice) || 0;
-    return sum + quantity * price;
-  }, 0);
-
   const itemsError =
     typeof errors.items?.message === 'string' ? errors.items.message : errors.items?.root?.message;
 
-  const isBlocked = creditStatusQuery.data?.creditStatus === 'BLOCKED';
+  const isBlocked = creditProjectionQuery.data?.creditStatus === 'BLOCKED';
   const showOverrideField = watchedPaymentArrangement === 'CREDIT' && isBlocked;
 
   return (
@@ -220,11 +224,15 @@ export function OrderForm({ onSubmit, pending }: OrderFormProps) {
             )}
           />
 
-          {watchedPaymentArrangement === 'CREDIT' && creditStatusQuery.data && (
+          {watchedPaymentArrangement === 'CREDIT' && creditProjectionQuery.data && (
             <Alert variant={isBlocked ? 'destructive' : 'default'} role="status">
               <AlertDescription>
-                Customer credit status: {creditStatusLabel(creditStatusQuery.data.creditStatus)}.
-                Outstanding balance KES {creditStatusQuery.data.outstandingBalance}.
+                Projected credit status:{' '}
+                {creditStatusLabel(creditProjectionQuery.data.creditStatus)}. Current outstanding
+                balance KES {creditProjectionQuery.data.currentOutstandingBalance}, active credit
+                orders KES {creditProjectionQuery.data.activeCreditOrdersTotal}, this order KES{' '}
+                {creditProjectionQuery.data.newOrderTotal} — projected exposure KES{' '}
+                {creditProjectionQuery.data.projectedExposure}.
                 {isBlocked &&
                   (canOverrideCredit(user)
                     ? ' Provide a reason below to override the block.'

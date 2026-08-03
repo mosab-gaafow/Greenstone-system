@@ -65,6 +65,16 @@ export const addressParamsSchema = z.object({
   addressId: z.string().min(1, 'An address id is required.'),
 });
 
+export const forceDeactivateCustomerBodySchema = z
+  .object({
+    reason: z
+      .string()
+      .trim()
+      .min(1, 'A reason is required to force-deactivate a customer.')
+      .max(500, 'Reason must be 500 characters or fewer.'),
+  })
+  .strict();
+
 export const createCustomerBodySchema = z
   .object({
     name: nameSchema,
@@ -108,6 +118,10 @@ export const listCustomersQuerySchema = z.object({
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
   search: z.string().trim().min(1).max(150).optional(),
   isActive: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => (value === undefined ? undefined : value === 'true')),
+  hasOutstandingBalance: z
     .enum(['true', 'false'])
     .optional()
     .transform((value) => (value === undefined ? undefined : value === 'true')),

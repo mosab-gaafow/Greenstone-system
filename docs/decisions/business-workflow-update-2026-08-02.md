@@ -162,6 +162,13 @@ dispatch (step 11).
 
 ## 6. Customer credit
 
+**Status: implemented (2026-08-03, Phase 6E).** `customer-credit.service.ts`
+now exposes `computeCreditStatus` (accounting balance only) and
+`computeProjectedExposure` (this section's projection formula, including the
+new order's own total) as two separate functions; `orders.service.ts`'s
+order-creation check uses the latter. See
+`docs/implementation-plan.md`'s Phase 6E section for the full record.
+
 Two distinct calculations, not one:
 
 **Accounting outstanding balance** (the real financial balance):
@@ -210,6 +217,10 @@ now explicitly add the new order's own total, which Phase 5B's
 `customer-credit` module does not currently do.
 
 ## 7. Customer filters
+
+**Status: implemented (2026-08-03, Phase 6E).** `hasOutstandingBalance`
+(true/false/absent) on `GET /customers`, backed by the accounting balance
+above, independent of `isActive` and credit status.
 
 Add a customer list filter, independent of active status and credit status:
 
@@ -634,3 +645,51 @@ field, backfilled the three confirmed values plus left 9-inch's empty via
 migration `20260803180000_phase6d_product_operational_fields`, and updated
 `production.service.ts` to read it and block on `null`. See
 `docs/database-notes.md`'s `products` table section for the schema detail.
+
+## 16. Customer deactivation business rule (2026-08-03)
+
+**Status: implemented (2026-08-03).** Migration
+`20260803190000_phase6e_customer_deactivation_reason` applied. See
+`docs/implementation-plan.md`'s Phase 6E addendum for the completion record.
+
+### Normal deactivation
+
+A Customer may be deactivated normally only when:
+
+- Every Order is `COMPLETED` or `CANCELLED`.
+- There are no `PENDING`, `IN_PRODUCTION`, `CURING`, `READY_FOR_DELIVERY`, or
+  `PARTIALLY_DELIVERED` Orders.
+- All ordered quantities have been fully delivered or cancelled.
+- There are no unfinished Delivery records.
+- There is no reserved stock for the Customer.
+- The Customer's accounting outstanding balance is exactly KES 0.
+- There are no pending or unapproved Customer payments.
+
+Any failing condition rejects deactivation with a clear business error
+(active-order count, order numbers/statuses, outstanding balance, and any
+unfinished-delivery or reserved-stock reason) — never a silent deactivation.
+Completed/cancelled historical Orders remain visible after deactivation;
+never deleted or hidden.
+
+### Forced deactivation
+
+Super Admin and Admin may force-deactivate a Customer for an exceptional
+business reason. Accountant cannot. Requires a written reason and is always
+audited (previous status, active-order summary, outstanding balance). Blocks
+new Orders, new credit activity, and new Delivery preparation; keeps
+existing records traceable; allows authorised users to still cancel or
+properly close existing transactions. Never auto-cancels active Orders,
+auto-releases stock reservations, or auto-erases the outstanding balance.
+
+### Dependency on unbuilt modules
+
+Delivery, Stock Reservation, Invoice, and Customer Payment do not exist in
+the schema yet (Phases 8 and 9). Only two of the seven normal-deactivation
+conditions are actually checkable today (Order status, accounting balance);
+the rest — unfinished Delivery, per-customer reserved stock, and
+pending/unapproved payments — would be vacuously satisfied until those
+phases ship, and must be revisited then. Because no code path today ever
+sets `Order.status` to anything but `PENDING`/`CANCELLED`, a literal reading
+of the rule means a customer with any non-cancelled order cannot be
+normally deactivated yet — only force-deactivated. Flagged for confirmation
+before implementation, not assumed.

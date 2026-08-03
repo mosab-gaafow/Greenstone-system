@@ -21,6 +21,10 @@ export async function fetchCustomers(filters: CustomerFilters): Promise<Customer
       pageSize: filters.pageSize,
       search: filters.search,
       isActive: filters.isActive === undefined ? undefined : String(filters.isActive),
+      hasOutstandingBalance:
+        filters.hasOutstandingBalance === undefined
+          ? undefined
+          : String(filters.hasOutstandingBalance),
     },
   });
 
@@ -50,6 +54,15 @@ export async function setCustomerActive(id: string, isActive: boolean): Promise<
     `/customers/${id}/${isActive ? 'activate' : 'deactivate'}`,
     {},
   );
+  return data;
+}
+
+/** Bypasses the normal deactivation safeguards for an exceptional reason (Phase 6E addendum). */
+export async function forceDeactivateCustomer(
+  id: string,
+  reason: string,
+): Promise<CustomerDetail> {
+  const { data } = await api.post<CustomerDetail>(`/customers/${id}/force-deactivate`, { reason });
   return data;
 }
 

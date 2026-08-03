@@ -1,9 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { MoreHorizontal, PencilLine, Plus, Power, PowerOff, Users } from 'lucide-react';
+import {
+  MoreHorizontal,
+  PencilLine,
+  Plus,
+  Power,
+  PowerOff,
+  ShieldAlert,
+  Users,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -16,21 +25,53 @@ import { EmptyState } from '@/components/data-display/empty-state';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { Pagination } from '@/components/data-display/pagination';
 import { TableToolbar } from '@/components/data-display/table-toolbar';
+import { FilterSelect } from '@/components/shared/filter-select';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { formatDate } from '@/lib/format';
-import { useCustomers, useSetCustomerActive } from '../hooks/use-customers';
+import { ApiError } from '@/lib/api-client';
+import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
+import { canForceDeactivateCustomer } from '@/lib/permissions';
+import {
+  useCustomers,
+  useForceDeactivateCustomer,
+  useSetCustomerActive,
+} from '../hooks/use-customers';
 import { CustomerStatusTabs } from './customer-status-tabs';
 import type { Customer } from '../types/customer.types';
 
-const DEFAULTS = { page: '1', search: '', status: 'all' } as const;
+const DEFAULTS = { page: '1', search: '', status: 'all', balance: 'all' } as const;
 
 const PAGE_SIZE = 25;
 
+/**
+ * Independent of active status and credit status (business-blueprint
+ * section 2.2) — the accounting outstanding balance only, never the
+ * projected credit exposure.
+ */
+const BALANCE_FILTER = [
+  { value: 'all', label: 'All balances' },
+  { value: 'no', label: 'No outstanding balance' },
+  { value: 'has', label: 'Has outstanding balance' },
+];
+
 export function CustomerList() {
+  const { user } = useCurrentUser();
   const { values, setFilters, setPage } = useUrlFilters(DEFAULTS);
   const [confirming, setConfirming] = useState<Customer | undefined>(undefined);
+  const [deactivateError, setDeactivateError] = useState<string | null>(null);
   const setActive = useSetCustomerActive();
+
+  const [forceDeactivating, setForceDeactivating] = useState<Customer | undefined>(undefined);
+  const [forceReason, setForceReason] = useState('');
+  const [forceReasonError, setForceReasonError] = useState<string | null>(null);
+  const forceDeactivate = useForceDeactivateCustomer();
+
+  function closeForceDialog() {
+    setForceDeactivating(undefined);
+    setForceReason('');
+    setForceReasonError(null);
+  }
 
   const page = Number.parseInt(values.page, 10) || 1;
 
@@ -39,6 +80,7 @@ export function CustomerList() {
     pageSize: PAGE_SIZE,
     search: values.search || undefined,
     isActive: values.status === 'all' ? undefined : values.status === 'active',
+    hasOutstandingBalance: values.balance === 'all' ? undefined : values.balance === 'has',
   });
 
   const columns: ListColumn<Customer>[] = [
@@ -113,13 +155,25 @@ export function CustomerList() {
               )}
               {customer.isActive ? 'Deactivate' : 'Activate'}
             </DropdownMenuItem>
+            {customer.isActive && canForceDeactivateCustomer(user) && (
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => {
+                  setForceDeactivating(customer);
+                }}
+              >
+                <ShieldAlert className="size-4" aria-hidden />
+                Force deactivate
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       ),
     },
   ];
 
-  const isFiltered = values.search !== '' || values.status !== 'all';
+  const isFiltered =
+    values.search !== '' || values.status !== 'all' || values.balance !== 'all';
 
   return (
     <div className="space-y-4">
@@ -131,15 +185,25 @@ export function CustomerList() {
         searchPlaceholder="Search by name, phone or email"
         isFiltered={isFiltered}
         onReset={() => {
-          setFilters({ search: '', status: 'all' });
+          setFilters({ search: '', status: 'all', balance: 'all' });
         }}
         filters={
-          <CustomerStatusTabs
-            value={values.status}
-            onChange={(status) => {
-              setFilters({ status });
-            }}
-          />
+          <div className="flex gap-3">
+            <CustomerStatusTabs
+              value={values.status}
+              onChange={(status) => {
+                setFilters({ status });
+              }}
+            />
+            <FilterSelect
+              label="Balance"
+              value={values.balance}
+              options={BALANCE_FILTER}
+              onChange={(balance) => {
+                setFilters({ balance });
+              }}
+            />
+          </div>
         }
       />
 
@@ -181,7 +245,7 @@ export function CustomerList() {
                     <Button
                       variant="outline"
                       onClick={() => {
-                        setFilters({ search: '', status: 'all' });
+                        setFilters({ search: '', status: 'all', balance: 'all' });
                       }}
                     >
                       Clear filters
@@ -212,6 +276,7 @@ export function CustomerList() {
         onOpenChange={(open) => {
           if (!open) {
             setConfirming(undefined);
+            setDeactivateError(null);
           }
         }}
         title={
@@ -221,7 +286,7 @@ export function CustomerList() {
         }
         description={
           confirming?.isActive
-            ? 'No new orders can be created for them. Existing records are kept, and you can activate them again at any time.'
+            ? 'Only allowed once every order is completed or cancelled and the outstanding balance is zero. Existing records are kept either way.'
             : 'New orders can be created for them again.'
         }
         confirmLabel={confirming?.isActive ? 'Deactivate' : 'Activate'}
@@ -229,17 +294,74 @@ export function CustomerList() {
         pending={setActive.isPending}
         onConfirm={() => {
           if (confirming) {
+            setDeactivateError(null);
             setActive.mutate(
               { id: confirming.id, isActive: !confirming.isActive },
               {
-                onSettled: () => {
+                onSuccess: () => {
                   setConfirming(undefined);
+                },
+                onError: (error) => {
+                  setDeactivateError(
+                    error instanceof ApiError
+                      ? error.message
+                      : 'The customer status could not be changed.',
+                  );
                 },
               },
             );
           }
         }}
-      />
+      >
+        {deactivateError && (
+          <p className="text-destructive text-sm" role="alert">
+            {deactivateError}
+          </p>
+        )}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={forceDeactivating !== undefined}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeForceDialog();
+          }
+        }}
+        title={`Force-deactivate ${forceDeactivating?.name ?? ''}?`}
+        description="Bypasses the normal safeguards — active orders, reservations, and the outstanding balance are left exactly as they are. Only for an exceptional business reason."
+        confirmLabel="Force deactivate"
+        destructive
+        pending={forceDeactivate.isPending}
+        onConfirm={() => {
+          const trimmed = forceReason.trim();
+
+          if (!trimmed) {
+            setForceReasonError('A reason is required to force-deactivate a customer.');
+            return;
+          }
+
+          if (forceDeactivating) {
+            forceDeactivate.mutate(
+              { id: forceDeactivating.id, reason: trimmed },
+              { onSuccess: closeForceDialog },
+            );
+          }
+        }}
+      >
+        <Textarea
+          placeholder="Reason (required)"
+          value={forceReason}
+          onChange={(event) => {
+            setForceReason(event.target.value);
+            if (forceReasonError) setForceReasonError(null);
+          }}
+        />
+        {forceReasonError && (
+          <p className="text-destructive text-sm" role="alert">
+            {forceReasonError}
+          </p>
+        )}
+      </ConfirmDialog>
     </div>
   );
 }

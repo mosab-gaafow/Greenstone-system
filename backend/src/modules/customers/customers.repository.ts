@@ -1,4 +1,4 @@
-import type { Customer, CustomerAddress, Prisma } from '../../generated/prisma/client.js';
+import { Prisma, type Customer, type CustomerAddress } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
 import type { DbClient } from '../../shared/database/transaction.js';
 import {
@@ -7,6 +7,7 @@ import {
   normalizePhone,
 } from '../../shared/utils/normalize.js';
 import type {
+  ActiveOrderSummary,
   CreateAddressInput,
   CreateCustomerInput,
   ListCustomersFilters,
@@ -26,17 +27,35 @@ export type CustomerWithAddresses = Customer & { addresses: CustomerAddress[] };
 
 function buildWhere(filters: ListCustomersFilters): Prisma.CustomerWhereInput {
   const where: Prisma.CustomerWhereInput = {};
+  // Independent filter groups are combined with AND, so search and the
+  // balance filter never merge into one accidental OR across both.
+  const and: Prisma.CustomerWhereInput[] = [];
 
   if (filters.search) {
-    where.OR = [
-      { name: { contains: filters.search } },
-      { phone: { contains: filters.search } },
-      { email: { contains: filters.search } },
-    ];
+    and.push({
+      OR: [
+        { name: { contains: filters.search } },
+        { phone: { contains: filters.search } },
+        { email: { contains: filters.search } },
+      ],
+    });
   }
 
   if (filters.isActive !== undefined) {
     where.isActive = filters.isActive;
+  }
+
+  // Accounting outstanding balance only (business-blueprint section 2.2/2.24)
+  // — never the projected credit-risk exposure. A customer with no
+  // `CustomerOpeningBalance` row at all counts as no outstanding balance.
+  if (filters.hasOutstandingBalance === true) {
+    and.push({ openingBalance: { amount: { gt: 0 } } });
+  } else if (filters.hasOutstandingBalance === false) {
+    and.push({ OR: [{ openingBalance: null }, { openingBalance: { amount: { lte: 0 } } }] });
+  }
+
+  if (and.length > 0) {
+    where.AND = and;
   }
 
   return where;
@@ -113,12 +132,58 @@ export async function updateCustomer(
   return client.customer.update({ where: { id }, data });
 }
 
+/**
+ * `deactivationReason` is only ever non-null when activating sets it back to
+ * null (Phase 6E addendum) — normal deactivation has no reason of its own,
+ * only forced deactivation does (`forceDeactivateCustomer` passes one in).
+ */
 export async function setCustomerActive(
   id: string,
   isActive: boolean,
+  deactivationReason: string | null = null,
   client: DbClient = getPrisma(),
 ): Promise<CustomerRow> {
-  return client.customer.update({ where: { id }, data: { isActive } });
+  return client.customer.update({
+    where: { id },
+    data: { isActive, deactivationReason: isActive ? null : deactivationReason },
+  });
+}
+
+/**
+ * Orders that are not yet `COMPLETED` or `CANCELLED` — read directly from
+ * the `orders` table, the same one-directional pattern
+ * `customer-credit.repository.ts` already uses (`orders` may depend on
+ * `customers`/`customer-credit`; neither of those ever depends back).
+ * Used by the deactivation check (Phase 6E addendum).
+ */
+export async function findActiveOrdersByCustomerId(
+  customerId: string,
+  client: DbClient = getPrisma(),
+): Promise<ActiveOrderSummary[]> {
+  return client.order.findMany({
+    where: { customerId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
+    select: { orderNumber: true, status: true },
+    orderBy: { orderNumber: 'asc' },
+  });
+}
+
+/**
+ * The accounting outstanding balance's only real input today — the opening
+ * balance amount, or `0` when no row exists. Read directly rather than via
+ * `customer-credit.service.ts`, to avoid a circular module dependency
+ * (`customer-credit` already depends on `customers`, not the other way).
+ * Mirrors `customer-credit.repository.ts`'s own `findOpeningBalance`.
+ */
+export async function findOpeningBalanceAmount(
+  customerId: string,
+  client: DbClient = getPrisma(),
+): Promise<Prisma.Decimal> {
+  const row = await client.customerOpeningBalance.findUnique({
+    where: { customerId },
+    select: { amount: true },
+  });
+
+  return row?.amount ?? new Prisma.Decimal(0);
 }
 
 /** Finds a customer by normalised phone. The real duplicate check. */

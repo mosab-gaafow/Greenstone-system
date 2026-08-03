@@ -113,6 +113,24 @@ export function useSetCustomerActive() {
   });
 }
 
+/**
+ * Force-deactivation (Phase 6E addendum) — bypasses the normal safeguards.
+ * Errors are surfaced by the caller (not toast-only), since a rejection here
+ * (e.g. an unwritten reason) belongs on the confirmation dialog itself.
+ */
+export function useForceDeactivateCustomer() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      customersApi.forceDeactivateCustomer(id, reason),
+    onSuccess: async (customer) => {
+      await queryClient.invalidateQueries({ queryKey: customerKeys.all });
+      toast.success(`${customer.name} force-deactivated.`);
+    },
+  });
+}
+
 export function useSaveAddress(customerId: string) {
   const queryClient = useQueryClient();
 

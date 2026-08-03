@@ -67,7 +67,6 @@ export function CreditStatusCard({ customerId }: { customerId: string }) {
               />
             </DetailRow>
             <DetailRow label="Opening balance">KES {query.data.openingBalance}</DetailRow>
-            <DetailRow label="Credit orders">KES {query.data.creditOrdersTotal}</DetailRow>
             <DetailRow label="Outstanding balance">KES {query.data.outstandingBalance}</DetailRow>
           </>
         )}

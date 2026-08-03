@@ -10,6 +10,7 @@ import * as customersService from './customers.service.js';
 import type {
   CreateAddressInput,
   CreateCustomerInput,
+  ForceDeactivateCustomerInput,
   ListCustomersFilters,
   UpdateAddressInput,
   UpdateCustomerInput,
@@ -89,6 +90,25 @@ export async function deactivate(req: Request, res: Response, next: NextFunction
     sendSuccess(
       res,
       await customersService.deactivateCustomer(req.params['id'] as string, getRequestContext(res)),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function forceDeactivate(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await customersService.forceDeactivateCustomer(
+        req.params['id'] as string,
+        req.body as ForceDeactivateCustomerInput,
+        getRequestContext(res),
+      ),
     );
   } catch (error) {
     next(error);

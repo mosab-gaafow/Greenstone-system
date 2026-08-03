@@ -88,6 +88,12 @@ export class CustomerCreditBlockedError extends AppError {
   }
 }
 
+export class CustomerDeactivationBlockedError extends AppError {
+  constructor(message: string) {
+    super(ERROR_CODES.CUSTOMER_DEACTIVATION_BLOCKED, 422, message);
+  }
+}
+
 export class InsufficientRawMaterialError extends AppError {
   constructor(message: string) {
     super(ERROR_CODES.INSUFFICIENT_RAW_MATERIAL, 422, message);

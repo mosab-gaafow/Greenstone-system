@@ -81,7 +81,7 @@ The system must support:
 
 Quotations are not part of the management system — see section 2.5.
 
-### Customer filters (2026-08-02)
+### Customer filters (2026-08-02; implemented 2026-08-03, Phase 6E)
 
 Independent of active status and credit status, the customer list supports:
 
@@ -91,6 +91,37 @@ Independent of active status and credit status, the customer list supports:
 
 The accounting outstanding balance is the one defined in section 2.24, not the
 projected credit-risk exposure used only for new credit-order decisions.
+
+### Customer deactivation (2026-08-03, Phase 6E addendum)
+
+A Customer may be deactivated normally only when:
+
+- Every Order is `COMPLETED` or `CANCELLED` — no `PENDING`,
+  `IN_PRODUCTION`, `CURING`, `READY_FOR_DELIVERY`, or `PARTIALLY_DELIVERED`
+  Orders.
+- All ordered quantities have been fully delivered or cancelled.
+- There are no unfinished Delivery records.
+- There is no reserved stock for the Customer.
+- The accounting outstanding balance is exactly KES 0.
+- There are no pending or unapproved Customer payments.
+
+A failing condition rejects deactivation with a clear business error (active
+order count, order numbers/statuses, outstanding balance) — never a silent
+deactivation. Completed/cancelled historical Orders remain visible after
+deactivation; never deleted or hidden.
+
+**Forced deactivation** lets Super Admin or Admin deactivate a Customer for
+an exceptional business reason, bypassing the above. Accountant cannot.
+Requires a written reason and is always audited (previous status,
+active-order summary, outstanding balance). Never auto-cancels Orders,
+auto-releases stock reservations, or auto-erases the outstanding balance —
+those remain separate, deliberate actions.
+
+Delivery, Stock Reservation, and Customer Payment do not exist yet (Phases 8
+and 9), so three of the six conditions above cannot be truly checked today
+and are treated as satisfied until those phases ship — see
+`docs/decisions/business-workflow-update-2026-08-02.md` section 16 and
+`docs/database-notes.md`'s `customers` table notes.
 
 ---
 
@@ -877,7 +908,7 @@ Credit levels:
 | KES 900,000–999,999 | STRONG_WARNING |
 | KES 1,000,000 or above | BLOCKED |
 
-### Two calculations, not one (2026-08-02)
+### Two calculations, not one (2026-08-02; implemented 2026-08-03, Phase 6E)
 
 **Accounting outstanding balance** — the real financial balance:
 
@@ -914,6 +945,14 @@ Every override requires:
 The KES 1,000,000 credit limit is a fixed business limit.
 
 It must not be confused with a customer's opening balance.
+
+**Implementation note (2026-08-03, Phase 6E):** "active credit orders not yet
+invoiced" excludes only `CANCELLED` orders — every other order status counts
+today, since Invoices do not exist yet to mark any of them as actually
+invoiced. A new order's projected exposure never counts an order twice: it
+is computed fresh for the order being created, and an order id may be
+excluded from the sum so a future edit flow does not double-count it either
+(no order-edit feature exists yet).
 
 ---
 

@@ -278,15 +278,15 @@ enum ProductCategory {
 ///
 /// See business-blueprint sections 2.3 and 2.4.
 model Product {
-  id             String          @id @default(uuid())
-  name           String          @unique
+  id                        String          @id @default(uuid())
+  name                      String          @unique
   /// Lowercased, whitespace-collapsed, × treated as x. The unique index that
   /// actually prevents duplicates — `name` alone would let "6 x 9" and
   /// "6 × 9" become two products.
-  nameNormalized String          @unique
-  category       ProductCategory
-  size           String
-  description    String?         @db.Text
+  nameNormalized            String          @unique
+  category                  ProductCategory
+  size                      String
+  description               String?         @db.Text
   /// Short day-to-day name staff actually use (e.g. "4-inch"), separate from
   /// the full official `name` (2026-08-02/03). Nullable — left empty until
   /// confirmed for a given product; permanently empty for the two Hollow Pot
@@ -304,9 +304,9 @@ model Product {
   /// (2026-08-02). Nullable until confirmed. Applies only when a truck
   /// carries a single product type — mixed-product capacity is deferred.
   maxPiecesPerTruck         Int?
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  isActive                  Boolean         @default(true)
+  createdAt                 DateTime        @default(now())
+  updatedAt                 DateTime        @updatedAt
 
   orderItems             OrderItem[]
   finishedStockBalance   FinishedStockBalance?
@@ -324,20 +324,26 @@ model Product {
 /// A customer has many orders, and every order belongs to exactly one customer.
 /// See business-blueprint section 2.2.
 model Customer {
-  id              String   @id @default(uuid())
-  name            String
-  phone           String
+  id                 String   @id @default(uuid())
+  name               String
+  phone              String
   /// Digits only, in international form. This is what makes the customer
   /// unique: "0722123456", "0722 123 456" and "+254722123456" all normalise to
   /// the same value, so they can no longer be entered three times.
-  phoneNormalized String   @unique
-  email           String?
+  phoneNormalized    String   @unique
+  email              String?
   /// Lowercased. Unique when present; MySQL allows many NULLs in a unique
   /// index, so customers without an email are unaffected.
-  emailNormalized String?  @unique
-  isActive        Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  emailNormalized    String?  @unique
+  isActive           Boolean  @default(true)
+  /// Written reason for the most recent deactivation (normal or forced).
+  /// Mirrors `Order.statusReason`. Cleared when the customer is reactivated
+  /// — the audit log keeps the permanent history regardless. See
+  /// business-blueprint section 2.2/2.24 and
+  /// docs/decisions/business-workflow-update-2026-08-02.md section 16.
+  deactivationReason String?  @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
   addresses       CustomerAddress[]
   orders          Order[]

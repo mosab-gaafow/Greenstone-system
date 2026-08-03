@@ -2,7 +2,7 @@ import { Prisma, type CreditStatus } from '../../generated/prisma/client.js';
 import {
   findOpeningBalance,
   insertCreditOverride,
-  sumCreditOrderTotals,
+  sumActiveCreditOrderTotals,
   upsertOpeningBalance,
   type OpeningBalanceRow,
 } from './customer-credit.repository.js';
@@ -12,6 +12,7 @@ import { toAuditContext, type RequestContext } from '../../shared/auth/auth-cont
 import * as customersService from '../customers/customers.service.js';
 import type {
   CreateCreditOverrideInput,
+  CreditProjectionResult,
   CreditStatusResult,
   OpeningBalanceDetail,
   SetOpeningBalanceInput,
@@ -19,15 +20,21 @@ import type {
 
 /**
  * Customer credit business logic. See business-blueprint sections 2.24 and
- * 2.25, and docs/implementation-plan.md Phase 5B.
+ * 2.25, docs/implementation-plan.md Phase 5B/6E, and
+ * docs/decisions/business-workflow-update-2026-08-02.md sections 6 and 7.
  *
- * Credit status is always computed live, from MySQL, never cached and never
- * stored on `Customer` — see docs/technical-blueprint.md section 4A.3.
+ * Credit figures are always computed live, from MySQL, never cached and
+ * never stored on `Customer` — see docs/technical-blueprint.md section 4A.3.
  *
- * Interim outstanding-balance formula, until Invoices exist (Phase 9):
- * `opening balance + the customer's CREDIT orders`. This switches to
- * `opening balance + issued invoices − approved payments` once Invoices
- * ship, and this module's comment on that trade-off is removed then.
+ * Two distinct calculations (Phase 6E), never conflated:
+ *
+ * - `computeCreditStatus`/`getCreditStatus` — the accounting outstanding
+ *   balance. Orders are never part of it (`openingBalance` alone today,
+ *   since Invoices and approved payment allocations do not exist yet).
+ *   Used for display and the customer-list balance filter.
+ * - `computeProjectedExposure`/`getCreditProjection` — used only to decide
+ *   whether a *new* CREDIT order may proceed. Explicitly adds the new
+ *   order's own total, unlike the superseded Phase 5B behaviour.
  */
 
 const AUDIT_MODULE = 'customer-credit';
@@ -44,28 +51,68 @@ export async function getCreditStatus(customerId: string): Promise<CreditStatusR
 }
 
 /**
- * Computes credit status without confirming the customer exists — for callers
- * (such as order creation) that have already loaded the customer and want to
- * read within their own transaction.
+ * Computes the accounting outstanding balance without confirming the
+ * customer exists — for callers (such as order creation) that have already
+ * loaded the customer and want to read within their own transaction.
  */
 export async function computeCreditStatus(
   customerId: string,
   client?: TransactionClient,
 ): Promise<CreditStatusResult> {
-  const [openingBalanceRow, creditOrdersTotal] = await Promise.all([
-    findOpeningBalance(customerId, client),
-    sumCreditOrderTotals(customerId, client),
-  ]);
-
-  const openingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
-  const outstandingBalance = openingBalance.add(creditOrdersTotal);
+  const openingBalanceRow = await findOpeningBalance(customerId, client);
+  const outstandingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
 
   return {
     customerId,
-    openingBalance: openingBalance.toFixed(2),
-    creditOrdersTotal: creditOrdersTotal.toFixed(2),
+    openingBalance: outstandingBalance.toFixed(2),
     outstandingBalance: outstandingBalance.toFixed(2),
     creditStatus: classify(outstandingBalance),
+  };
+}
+
+/**
+ * Computes the projected exposure for a *new* CREDIT order — the only
+ * calculation that decides whether that order may proceed. Confirms the
+ * customer exists first, since this backs its own standalone endpoint as
+ * well as the order-creation check.
+ */
+export async function getCreditProjection(
+  customerId: string,
+  newOrderTotal: string,
+): Promise<CreditProjectionResult> {
+  await customersService.getCustomer(customerId);
+
+  return computeProjectedExposure(customerId, newOrderTotal);
+}
+
+/**
+ * Computes the projected exposure without confirming the customer exists —
+ * for order creation, which has already loaded and validated the customer.
+ */
+export async function computeProjectedExposure(
+  customerId: string,
+  newOrderTotal: string,
+  options: { excludeOrderId?: string } = {},
+  client?: TransactionClient,
+): Promise<CreditProjectionResult> {
+  const [accountingStatus, activeCreditOrdersTotal] = await Promise.all([
+    computeCreditStatus(customerId, client),
+    sumActiveCreditOrderTotals(customerId, options, client),
+  ]);
+
+  const currentOutstandingBalance = new Prisma.Decimal(accountingStatus.outstandingBalance);
+  const newOrderTotalDecimal = new Prisma.Decimal(newOrderTotal);
+  const projectedExposure = currentOutstandingBalance
+    .add(activeCreditOrdersTotal)
+    .add(newOrderTotalDecimal);
+
+  return {
+    customerId,
+    currentOutstandingBalance: currentOutstandingBalance.toFixed(2),
+    activeCreditOrdersTotal: activeCreditOrdersTotal.toFixed(2),
+    newOrderTotal: newOrderTotalDecimal.toFixed(2),
+    projectedExposure: projectedExposure.toFixed(2),
+    creditStatus: classify(projectedExposure),
   };
 }
 
@@ -93,6 +140,10 @@ export async function setOpeningBalance(
 
     return balance;
   });
+
+  // The customer list can now filter by outstanding balance (Phase 6E), so a
+  // balance change must invalidate it too — after commit, never before.
+  await customersService.invalidateCustomerCache();
 
   return toDetail(updated);
 }

@@ -361,6 +361,82 @@ describe('orders module', () => {
       }
     });
 
+    it("includes the new order's own total in the projected exposure (Phase 6E)", async () => {
+      // Opening balance alone (700,000) plus one existing CREDIT order
+      // (250,000) is only STRONG_WARNING (950,000) — the pre-6E formula
+      // would have allowed a further CREDIT order on top of that, since it
+      // never added the new order's own amount to the check. The new
+      // formula must include it and block.
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const product = await seedProduct();
+      await seedOpeningBalance(customer.id, '700000.00');
+
+      const first = await request(app)
+        .post(ORDERS)
+        .set(headers)
+        .send({
+          customerId: customer.id,
+          customerAddressId: address.id,
+          paymentArrangement: 'CREDIT',
+          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '250000.00' }],
+        });
+      expect(first.status).toBe(201);
+
+      const second = await request(app)
+        .post(ORDERS)
+        .set(headers)
+        .send({
+          customerId: customer.id,
+          customerAddressId: address.id,
+          paymentArrangement: 'CREDIT',
+          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '100000.00' }],
+        });
+
+      expect(second.status).toBe(422);
+      expect(second.body.error.code).toBe('CUSTOMER_CREDIT_BLOCKED');
+    });
+
+    it('excludes a CANCELLED CREDIT order from a later projected-exposure check', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const product = await seedProduct();
+      await seedOpeningBalance(customer.id, '700000.00');
+
+      const first = await request(app)
+        .post(ORDERS)
+        .set(headers)
+        .send({
+          customerId: customer.id,
+          customerAddressId: address.id,
+          paymentArrangement: 'CREDIT',
+          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '250000.00' }],
+        });
+      expect(first.status).toBe(201);
+
+      await request(app)
+        .post(`${ORDERS}/${first.body.data.id as string}/cancel`)
+        .set(headers)
+        .send({ reason: 'Customer withdrew.' });
+
+      const second = await request(app)
+        .post(ORDERS)
+        .set(headers)
+        .send({
+          customerId: customer.id,
+          customerAddressId: address.id,
+          paymentArrangement: 'CREDIT',
+          items: [{ productId: product.id, quantity: 1, agreedUnitPrice: '100000.00' }],
+        });
+
+      // 700,000 + 0 (cancelled excluded) + 100,000 = 800,000 → WARNING, not BLOCKED.
+      expect(second.status).toBe(201);
+    });
+
     it('rejects a BLOCKED CREDIT order with no override reason', async () => {
       const { cookie } = await createSignedInUser('accountant');
       const headers = await csrfHeaders(cookie);

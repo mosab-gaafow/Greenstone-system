@@ -32,6 +32,7 @@ records what exists in code and why.
 | `20260802160000_phase6c2_direct_order_foundation`   | 6C-2  | `orders.paymentType`→`paymentArrangement` (rename + backfill), `orders.status`/`statusReason` added, `orders.sourceQuotationId`/`order_items.sourceQuotationItemId` dropped |
 | `20260802170000_phase6c3_remove_quotations`          | 6C-3  | Deletes the one `QUOTATION`-type `generated_documents`/`stored_files` row, narrows `GeneratedDocumentType`, drops `quotations` and `quotation_items` |
 | `20260803180000_phase6d_product_operational_fields` | 6D    | `products.operationalName`/`operationalNameNormalized`/`piecesPerPallet`/`maxPiecesPerTruck` added (all nullable); backfills the four confirmed products by `nameNormalized` |
+| `20260803190000_phase6e_customer_deactivation_reason` | 6E addendum | `customers.deactivationReason` added (nullable) |
 
 Commands:
 
@@ -206,6 +207,31 @@ approach as `Vehicle.ownershipType` in Phase 4C.
 quotation: the source item's price is trusted as an input, not copied as an
 already-final total.
 
+### `customers`
+
+`deactivationReason` (2026-08-03, Phase 6E addendum) mirrors `Order.statusReason`
+— a nullable free-text column carrying the *most recent* deactivation's
+written reason, cleared back to `NULL` on reactivation. Only ever set by
+force-deactivation (`forceDeactivateCustomer`); normal deactivation has no
+reason of its own and always writes `NULL`. The audit log
+(`FORCE_DEACTIVATE_CUSTOMER`) keeps the permanent history regardless of what
+this column currently holds — see
+`docs/decisions/business-workflow-update-2026-08-02.md` section 16.
+
+Normal deactivation is blocked in the service layer
+(`customers.service.ts`'s `assertCustomerDeactivatable`) unless every Order
+for that customer is `COMPLETED`/`CANCELLED` and the accounting outstanding
+balance is exactly `0`. Both are read directly — active orders via a plain
+query against the `orders` table, the balance via `customer_opening_balances`
+— rather than through the `orders`/`customer-credit` modules' own services,
+the same one-directional-dependency pattern `customer-credit.repository.ts`
+already established (`orders` and `customer-credit` may depend on
+`customers`; `customers` never depends back on either, avoiding an import
+cycle). Three of the seven confirmed conditions (unfinished Delivery,
+per-customer reserved stock, pending/unapproved Customer payments) cannot be
+checked at all yet — no `Delivery`, `StockReservation`, or `CustomerPayment`
+model exists — and are vacuously satisfied until Phases 8/9 ship.
+
 ### `customer_opening_balances` and `customer_credit_overrides`
 
 See business-blueprint sections 2.24 and 2.25.
@@ -221,16 +247,48 @@ the same pattern `company_settings` uses for its own singleton corrections.
 recorded here alongside the previous credit status and the related order,
 and always audited (`OVERRIDE_CUSTOMER_CREDIT`).
 
-**Credit status is never persisted on `Customer`.** It is computed live on
-every read: `opening balance + the customer's CREDIT orders`. This is the
-interim formula until Invoices exist (Phase 9) — every order counts as
-"not-yet-invoiced" today because there is nothing to invoice against yet.
+**Credit figures are never persisted on `Customer`.** Both are computed live
+on every read, and Phase 6E (2026-08-03) split them into two distinct
+calculations that must never be conflated (business-blueprint section 2.24,
+`docs/decisions/business-workflow-update-2026-08-02.md` section 6):
+
+- **Accounting outstanding balance** (`computeCreditStatus`/
+  `GET /customers/:id/credit-status`) — `openingBalance` alone today.
+  Orders are never part of it: Invoices and approved payment allocations do
+  not exist yet (Phase 9), so both terms of the real formula
+  (`opening balance + issued invoices − approved payment allocations`) are
+  zero. This superseded the Phase 5B interim substitute, which wrongly
+  summed CREDIT orders into this figure.
+- **Projected credit exposure** (`computeProjectedExposure`/
+  `GET /customers/:id/credit-projection`) — `currentOutstandingBalance +
+  activeCreditOrdersTotal + newOrderTotal`, used only to decide whether a
+  *new* CREDIT order may proceed. `activeCreditOrdersTotal` sums the
+  customer's CREDIT orders excluding `CANCELLED` ones (every other status
+  counts as "not-yet-invoiced" today), optionally excluding one order id so
+  a future edit flow cannot double-count it — no such flow exists yet.
+
 The sum is read directly from the `orders` table by the `customer-credit`
 module's own repository (a plain aggregate query), not through a call into
 the `orders` module's service — this is what keeps the dependency
 one-directional (`orders` depends on `customer-credit` for its check;
 `customer-credit` never depends back on `orders`), avoiding a circular
 module dependency.
+
+### Customer list balance filter (2026-08-03, Phase 6E)
+
+The customer list can filter on the accounting outstanding balance —
+`hasOutstandingBalance` true/false/absent — independent of active status and
+credit status. Implemented as a `Prisma.CustomerWhereInput.AND` group
+(`customers.repository.ts`'s `buildWhere`) so it composes correctly with the
+search filter rather than merging into one accidental `OR`. A customer with
+no `customer_opening_balances` row at all counts as no outstanding balance.
+No schema change — this reads the existing `CustomerOpeningBalance` relation.
+
+Because the customer list is cached (5-minute TTL) and can now depend on a
+customer's balance, `customer-credit.service.ts`'s `setOpeningBalance` also
+invalidates the `customers` module's list cache after its own transaction
+commits, via a newly-exported `customersService.invalidateCustomerCache()` —
+the one new cross-module cache dependency this phase introduces.
 
 ### `measurement_units` and `raw_materials`
 

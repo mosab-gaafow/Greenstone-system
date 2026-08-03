@@ -483,7 +483,7 @@ Rules:
 | `auth` | Login, logout, token refresh, password checks and session revocation |
 | `users` | User accounts, roles, activation, deactivation and special capability grants |
 | `customers` | Customer records, contact details and building-site addresses |
-| `customer-credit` | Opening balances, credit status, credit checks and credit overrides |
+| `customer-credit` | Opening balances, accounting credit status, projected credit exposure, credit checks and credit overrides |
 | `products` | Product master information and initial product definitions |
 | `measurement-units` | Configurable raw-material measurement units |
 | `orders` | Orders, order items, price snapshots and order progress |
@@ -1553,6 +1553,7 @@ Recommended codes include:
 - `RESOURCE_CONFLICT`
 - `BUSINESS_RULE_VIOLATION`
 - `CUSTOMER_CREDIT_BLOCKED`
+- `CUSTOMER_DEACTIVATION_BLOCKED` (added 2026-08-03, Phase 6E addendum)
 - `INSUFFICIENT_FINISHED_STOCK`
 - `INSUFFICIENT_RAW_MATERIAL`
 - `CURING_NOT_COMPLETE`

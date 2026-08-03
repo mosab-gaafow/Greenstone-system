@@ -41,7 +41,7 @@ what allows them to manage users.
 
 | Resource           | Actions              | super_admin | admin | accountant |
 | ------------------ | -------------------- | ----------- | ----- | ---------- |
-| `customer`         | create, read, update | ✅          | ✅    | ✅         |
+| `customer`         | create, read, update, force-deactivate | ✅ | ✅ | create, read, update |
 | `customer-address` | create, read, update | ✅          | ✅    | ✅         |
 | `product`          | create, read, update | ✅          | ✅    | read       |
 | `measurement-unit` | create, read, update | ✅          | ✅    | read       |
@@ -51,6 +51,15 @@ what allows them to manage users.
 | `driver`           | create, read, update | ✅          | ✅    | ✅         |
 | `vehicle-owner`    | create, read, update | ✅          | ✅    | ✅         |
 | `vehicle`          | create, read, update | ✅          | ✅    | ✅         |
+
+**`customer:force-deactivate` (added 2026-08-03, Phase 6E addendum):** normal
+deactivation (`customer:update`, all three roles) is blocked in the service
+layer unless every Order is `COMPLETED`/`CANCELLED` and the accounting
+outstanding balance is exactly KES 0 — never silent. Force-deactivation
+bypasses those safeguards for an exceptional business reason, requires a
+written reason, and is always audited; Super Admin and Admin only, never the
+Accountant. It never auto-cancels Orders, auto-releases stock reservations,
+or auto-erases the outstanding balance.
 
 ### Sales and credit
 
@@ -75,6 +84,13 @@ permission grant.
 the system — see `docs/decisions/business-workflow-update-2026-08-02.md`.
 The `quotation` resource, its module, its tests, and its Prisma tables have
 all been removed from the codebase.
+
+**`customer-credit:read` also covers the credit-projection endpoint (added
+2026-08-03, Phase 6E):** `GET /customers/:id/credit-projection` (the
+projected exposure a new CREDIT order would create) uses the same `read`
+action as `GET /customers/:id/credit-status` (the accounting balance) — no
+new permission action was added, since both are read-only views of credit
+figures.
 
 ### Production and stock
 

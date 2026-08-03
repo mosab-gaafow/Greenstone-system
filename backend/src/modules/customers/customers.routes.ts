@@ -9,6 +9,7 @@ import {
   createAddressBodySchema,
   createCustomerBodySchema,
   customerIdParamsSchema,
+  forceDeactivateCustomerBodySchema,
   listCustomersQuerySchema,
   updateAddressBodySchema,
   updateCustomerBodySchema,
@@ -22,7 +23,9 @@ import {
  * belongs to, and the service verifies that relationship on every call.
  *
  * Per docs/permissions-matrix.md the Accountant may create and edit customers
- * and their addresses.
+ * and their addresses, and may normally deactivate one (subject to the
+ * service-layer safeguards). Force-deactivation (Phase 6E addendum) is
+ * Super Admin/Admin only.
  */
 export function customersRoutes(): Router {
   const router = Router();
@@ -73,6 +76,14 @@ export function customersRoutes(): Router {
     requirePermission('customer', 'update'),
     validate({ params: customerIdParamsSchema }),
     customersController.deactivate,
+  );
+
+  router.post(
+    '/:id/force-deactivate',
+    csrfProtection(),
+    requirePermission('customer', 'force-deactivate'),
+    validate({ params: customerIdParamsSchema, body: forceDeactivateCustomerBodySchema }),
+    customersController.forceDeactivate,
   );
 
   // --- Addresses ------------------------------------------------------------

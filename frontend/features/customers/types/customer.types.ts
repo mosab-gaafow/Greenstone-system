@@ -22,6 +22,8 @@ export interface Customer {
   phone: string;
   email: string | null;
   isActive: boolean;
+  /** Written reason for the most recent deactivation. Null when active. */
+  deactivationReason: string | null;
   addressCount: number;
   createdAt: string;
   updatedAt: string;
@@ -36,4 +38,6 @@ export interface CustomerFilters {
   pageSize: number;
   search?: string;
   isActive?: boolean;
+  /** Accounting outstanding balance only — never the projected credit exposure. */
+  hasOutstandingBalance?: boolean;
 }

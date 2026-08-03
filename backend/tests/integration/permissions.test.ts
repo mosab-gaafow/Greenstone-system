@@ -37,6 +37,10 @@ describe('role permissions', () => {
       expect(await hasPermission('super_admin', 'customer-credit', 'override')).toBe(true);
     });
 
+    it('may force-deactivate a customer (Phase 6E addendum)', async () => {
+      expect(await hasPermission('super_admin', 'customer', 'force-deactivate')).toBe(true);
+    });
+
     it('may approve, correct and reverse salaries', async () => {
       expect(await hasPermission('super_admin', 'salary', 'approve')).toBe(true);
       expect(await hasPermission('super_admin', 'salary', 'correct')).toBe(true);
@@ -61,6 +65,10 @@ describe('role permissions', () => {
 
     it('may override customer credit', async () => {
       expect(await hasPermission('admin', 'customer-credit', 'override')).toBe(true);
+    });
+
+    it('may force-deactivate a customer (Phase 6E addendum)', async () => {
+      expect(await hasPermission('admin', 'customer', 'force-deactivate')).toBe(true);
     });
 
     it('may change settings and read audit logs', async () => {
@@ -129,6 +137,10 @@ describe('role permissions', () => {
 
     it('may not override customer credit', async () => {
       expect(await hasPermission('accountant', 'customer-credit', 'override')).toBe(false);
+    });
+
+    it('may not force-deactivate a customer (Phase 6E addendum)', async () => {
+      expect(await hasPermission('accountant', 'customer', 'force-deactivate')).toBe(false);
     });
 
     it('may not manage users', async () => {

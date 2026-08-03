@@ -77,7 +77,7 @@ Claude must not:
 | 6C-2 | Direct Order foundation (status, paymentArrangement) | COMPLETED |
 | 6C-3 | Safe Quotation removal | COMPLETED |
 | 6D | Product operational names, pieces per pallet, and truck capacity | COMPLETED |
-| 6E | Customer credit projection formula and balance filters | NOT_STARTED |
+| 6E | Customer credit projection formula and balance filters | COMPLETED |
 | 6F | Vehicle Owners; rework Vehicle | NOT_STARTED |
 | 7 | Purchases and supplier balances (Pumice/Cement calculations) | NOT_STARTED |
 | 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
@@ -898,7 +898,8 @@ already used for Phase 4 (4A–4D) and Phase 5/6 (5A/5B, 6A/6B):
   `piecesPerPallet`/`maxPiecesPerTruck`; removed the old global
   "12 pieces per pallet" rule from Production.
 - **Phase 6E — Customer credit projection formula and balance filters
-  (NOT_STARTED).**
+  (COMPLETED).** Split accounting outstanding balance from projected credit
+  exposure; added the customer-list balance filter.
 - **Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED).**
 
 ## Phase 6A — Raw-Material and Finished-Stock Foundations (COMPLETED)
@@ -1272,25 +1273,125 @@ only the source `maxPiecesPerTruck` column exists now). Vehicle
 Owner/Vehicle rework (6F). Customer-credit projection/balance filters (6E).
 Cement/Raw Materials/Purchases (Phase 7).
 
-## Phase 6E — Customer credit projection formula and balance filters (NOT_STARTED)
+## Phase 6E — Customer credit projection formula and balance filters (COMPLETED)
 
-Not yet planned or approved for implementation — documentation only at this
-stage. See `docs/decisions/business-workflow-update-2026-08-02.md` sections 6
-and 7.
+See `docs/decisions/business-workflow-update-2026-08-02.md` sections 6 and 7.
+No migration — pure service-logic and one new read-only endpoint, exactly as
+originally anticipated. Backend **494/494 tests passing**; frontend
+typecheck/lint (4 pre-existing informational warnings, 0 errors)/9 tests/
+build all clean — same 24 routes as before (no new route).
 
-Expected scope:
+Implemented:
 
-- Change the `customer-credit` module's new-credit-order check from "current
-  outstanding balance" to "current outstanding balance + active credit orders
-  not yet invoiced + the new credit order's own total."
-- No schema migration required — this only changes the `customer-credit`
-  service logic and the order-creation credit check already built in 5B.
-- Add the customer list filter (All / No outstanding balance / Has
-  outstanding balance), using the existing accounting-balance calculation,
-  independent of active status and credit status.
-- Depends on Phase 6C-2's `paymentArrangement` rename landing first if the
-  two are implemented in the same session, since the credit check reads the
-  order's payment arrangement.
+- **Split the accounting outstanding balance from the projected credit
+  exposure**, previously conflated in Phase 5B's interim `computeCreditStatus`:
+  - `computeCreditStatus`/`GET /customers/:id/credit-status` — accounting
+    balance only (`openingBalance` alone today; orders are never part of
+    it). Used for the customer-detail display and the new list filter.
+  - `computeProjectedExposure`/new `GET /customers/:id/credit-projection`
+    (`customer-credit:read`, same permission as the status endpoint) —
+    `currentOutstandingBalance + activeCreditOrdersTotal + newOrderTotal`,
+    used only by order creation's block/override check.
+- `orders.service.ts`'s `resolveCreditOverride` now calls
+  `computeProjectedExposure` with the order's own computed `totalAmount` —
+  the real behaviour change from the superseded 5B check, which never added
+  the new order's own amount.
+- `activeCreditOrdersTotal` excludes `CANCELLED` orders
+  (`sumActiveCreditOrderTotals`, renamed from `sumCreditOrderTotals`), and
+  accepts an optional `excludeOrderId` so a future order-edit flow cannot
+  double-count the order being edited — no such flow exists yet, so nothing
+  calls it with a real id today.
+- Customer list gained `hasOutstandingBalance` (true/false/absent),
+  independent of `isActive` and of credit status, using the accounting
+  balance only. Implemented as a `Prisma.CustomerWhereInput.AND` group so it
+  composes correctly with the existing search filter.
+- `customer-credit.service.ts`'s `setOpeningBalance` now invalidates the
+  `customers` module's list cache after commit (a newly-exported
+  `customersService.invalidateCustomerCache()`), since the list can now
+  depend on a customer's balance — the one new cross-module cache
+  dependency this phase introduces.
+- Frontend: `CreditStatusCard` dropped the "Credit orders" row (no longer
+  part of the accounting balance); `OrderForm`'s CREDIT-arrangement preview
+  now shows the full projection breakdown (current balance, active credit
+  orders, this order's total, projected exposure) via a new
+  `useCreditProjection` hook, replacing the old `useCreditStatus` call for
+  this purpose; the customer list gained a `Balance` `FilterSelect` (All /
+  No outstanding balance / Has outstanding balance) alongside the existing
+  active-status tabs.
+
+**Design call made and implemented, flagged for your awareness:** "active"
+credit orders excludes only `CANCELLED` — every other status counts as
+not-yet-invoiced today, since no code path sets any Order status besides
+`PENDING`/`CANCELLED` yet.
+
+### Excluded from Phase 6E
+
+No order-edit/update endpoint was built — `excludeOrderId` exists in
+`computeProjectedExposure`'s signature only, unused today, per the decision
+document's approved scope. The pre-existing TOCTOU race (two concurrent
+CREDIT-order requests for the same customer could both read "not blocked"
+before either commits) is unchanged — an inherited 5B-era characteristic,
+not addressed here. Invoices, payments, and the real
+`issuedInvoicesTotal`/`approvedPaymentAllocationsTotal` terms remain Phase 9;
+both stay `0` until then. Vehicle Owner/Vehicle rework (6F), Cement/Purchases
+(Phase 7) — untouched.
+
+## Phase 6E — Addendum: Customer deactivation safeguards (2026-08-03, COMPLETED)
+
+See `docs/decisions/business-workflow-update-2026-08-02.md` section 16.
+Migration `20260803190000_phase6e_customer_deactivation_reason` applied to
+`greenstone_dev` (`prisma migrate deploy`). Backend **508/508 tests
+passing**; frontend typecheck/lint (4 pre-existing informational warnings, 0
+errors)/9 tests/build all clean — same 24 routes as before (no new route).
+
+Implemented:
+
+- Added `Customer.deactivationReason` (nullable, mirrors `Order.statusReason`
+  — cleared on reactivation, permanent history stays in the audit log
+  regardless).
+- New `CUSTOMER_DEACTIVATION_BLOCKED` error code/class.
+- `customers.service.ts`'s `assertCustomerDeactivatable` — checked before
+  every normal deactivation, never silent. Reports every failing condition
+  together (active-order count with order numbers/statuses, and/or the
+  outstanding balance) in one composed error message.
+- Active orders and the accounting balance are read directly from the
+  `orders`/`customer_opening_balances` tables by `customers.repository.ts` —
+  not through the `orders`/`customer-credit` modules' own services — the
+  same one-directional-dependency pattern `customer-credit.repository.ts`
+  already used, avoiding a circular module dependency (`orders` and
+  `customer-credit` already depend on `customers`; `customers` never
+  depends back).
+- New `POST /customers/:id/force-deactivate` (`customer:force-deactivate`,
+  Super Admin/Admin only — Accountant excluded from this action, though
+  still granted normal `customer:update`/deactivation like before).
+  Bypasses `assertCustomerDeactivatable` entirely, requires a written
+  reason, and records a full snapshot (previous status, active-order
+  summary, outstanding balance) in the audit log
+  (`FORCE_DEACTIVATE_CUSTOMER`). Never auto-cancels Orders, auto-releases
+  stock reservations, or auto-erases the balance.
+- Frontend: customer list gained a "Force deactivate" action (Super
+  Admin/Admin only) with a required-reason dialog matching the Order
+  cancellation pattern; the normal deactivate dialog now shows the backend's
+  detailed block message inline; the customer detail page shows the
+  deactivation reason when inactive.
+
+**Confirmed and implemented exactly as flagged before implementation:**
+Delivery, Stock Reservation, Invoice, and Customer Payment do not exist in
+the schema (Phases 8/9), so three of the six normal-deactivation conditions
+(unfinished Delivery, per-customer reserved stock, pending/unapproved
+Customer payments) are vacuously satisfied — there is nothing to check
+against yet, only checkable conditions were actually enforced. Because no
+code path sets `Order.status` to anything but `PENDING`/`CANCELLED` today, a
+customer with any non-cancelled order cannot be normally deactivated yet —
+only force-deactivated. This was confirmed as intended before implementation
+began.
+
+### Excluded from this addendum
+
+The Delivery/Stock-Reservation/Payment checks above remain placeholders
+until Phases 8/9 ship — revisit `assertCustomerDeactivatable` then. Vehicle
+Owner/Vehicle rework (6F), Cement/Raw Materials/Purchases (Phase 7) —
+untouched.
 
 ## Phase 6F — Vehicle Owners; rework Vehicle (NOT_STARTED)
 

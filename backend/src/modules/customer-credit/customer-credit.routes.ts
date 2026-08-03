@@ -4,7 +4,11 @@ import { requirePermission } from '../../shared/auth/permission.middleware.js';
 import { csrfProtection } from '../../shared/middleware/csrf.js';
 import { validate } from '../../shared/validation/validate.js';
 import * as customerCreditController from './customer-credit.controller.js';
-import { customerIdParamsSchema, setOpeningBalanceBodySchema } from './customer-credit.validators.js';
+import {
+  customerIdParamsSchema,
+  getCreditProjectionQuerySchema,
+  setOpeningBalanceBodySchema,
+} from './customer-credit.validators.js';
 
 /**
  * Customer credit routes.
@@ -23,6 +27,13 @@ export function customerCreditRoutes(): Router {
     requirePermission('customer-credit', 'read'),
     validate({ params: customerIdParamsSchema }),
     customerCreditController.getCreditStatus,
+  );
+
+  router.get(
+    '/:id/credit-projection',
+    requirePermission('customer-credit', 'read'),
+    validate({ params: customerIdParamsSchema, query: getCreditProjectionQuerySchema }),
+    customerCreditController.getCreditProjection,
   );
 
   router.patch(

@@ -104,6 +104,7 @@ export async function createOrder(
   const overridePlan = await resolveCreditOverride(
     input.customerId,
     input.paymentArrangement,
+    totalAmount,
     input.creditOverrideReason,
     context.user.role,
   );
@@ -298,14 +299,17 @@ async function assertProductsActive(items: OrderItemInput[]): Promise<void> {
 }
 
 /**
- * Checks the customer's current credit status for a CREDIT order and decides
- * whether an override is needed. Reads current status only — not a
- * hypothetical status including this new order's own amount — per
- * business-blueprint section 2.24.
+ * Checks the customer's projected credit exposure for a CREDIT order and
+ * decides whether an override is needed. Explicitly includes this new
+ * order's own total in the projection (Phase 6E) — per
+ * docs/decisions/business-workflow-update-2026-08-02.md section 6, a real
+ * behaviour change from the superseded Phase 5B check, which read only the
+ * customer's current status.
  */
 async function resolveCreditOverride(
   customerId: string,
   paymentArrangement: OrderPaymentArrangement,
+  totalAmount: Prisma.Decimal,
   creditOverrideReason: string | undefined,
   role: GreenstoneRole,
 ): Promise<OverridePlan | null> {
@@ -313,9 +317,12 @@ async function resolveCreditOverride(
     return null;
   }
 
-  const status = await customerCreditService.getCreditStatus(customerId);
+  const projection = await customerCreditService.getCreditProjection(
+    customerId,
+    totalAmount.toFixed(2),
+  );
 
-  if (status.creditStatus !== 'BLOCKED') {
+  if (projection.creditStatus !== 'BLOCKED') {
     return null;
   }
 
@@ -329,7 +336,7 @@ async function resolveCreditOverride(
     throw new PermissionDeniedError();
   }
 
-  return { previousCreditStatus: status.creditStatus, reason: creditOverrideReason };
+  return { previousCreditStatus: projection.creditStatus, reason: creditOverrideReason };
 }
 
 /**
