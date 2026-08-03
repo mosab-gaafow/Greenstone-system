@@ -5,6 +5,7 @@ import {
   ClipboardList,
   Factory,
   FlaskConical,
+  HandCoins,
   Home,
   IdCard,
   Layers,
@@ -92,7 +93,15 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: 'Purchasing',
-    items: [{ label: 'Purchases', href: '/purchases', icon: ClipboardList, available: true }],
+    items: [
+      { label: 'Purchases', href: '/purchases', icon: ClipboardList, available: true },
+      {
+        label: 'Purchase payments',
+        href: '/purchase-payments',
+        icon: HandCoins,
+        available: true,
+      },
+    ],
   },
   {
     label: 'Finance',

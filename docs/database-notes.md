@@ -178,8 +178,8 @@ match. 230MM is not created, connected, or backfilled anywhere — see
 
 Master record, per business-blueprint section 2.16. `phone` and `email`
 follow the same dual-column normalisation as `customers`; `address` is free
-text, not normalised or unique. Purchases and purchase payments (section
-2.17) are Phase 7C/7D.
+text, not normalised or unique. Purchases (`purchases`) and purchase
+payments (`purchase_payments`) are Phase 7C/7D — see below.
 
 ### `supplier_opening_balances` (Phase 7A)
 
@@ -200,9 +200,72 @@ the customer side, not an oversight.
 
 `GET /suppliers/:id/balance` computes the outstanding balance live, never
 cached — the same as `customer-credit.service.ts`'s `computeCreditStatus`.
-Until Phase 7C/7D exist, `outstandingBalance` equals `openingBalance` alone;
-it then becomes `openingBalance + Σ(unpaid approved Purchase.totalCost) −
-Σ(approved PurchasePayment.amount)`.
+Completed in Phase 7D:
+`outstandingBalance = openingBalance + Σ(Purchase.totalCost) − Σ(APPROVED PurchasePayment.amount)`.
+
+### `purchases` / `purchase_items` (Phase 7C)
+
+`Purchase` belongs to one supplier and has many `PurchaseItem`. **Immutable
+once created** — the `purchase` permission is create/read only, so there is
+no update or delete route; creating a purchase *is* receiving it (writes a
+`PURCHASE_RECEIPT` movement per item against the Phase 6A raw-material
+ledger, in the same transaction).
+
+Every `PurchaseItem` stores the generic `quantity`/`unitCost`/`lineTotal`
+shape, plus four Pumice-only nullable columns (`lengthMetres`,
+`widthMetres`, `heightMetres`, `numberOfLoads`) with no generic equivalent.
+For a Pumice item, `quantity` holds the computed total volume and `unitCost`
+holds the rate per cubic metre — deliberately reused, not duplicated under
+Pumice-specific names, so `lineTotal = quantity × unitCost` is one invariant
+for every raw material and the stock ledger never needs Pumice-specific
+code. Pumice is identified by matching the raw material's normalised name
+(the same approach `production.service.ts` uses for per-product rules), not
+a stored flag on `RawMaterial`.
+
+### `purchase_payments` / `purchase_payment_allocations` (Phase 7D)
+
+`PurchasePayment` belongs to one supplier. Lifecycle:
+`PENDING` (any role, never affects the balance) → `APPROVED` (Admin/Super
+Admin only, reduces the balance) → `REVERSED` (Admin/Super Admin only,
+written reason required, restores the balance) — the same three-state shape
+already anticipated for customer payments (Phase 9). Never permanently
+deleted.
+
+`paymentReference` is always required regardless of `paymentMethod` — the
+backend cannot mechanically distinguish "a valid M-Pesa code" from "valid
+cheque details" beyond requiring a non-empty descriptive string; only the
+frontend field label changes per method.
+
+`evidenceStoredFileId` is optional, additional proof — `StoredFile`'s first
+real caller from a genuine upload endpoint (`multer`, memory storage, MIME
+allow-list, and a new file-signature/magic-byte check in
+`storeFile` — a client-supplied `Content-Type` can be spoofed, the file's
+own leading bytes cannot). If the surrounding transaction fails after the
+file is stored, the orphaned file is removed — a deliberate exception to
+the generated-PDF pipeline's own accepted "an orphan is fine" tradeoff.
+
+`PurchasePaymentAllocation` connects a payment to one or more purchases, for
+traceability only — the supplier balance always uses the payment's own
+`amount`/`status`, never the allocation breakdown. An allocation must belong
+to the same supplier as the payment and never exceed that purchase's
+remaining unpaid amount (`totalCost − Σ(APPROVED allocations)`),
+re-validated fresh both at creation and inside the approval transaction.
+
+Approval re-validates the supplier balance and every allocation **inside
+the transaction**, after locking both the `suppliers` row and the specific
+`purchase_payments` row (`SELECT ... FOR UPDATE`) — this closes the race
+where two payments, each individually valid, are approved for the same
+supplier at the same moment.
+
+### Future-date restriction (Phase 7D addendum)
+
+Neither `purchases.purchaseDate` nor `purchase_payments.paymentDate` may be
+in the future. Validated by comparing calendar-date strings (`YYYY-MM-DD`)
+against `getNairobiToday()`, never `Date` instants — Nairobi (UTC+3) reaches
+a new calendar date a few hours before UTC does, so an instant comparison
+would wrongly reject "today" during that window. The frontend mirrors this
+with `todayInNairobi()`, used as both the date input's `max` attribute and
+its default value.
 
 ### `company_settings`
 
@@ -598,26 +661,15 @@ number any more, since the `quotations` module itself is gone. See the
   `calculatedLoadTonnes`) are **not** touched by this migration — whether to
   remove them is unconfirmed (see the impact report).
 
-### 5. Future Purchase Item / Delivery snapshot columns (Phase 7C/7D / Phase 8)
+### 5. Future Delivery snapshot columns (Phase 8)
 
-Phase 7 is now fully planned and split into four sub-phases (7A–7D — see
-`docs/implementation-plan.md`). `supplier_opening_balances` (7A) and the
-confirmed Cement/Dust/Pumice raw materials plus Sack/Cubic Metre/Tonne
-measurement units (7B, production seed, no schema change) already exist.
-`purchases`, `purchase_items`, `purchase_payments`, and
-`purchase_payment_allocations` (7C/7D) and the Delivery snapshot columns
-(Phase 8) remain not yet implemented; expected shape below.
+Phase 7 is now fully complete (7A–7D — see `docs/implementation-plan.md`):
+`supplier_opening_balances`, the confirmed Cement/Dust/Pumice raw materials
+and Sack/Cubic Metre/Tonne measurement units, `purchases`/`purchase_items`,
+and `purchase_payments`/`purchase_payment_allocations` all already exist —
+see their own sections above. Only the Phase 8 Delivery snapshot columns
+remain not yet implemented; expected shape below.
 
-- `purchase_items`: Pumice-specific snapshot columns (length, width, height,
-  volume per load, number of loads, total volume, rate per cubic metre) —
-  additive and nullable, since only Pumice purchases use them. Cement needs
-  no new columns (existing quantity × unit-cost already covers it); its
-  company-facing measurement-unit name is confirmed "Sack," not "Bag"
-  (2026-08-03 — see `docs/decisions/business-workflow-update-2026-08-02.md`
-  section 14). Cement usage and stock also need no new schema — they use the
-  existing generic `RawMaterialUsage` and `RawMaterialStockBalance`/
-  `RawMaterialMovement` ledger built in Phase 6A/6B, the same as any other
-  raw material.
 - `deliveries`: transport snapshot columns (transport rate, number of trips,
   total transport cost, payee, and the vehicle-owner reference used at
   dispatch time) and the truck-capacity value used for `requiredTrips` at

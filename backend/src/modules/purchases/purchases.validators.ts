@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { isNotFutureNairobiDate } from '../../shared/utils/nairobi.js';
 
 /**
  * Purchase request schemas.
@@ -50,7 +51,9 @@ export const purchaseIdParamsSchema = z.object({
 export const createPurchaseBodySchema = z
   .object({
     supplierId: z.string().min(1, 'Select a supplier.'),
-    purchaseDate: z.coerce.date(),
+    purchaseDate: z.coerce
+      .date()
+      .refine(isNotFutureNairobiDate, { message: 'Purchase date cannot be in the future.' }),
     reference: z.string().trim().max(150).optional(),
     items: z.array(purchaseItemSchema).min(1, 'Add at least one item.'),
   })

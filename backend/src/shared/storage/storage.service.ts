@@ -38,8 +38,11 @@ export function resetStorageProviderCache(): void {
 /**
  * Validates a file against the configured limits, then stores it.
  *
- * MIME type and size are checked here. File-signature checking is added in the
- * phase that introduces uploads, together with the upload endpoint.
+ * MIME type and size are checked here, backed by a real file-signature
+ * (magic-byte) check — the phase that introduces the first real upload
+ * endpoint (Phase 7D, purchase-payment evidence), which this comment
+ * previously deferred to. A client-supplied `Content-Type` can be spoofed;
+ * the leading bytes of the file itself cannot.
  */
 export async function storeFile(input: PutObjectInput): Promise<StoredObject> {
   const config = getStorageConfig();
@@ -57,5 +60,38 @@ export async function storeFile(input: PutObjectInput): Promise<StoredObject> {
     throw new FileValidationError('This file type is not allowed.');
   }
 
+  if (!matchesFileSignature(input.content, input.mimeType)) {
+    throw new FileValidationError('The file content does not match its declared type.');
+  }
+
   return getStorageProvider().put(input);
+}
+
+/**
+ * Known magic-byte signatures for every currently-allowed MIME type. A type
+ * with no known signature check here is trusted on declared MIME type alone
+ * — every type this project currently allows (JPEG, PNG, WEBP, PDF) has one.
+ */
+const FILE_SIGNATURES: Record<string, (bytes: Buffer) => boolean> = {
+  'image/jpeg': (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  'image/png': (bytes) =>
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a,
+  'image/webp': (bytes) =>
+    bytes.length >= 12 &&
+    bytes.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    bytes.subarray(8, 12).toString('ascii') === 'WEBP',
+  'application/pdf': (bytes) => bytes.length >= 5 && bytes.subarray(0, 5).toString('ascii') === '%PDF-',
+};
+
+function matchesFileSignature(content: Buffer, mimeType: string): boolean {
+  const check = FILE_SIGNATURES[mimeType];
+  return check ? check(content) : true;
 }

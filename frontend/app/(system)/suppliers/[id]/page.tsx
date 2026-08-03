@@ -2,7 +2,7 @@
 
 import { use } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, PencilLine, Warehouse } from 'lucide-react';
+import { ArrowLeft, PencilLine, Warehouse, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -90,6 +90,15 @@ export default function SupplierDetailPage({ params }: { params: Promise<{ id: s
         </Card>
 
         <SupplierBalanceCard supplierId={supplier.id} />
+
+        <Button
+          variant="outline"
+          className="h-11 w-full sm:w-auto"
+          render={<Link href={`/purchase-payments?supplierId=${supplier.id}`} />}
+        >
+          <Wallet className="size-4" aria-hidden />
+          View purchase payments
+        </Button>
       </div>
     </div>
   );

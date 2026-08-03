@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PurchaseForm } from '@/features/purchases/components/purchase-form';
 import { ApiError } from '@/lib/api-client';
+import { todayInNairobi } from '@/lib/format';
 
 /**
  * Regression test for the Phase 7C "Save purchase does nothing" bug.
@@ -166,5 +167,28 @@ describe('PurchaseForm', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('Enter the unit cost for "Cement".');
     expect(onSubmit).toHaveBeenCalledTimes(1);
+  });
+
+  describe('future date restriction', () => {
+    it("caps the date picker at today's Nairobi date", () => {
+      renderWithClient(<PurchaseForm onSubmit={vi.fn()} pending={false} />);
+
+      expect(screen.getByLabelText(/Purchase date/)).toHaveAttribute('max', todayInNairobi());
+    });
+
+    it('rejects a future purchase date', async () => {
+      const onSubmit = vi.fn().mockResolvedValue(undefined);
+      renderWithClient(<PurchaseForm onSubmit={onSubmit} pending={false} />);
+
+      await fillCementPurchase();
+      fireEvent.change(screen.getByLabelText(/Purchase date/), { target: { value: '2999-01-01' } });
+
+      fireEvent.click(screen.getByRole('button', { name: /save purchase/i }));
+
+      await waitFor(() => {
+        expect(screen.getByText(/cannot be in the future/i)).toBeInTheDocument();
+      });
+      expect(onSubmit).not.toHaveBeenCalled();
+    });
   });
 });

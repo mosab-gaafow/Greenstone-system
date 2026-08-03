@@ -1,14 +1,11 @@
 import type { GeneratedDocumentType } from '../../generated/prisma/client.js';
 import { renderPdf } from '../pdf/pdf.service.js';
 import { getStorageProvider, storeFile } from '../storage/storage.service.js';
+import { insertStoredFile } from '../storage/storage.repository.js';
 import { recordAudit } from '../audit/audit.service.js';
 import { runInTransaction, type TransactionClient } from '../database/transaction.js';
 import { toAuditContext, type RequestContext } from '../auth/auth-context.js';
-import {
-  findLatestGeneratedDocument,
-  insertGeneratedDocument,
-  insertStoredFile,
-} from './documents.repository.js';
+import { findLatestGeneratedDocument, insertGeneratedDocument } from './documents.repository.js';
 import type { GenerateDocumentInput, GeneratedDocumentFile } from './documents.types.js';
 
 /**

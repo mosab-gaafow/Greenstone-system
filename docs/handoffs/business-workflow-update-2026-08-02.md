@@ -303,6 +303,40 @@ module) — planned in principle as part of the full Phase 7 plan, but not yet
 separately approved for implementation. 7D (Purchase Payments module) follows
 after it.
 
+## 6e. Phase 7C and 7D implemented (2026-08-03) — Purchases; Purchase Payments
+
+Phase 7 is now **complete** — 7C and 7D were the last two sub-phases under
+the Phase 7 umbrella. Two migrations, one per sub-phase:
+`20260803160927_phase7c_purchases` (`purchases`, `purchase_items`) and
+`20260803171800_phase7d_purchase_payments` (`purchase_payments`,
+`purchase_payment_allocations`) — both hit the same pre-existing Better Auth
+index drift every Phase 7 migration has hit since 7A, fixed the same way
+each time.
+
+New `purchases` and `purchase-payments` backend modules (six files each).
+Purchases are immutable once created — creating one *is* receiving it,
+crediting the Phase 6A raw-material ledger in the same transaction. Purchase
+Payments carry the same `PENDING → APPROVED → REVERSED` lifecycle already
+anticipated for customer payments, complete the supplier
+outstanding-balance formula
+(`openingBalance + Σ(Purchase.totalCost) − Σ(APPROVED PurchasePayment.amount)`),
+and introduce this codebase's first real file-upload endpoint (evidence,
+via `multer`, with genuine magic-byte signature validation and
+transaction-failure cleanup). Full detail, including the Pumice/Cement
+calculation design and a real bug found and fixed in the Purchase form
+before commit, is in `docs/implementation-plan.md`'s Phase 7C/7D sections.
+
+A same-day addendum added a future-date restriction to both `purchaseDate`
+and `paymentDate` (Nairobi-calendar-aware on both frontend and backend, not
+just a browser-local check).
+
+Backend 658/658 tests passing; frontend 23/23 tests passing, both builds
+clean.
+
+**Next available phase, unstarted (at the time of writing):** Phase 8
+(Finished Stock and Deliveries) — the next item in
+`docs/implementation-plan.md`'s progress table. Not yet planned or approved.
+
 ## 7. Exact next step (original, first-round session — historical)
 
 This session (including the second-round confirmations) still did not plan

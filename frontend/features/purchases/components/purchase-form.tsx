@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { ApiError } from '@/lib/api-client';
 import * as suppliersApi from '@/features/suppliers/api/suppliers.api';
 import * as rawMaterialsApi from '@/features/raw-materials/api/raw-materials.api';
+import { todayInNairobi } from '@/lib/format';
 import {
   purchaseFormSchema,
   type PurchaseFormInput,
@@ -85,7 +86,7 @@ export function PurchaseForm({ onSubmit, pending }: PurchaseFormProps) {
     resolver: zodResolver(purchaseFormSchema),
     defaultValues: {
       supplierId: '',
-      purchaseDate: new Date().toISOString().slice(0, 10),
+      purchaseDate: todayInNairobi(),
       reference: '',
       items: [EMPTY_ITEM],
     },
@@ -150,6 +151,8 @@ export function PurchaseForm({ onSubmit, pending }: PurchaseFormProps) {
             label="Purchase date"
             required
             type="date"
+            max={todayInNairobi()}
+            hint="Cannot be in the future."
             error={errors.purchaseDate?.message}
             {...register('purchaseDate')}
           />

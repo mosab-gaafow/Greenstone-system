@@ -81,8 +81,8 @@ Claude must not:
 | 6F | Vehicle Owners; rework Vehicle | COMPLETED |
 | 7A | Supplier opening balances and balance display | COMPLETED |
 | 7B | Raw-material reference data (Cement, Dust, Pumice; Sack, Cubic Metre, Tonne) | COMPLETED |
-| 7C | Purchases module (Pumice/Cement calculations, raw-material receipt) | NOT_STARTED |
-| 7D | Purchase payments module (allocations, approval, reversal) | NOT_STARTED |
+| 7C | Purchases module (Pumice/Cement calculations, raw-material receipt) | COMPLETED |
+| 7D | Purchase payments module (allocations, approval, reversal) | COMPLETED |
 | 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
 | 10 | Expenses and salaries | NOT_STARTED |
@@ -1517,8 +1517,8 @@ independently:
 
 - **Phase 7A — Supplier opening balances and balance display (COMPLETED).**
 - **Phase 7B — Raw-material reference data (COMPLETED).**
-- **Phase 7C — Purchases module (NOT_STARTED).**
-- **Phase 7D — Purchase payments module (NOT_STARTED).**
+- **Phase 7C — Purchases module (COMPLETED).**
+- **Phase 7D — Purchase payments module (COMPLETED).**
 
 ## Phase 7A — Supplier opening balances and balance display (COMPLETED)
 
@@ -1603,82 +1603,120 @@ clean).
 Purchases, Purchase Payments, real opening raw-material quantities (entered
 later, during production setup) — Phase 7C/7D and beyond.
 
-## Phase 7C — Purchases module (NOT_STARTED)
+## Phase 7C — Purchases module (COMPLETED)
 
-## Modules
+Migration `20260803160927_phase7c_purchases` — new `purchases` and
+`purchase_items` tables (same pre-existing Better Auth index drift as every
+migration since Phase 7A hit `account_userId_idx`/`session_userId_idx`
+already existing untracked in the dev database; fixed the same way each
+time — the two extraneous statements removed from the generated migration
+file, unrelated to this phase's own schema).
 
-Implement:
+New `purchases` module (six files). Creating a purchase **is** receiving it
+— one transaction: allocate `PUR-YYYY-####`, validate the supplier and every
+referenced raw material are active, compute each item's line total, write a
+`PURCHASE_RECEIPT` movement per item against the Phase 6A raw-material
+ledger, write one audit log. **No update or delete route** — a purchase,
+once recorded, is never edited, the same shape `ProductionBatch` already
+established.
 
-- Purchases.
-- Suppliers where remaining functions are needed.
+- Pumice: `volumePerLoad = length × width × height`,
+  `totalVolume = volumePerLoad × numberOfLoads`,
+  `totalCost = totalVolume × ratePerCubicMetre` (reference rate KES 1,100/m³,
+  never hard-coded, snapshotted per item). **Design decision**: `quantity`
+  holds the computed total volume and `unitCost` holds the rate per cubic
+  metre — reused rather than duplicated under Pumice-specific names, so
+  `lineTotal = quantity × unitCost` holds as one invariant for every raw
+  material and the stock ledger never needs Pumice-specific code. Pumice is
+  identified by matching the raw material's normalised name, the same
+  approach `production.service.ts` already uses for per-product rules.
+- Cement and Dust: the fully generic quantity × unit-cost shape, no special
+  fields. Reference costs (KES 850/sack) are never hard-coded.
+- No Purchase PDF — `GeneratedDocumentType` stays `INVOICE`/`RECEIPT` only,
+  per business-blueprint section 9.1.
 
-## Work
+**Bug found and fixed before commit**: the frontend Purchase form's Zod
+schema used `z.string().optional()` for the Pumice-only fields, but
+`useFieldArray` keeps every item's full shape in form state even for fields
+whose input isn't currently rendered — a Cement item's untouched Pumice
+fields held `''`, not `undefined`, which `.optional()` does not accept, so
+every submission failed silently (the button did nothing, no visible
+error). Fixed with a `z.preprocess` step that normalises `''` to `undefined`
+before the regex runs — same fix applied to the mirror-image case (a Pumice
+item's untouched generic fields).
 
-Implement:
-
-- Purchase numbering.
-- Purchase items, including the Pumice cubic-metre calculation and Cement
-  bag calculation confirmed 2026-08-02 (see
-  `docs/decisions/business-workflow-update-2026-08-02.md` sections 8 and 9):
-  - Pumice: `volumePerLoad = length × width × height`,
-    `totalVolume = volumePerLoad × numberOfLoads`,
-    `totalCost = totalVolume × ratePerCubicMetre` (current rate KES 1,100 per
-    cubic metre). Snapshot length, width, height, volume per load, number of
-    loads, total volume, rate per cubic metre, and total cost on every Pumice
-    purchase item. The rate must be configurable later; old purchases keep
-    the rate used at creation. This `1100` must never be confused with
-    `Vehicle.calculationFactor`'s unrelated `1100` (kilograms per cubic
-    metre, Phase 4C) — different unit, different meaning.
-  - Cement: measurement unit **"Sack"** (unit name confirmed 2026-08-03 —
-    corrects the earlier "Bag" wording), `totalCost = numberOfSacks ×
-    unitCost` (current unit cost KES 850/sack, a reference figure only, never
-    hard-coded — every purchase snapshots its own unit cost). This is the
-    same generic quantity × unit-cost shape every Purchase Item already
-    has — no additional schema fields needed for Cement. Cement usage
-    (actual sacks used, recorded per production run — never the 170–190
-    reference range, never a fixed formula, never auto-created as a General
-    Expense) and Cement stock (`opening + purchased − used ± adjustments`)
-    reuse the existing generic `RawMaterialUsage` and
-    `RawMaterialStockBalance`/`RawMaterialMovement` ledger from Phase 6A/6B —
-    no new schema. See
-    `docs/decisions/business-workflow-update-2026-08-02.md` section 14. This
-    is Phase 7 scope, not part of Phase 6D.
-- Purchase receipt into stock (writes a `PURCHASE_RECEIPT` raw-material
-  movement using the Phase 6A ledger).
-- Low-stock alerts only when reorder level exists.
-- Stock adjustments with reasons and audit logs.
-
-Supplier opening balances (Phase 7A) and raw-material reference data
-(Phase 7B) already exist — this sub-phase builds on top of them, and does
-not repeat that work.
+Backend 597/597 tests passing at this point; frontend build 28 routes (the
+three new `/purchases` routes).
 
 ### Excluded from Phase 7C
 
 Purchase payments, purchase-payment allocations, and the completed supplier
 outstanding-balance formula — Phase 7D.
 
-## Phase 7D — Purchase payments module (NOT_STARTED)
+## Phase 7D — Purchase payments module (COMPLETED)
 
-## Modules
+Migration `20260803171800_phase7d_purchase_payments` — new
+`purchase_payments` and `purchase_payment_allocations` tables (same known
+migration-drift fix as every prior Phase 7 sub-phase).
 
-Implement:
+New `purchase-payments` module (six files). Lifecycle: `PENDING` (any role,
+never affects the balance) → `APPROVED` (Admin/Super Admin only, reduces
+the balance) → `REVERSED` (Admin/Super Admin only, written reason required,
+restores the balance) — the same three-state shape already anticipated for
+customer payments (Phase 9). Never permanently deleted.
 
-- Purchase payments.
+`paymentReference` is a single field, **always required regardless of
+payment method** — the backend cannot mechanically verify "a valid M-Pesa
+code" vs. "valid cheque details" beyond requiring a non-empty descriptive
+string; the frontend changes only the field's label per method.
 
-## Work
+Supplier outstanding-balance formula completed:
+`openingBalance + Σ(Purchase.totalCost) − Σ(PurchasePayment.amount WHERE status = APPROVED)`.
+The amount is checked against the live balance at creation (advisory) and
+**re-checked inside the approval transaction**, after locking both the
+`suppliers` row and the specific `purchase_payments` row
+(`SELECT ... FOR UPDATE`), so two payments approved for the same supplier
+at the same moment cannot both succeed when only one should.
 
-Implement:
+Allocations (`PurchasePaymentAllocation`) are traceability only — the
+balance always uses the payment's own `amount`/`status`, never the
+allocation breakdown. Every allocation is checked: same supplier as the
+payment, amount > 0, amount ≤ that purchase's remaining unpaid amount
+(`totalCost − Σ(APPROVED allocations)`, re-validated fresh at approval too),
+no duplicate purchase within one payment, combined total ≤ the payment
+amount.
 
-- Purchase-payment numbering.
-- Purchase-payment records (amount, method, reference, date, evidence,
-  status — pending/approved/reversed, the same three-state shape already
-  approved for customer payments).
-- Purchase-payment allocation (one payment may be allocated across several
-  purchase or load records, for traceability only — never gating the
-  balance calculation itself).
-- Supplier outstanding balance completed:
-  `openingBalance + Σ(Purchase.totalCost) − Σ(PurchasePayment.amount WHERE status = APPROVED)`.
-- Purchase-payment history.
+**Evidence upload — the first real file-upload endpoint in this codebase.**
+Added `multer` 2.x (the one new runtime dependency across the whole Phase 4–7
+build), wired only on `POST /purchase-payments` (never registered globally).
+Optional; never a substitute for `paymentReference`. Storage: memory →
+`shared/storage/storage.service.ts`'s `storeFile` (existing MIME/size
+checks) → **new** real file-signature (magic-byte) validation, since a
+client-supplied `Content-Type` can be spoofed but the file's own leading
+bytes cannot — this was `storage.service.ts`'s own long-standing deferred
+comment ("file-signature checking is added in the phase that introduces
+uploads"), now resolved. If the transaction fails after the file is stored,
+the orphaned file is removed — a deliberate, explicit deviation from
+`documents.service.ts`'s generated-PDF pipeline, which accepts an orphaned
+file as a standard, documented tradeoff. Download
+(`GET /purchase-payments/:id/evidence`) requires authentication and
+`purchase-payment:read`. `insertStoredFile` was extracted from
+`documents.repository.ts` into a new `shared/storage/storage.repository.ts`
+once evidence upload became a second caller.
+
+**Same-day addendum — future-date restriction.** Neither `Purchase.purchaseDate`
+nor `PurchasePayment.paymentDate` may be in the future. Backend: new
+`getNairobiToday()`/`isNotFutureNairobiDate()` in `shared/utils/nairobi.ts`,
+applied via `.refine()` in both validators — deliberately compares calendar
+date strings, not `Date` instants, since Nairobi (UTC+3) reaches a new
+calendar date a few hours before UTC does and a naive instant comparison
+would wrongly reject "today" during that window. Frontend: new
+`todayInNairobi()` in `lib/format.ts`, used as both the date input's `max`
+attribute and its default value, plus a matching Zod refinement in both
+forms' schemas.
+
+Backend 658/658 tests passing; frontend 23/23 tests passing, build clean
+(30 routes, the three new `/purchase-payments` routes).
 
 ## Financial separation
 

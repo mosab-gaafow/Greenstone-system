@@ -462,6 +462,45 @@ describe('purchases module', () => {
     });
   });
 
+  describe('purchase date', () => {
+    it('rejects a future purchase date', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const supplier = await seedSupplier();
+      const cement = await seedCement();
+
+      const response = await request(app)
+        .post(PURCHASES)
+        .set(headers)
+        .send({
+          supplierId: supplier.id,
+          purchaseDate: '2999-01-01',
+          items: [{ rawMaterialId: cement.id, quantity: '10', unitCost: '850.00' }],
+        });
+
+      expect(response.status).toBe(422);
+    });
+
+    it("accepts today's date", async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const supplier = await seedSupplier();
+      const cement = await seedCement();
+      const today = new Date().toISOString().slice(0, 10);
+
+      const response = await request(app)
+        .post(PURCHASES)
+        .set(headers)
+        .send({
+          supplierId: supplier.id,
+          purchaseDate: today,
+          items: [{ rawMaterialId: cement.id, quantity: '10', unitCost: '850.00' }],
+        });
+
+      expect(response.status).toBe(201);
+    });
+  });
+
   describe('supplier validation', () => {
     it('rejects an inactive supplier', async () => {
       const { cookie } = await createSignedInUser('admin');

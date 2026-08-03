@@ -23,3 +23,38 @@ export function getNairobiYear(date: Date = new Date()): number {
 
   return year;
 }
+
+const NAIROBI_TODAY_FORMATTER = new Intl.DateTimeFormat('en-CA', {
+  timeZone: APP_TIMEZONE,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+/**
+ * Returns today's calendar date in the Africa/Nairobi timezone, as
+ * `YYYY-MM-DD` — the same "which day is it locally, not in UTC" concern
+ * `getNairobiYear` already solves, extended to the full date. `en-CA`
+ * formats as `YYYY-MM-DD` directly, so no manual reassembly is needed.
+ */
+export function getNairobiToday(date: Date = new Date()): string {
+  return NAIROBI_TODAY_FORMATTER.format(date);
+}
+
+/**
+ * True when a date-only value (a purchase date, a payment date, ...) is
+ * today or earlier in the Africa/Nairobi timezone.
+ *
+ * Deliberately compares calendar dates as strings, not `Date` instants:
+ * a bare `YYYY-MM-DD` string is parsed as UTC midnight
+ * (`z.coerce.date()`/`new Date(...)`), and comparing that instant directly
+ * against the current instant would wrongly reject "today" for the first
+ * few hours of the Nairobi day, since Nairobi (UTC+3) reaches a new calendar
+ * date before UTC does.
+ *
+ * `now` defaults to the real current instant; a caller may pass a fixed
+ * value to test the day-boundary behaviour deterministically.
+ */
+export function isNotFutureNairobiDate(date: Date, now: Date = new Date()): boolean {
+  return date.toISOString().slice(0, 10) <= getNairobiToday(now);
+}

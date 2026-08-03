@@ -115,6 +115,12 @@ figures.
 | `purchase-payment` | create, read, approve, reverse          | ✅          | ✅    | create, read                   |
 | `delivery`         | create, read, dispatch, cancel, correct | ✅          | ✅    | create, read, dispatch, cancel |
 
+**`purchase` and `purchase-payment` implemented (2026-08-03, Phase 7C/7D):**
+both resources were pre-declared ahead of their modules, the same way
+`raw-material` and `customer-credit` were. `purchase` has no `update`
+action, matching the approved design — a Purchase is immutable once
+created. `delivery` remains pre-declared, unimplemented — Phase 8.
+
 ### Finance
 
 | Resource           | Actions                                   | super_admin | admin | accountant                         |

@@ -105,6 +105,11 @@ export function clearCsrfToken(): void {
 
 export interface RequestOptions {
   method?: string;
+  /**
+   * A `FormData` body (for a file upload) is sent as-is — the browser sets
+   * its own `multipart/form-data` boundary header, which must never be set
+   * manually. Anything else is JSON-encoded.
+   */
   body?: unknown;
   query?: Record<string, string | number | boolean | undefined>;
   signal?: AbortSignal;
@@ -116,6 +121,7 @@ export async function apiRequest<TData>(
 ): Promise<{ data: TData; meta?: Record<string, unknown> }> {
   const method = options.method ?? 'GET';
   const url = new URL(absoluteUrl(`${API_BASE_URL}${path}`));
+  const isFormData = options.body instanceof FormData;
 
   for (const [key, value] of Object.entries(options.query ?? {})) {
     if (value !== undefined) {
@@ -125,7 +131,7 @@ export async function apiRequest<TData>(
 
   const headers: Record<string, string> = {};
 
-  if (options.body !== undefined) {
+  if (options.body !== undefined && !isFormData) {
     headers['Content-Type'] = 'application/json';
   }
 
@@ -137,7 +143,7 @@ export async function apiRequest<TData>(
     method,
     headers,
     credentials: 'include',
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : isFormData ? (options.body as FormData) : JSON.stringify(options.body),
     ...(options.signal ? { signal: options.signal } : {}),
   });
 

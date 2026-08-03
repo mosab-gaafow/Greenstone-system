@@ -7,6 +7,7 @@ import {
   findSuppliers,
   insertSupplier,
   setSupplierActive,
+  sumApprovedPurchasePaymentTotals,
   sumPurchaseTotals,
   updateSupplier,
   upsertSupplierOpeningBalance,
@@ -14,7 +15,11 @@ import {
   type SupplierRow,
 } from './suppliers.repository.js';
 import { recordAudit } from '../../shared/audit/audit.service.js';
-import { runInTransaction, type TransactionClient } from '../../shared/database/transaction.js';
+import {
+  runInTransaction,
+  type DbClient,
+  type TransactionClient,
+} from '../../shared/database/transaction.js';
 import { cache } from '../../shared/cache/cache.service.js';
 import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-keys.js';
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
@@ -219,25 +224,45 @@ export async function setSupplierOpeningBalance(
 }
 
 /**
- * The supplier's outstanding balance. Never cached — always read live from
- * MySQL, the same as `customer-credit.service.ts`'s `computeCreditStatus`.
- *
- * `outstandingBalance = openingBalance + Σ(Purchase.totalCost)` (Phase 7C).
- * `openingBalance` in the response stays the opening balance alone — only
- * `outstandingBalance` combines both terms, the same split
- * `CreditStatusResult`/`openingBalance` vs `outstandingBalance` already uses
- * for customers. Purchase-payment deductions are Phase 7D — see
- * `SupplierBalanceResult`'s doc comment for the full formula once they exist.
+ * The supplier's outstanding balance, confirming the supplier exists first.
+ * Never cached — always read live from MySQL, the same as
+ * `customer-credit.service.ts`'s `computeCreditStatus`.
  */
 export async function getSupplierBalance(supplierId: string): Promise<SupplierBalanceResult> {
   await requireSupplier(supplierId);
 
-  const [openingBalanceRow, purchaseTotals] = await Promise.all([
-    findSupplierOpeningBalance(supplierId),
-    sumPurchaseTotals(supplierId),
+  return computeSupplierBalance(supplierId);
+}
+
+/**
+ * Computes the outstanding balance without confirming the supplier exists —
+ * for callers (such as purchase-payment creation and approval) that have
+ * already loaded the supplier and want to read within their own transaction,
+ * the same "accept an optional caller-supplied client" shape
+ * `customer-credit.service.ts`'s `computeCreditStatus` uses.
+ *
+ * `outstandingBalance = openingBalance + Σ(Purchase.totalCost) −
+ * Σ(APPROVED PurchasePayment.amount)`. `openingBalance` in the result stays
+ * the opening balance alone — only `outstandingBalance` combines all three
+ * terms, the same split `CreditStatusResult` uses for customers. `PENDING`
+ * and `REVERSED` payments never reduce it (business-blueprint section 2.17).
+ *
+ * Purchase-payment approval calls this **inside its own transaction**, after
+ * locking both the payment row and this supplier's row
+ * (`lockRowsForUpdate`), so two payments approved for the same supplier at
+ * the same moment cannot both read a balance that ignores the other.
+ */
+export async function computeSupplierBalance(
+  supplierId: string,
+  client?: DbClient,
+): Promise<SupplierBalanceResult> {
+  const [openingBalanceRow, purchaseTotals, approvedPaymentTotals] = await Promise.all([
+    findSupplierOpeningBalance(supplierId, client),
+    sumPurchaseTotals(supplierId, client),
+    sumApprovedPurchasePaymentTotals(supplierId, client),
   ]);
   const openingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
-  const outstandingBalance = openingBalance.add(purchaseTotals);
+  const outstandingBalance = openingBalance.add(purchaseTotals).sub(approvedPaymentTotals);
 
   return {
     supplierId,

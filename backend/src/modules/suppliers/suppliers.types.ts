@@ -68,11 +68,9 @@ export interface SupplierOpeningBalanceDetail {
 /**
  * The supplier's outstanding balance. See business-blueprint section 2.17.
  *
- * `outstandingBalance = openingBalance + Σ(Purchase.totalCost)` (Phase 7C).
- * Purchase Payments (Phase 7D) will subtract approved payment amounts from
- * this; there is no purchase-level paid/unpaid status of its own, so every
- * purchase counts until then — the same interim reasoning Phase 5B/6E
- * already applied to uninvoiced customer orders. Never cached — see
+ * `outstandingBalance = openingBalance + Σ(Purchase.totalCost) −
+ * Σ(APPROVED PurchasePayment.amount)` (Phase 7D — completes the formula
+ * `PENDING`/`REVERSED` payments never reduce it). Never cached — see
  * docs/technical-blueprint.md section 4A.3 ("supplier balances" is one of
  * the values that must always be read live).
  */
@@ -80,6 +78,6 @@ export interface SupplierBalanceResult {
   supplierId: string;
   /** Decimal string. `0.00` when no opening balance has been entered. */
   openingBalance: string;
-  /** Decimal string. `openingBalance + Σ(Purchase.totalCost)` — see the note above. */
+  /** Decimal string. See the formula above. */
   outstandingBalance: string;
 }

@@ -18,14 +18,13 @@
 //           RawMaterialUsage, CuringRecord.
 // Phase 7A: SupplierOpeningBalance.
 // Phase 7C: Purchase, PurchaseItem.
+// Phase 7D: PurchasePayment, PurchasePaymentAllocation.
 //
 // Business entities are added from Phase 4 onward, in the phase that owns them.
 //
-// Deferred: Purchase Payments (Phase 7D — will complete the supplier
-// outstanding-balance formula on top of Purchase added in 7C). Stock
-// reservation and delivery dispatch (Phase 8 — will add a DELIVERY_DISPATCH
-// writer on top of the finished-stock ledger already built in Phase 6A). See
-// docs/implementation-plan.md.
+// Deferred: Stock reservation and delivery dispatch (Phase 8 — will add a
+// DELIVERY_DISPATCH writer on top of the finished-stock ledger already built
+// in Phase 6A). See docs/implementation-plan.md.
 //
 // The Better Auth models are regenerated with:
 //   pnpm --filter backend auth:generate
@@ -147,7 +146,8 @@ model StoredFile {
   retentionType    RetentionType
   createdAt        DateTime      @default(now())
 
-  generatedDocument GeneratedDocument?
+  generatedDocument       GeneratedDocument?
+  purchasePaymentEvidence PurchasePayment?
 
   @@map("stored_files")
 }
@@ -223,6 +223,9 @@ model User {
   openingBalancesEntered         CustomerOpeningBalance[]
   supplierOpeningBalancesEntered SupplierOpeningBalance[]
   purchasesCreated               Purchase[]
+  purchasePaymentsCreated        PurchasePayment[]        @relation("PurchasePaymentCreatedBy")
+  purchasePaymentsApproved       PurchasePayment[]        @relation("PurchasePaymentApprovedBy")
+  purchasePaymentsReversed       PurchasePayment[]        @relation("PurchasePaymentReversedBy")
   creditOverridesApproved        CustomerCreditOverride[]
   rawMaterialMovements           RawMaterialMovement[]
   finishedStockMovements         FinishedStockMovement[]
@@ -558,8 +561,9 @@ model Supplier {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  openingBalance SupplierOpeningBalance?
-  purchases      Purchase[]
+  openingBalance   SupplierOpeningBalance?
+  purchases        Purchase[]
+  purchasePayments PurchasePayment[]
 
   @@index([isActive])
   @@index([name])
@@ -618,7 +622,8 @@ model Purchase {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  items PurchaseItem[]
+  items              PurchaseItem[]
+  paymentAllocations PurchasePaymentAllocation[]
 
   @@index([supplierId])
   @@map("purchases")
@@ -660,6 +665,88 @@ model PurchaseItem {
   @@index([purchaseId])
   @@index([rawMaterialId])
   @@map("purchase_items")
+}
+
+/// Payment lifecycle: `PENDING` (created, does not affect the supplier
+/// balance) → `APPROVED` (Admin/Super Admin only; reduces the balance) →
+/// `REVERSED` (Admin/Super Admin only, written reason required; restores the
+/// balance). See business-blueprint section 2.17 and
+/// docs/implementation-plan.md Phase 7D. Never permanently deleted.
+enum PurchasePaymentStatus {
+  PENDING
+  APPROVED
+  REVERSED
+}
+
+/// Purchase payment. See business-blueprint sections 2.16-2.17,
+/// docs/technical-blueprint.md section 4.10, and
+/// docs/implementation-plan.md Phase 7D.
+///
+/// `paymentReference` is always required, regardless of `paymentMethod` —
+/// every payment must contain valid payment information (an M-Pesa
+/// transaction code, a bank-transfer reference, a cheque number/details, or
+/// clear cash-payment information). The frontend changes only the field's
+/// *label* per method; the backend cannot mechanically distinguish "a valid
+/// M-Pesa code" from "a valid cheque number" beyond requiring a non-empty
+/// descriptive string, the same opaque-free-text treatment every other
+/// reference-style field in this schema already gets (e.g.
+/// `Purchase.reference`).
+///
+/// `evidenceStoredFileId` is optional additional proof, never a substitute
+/// for `paymentReference`.
+model PurchasePayment {
+  id                   String                @id @default(uuid())
+  paymentNumber        String                @unique
+  supplierId           String
+  supplier             Supplier              @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  amount               Decimal               @db.Decimal(14, 2)
+  paymentMethod        PaymentMethod
+  paymentReference     String                @db.Text
+  paymentDate          DateTime
+  status               PurchasePaymentStatus @default(PENDING)
+  evidenceStoredFileId String?               @unique
+  evidenceStoredFile   StoredFile?           @relation(fields: [evidenceStoredFileId], references: [id], onDelete: Restrict)
+  approvedByUserId     String?
+  approvedByUser       User?                 @relation("PurchasePaymentApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  reversedByUserId     String?
+  reversedByUser       User?                 @relation("PurchasePaymentReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+  reversedAt           DateTime?
+  /// Required for a reversal. Never set otherwise.
+  reversalReason       String?               @db.Text
+  createdByUserId      String?
+  createdByUser        User?                 @relation("PurchasePaymentCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  allocations PurchasePaymentAllocation[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_payments")
+}
+
+/// Connects a purchase payment to one or more purchase records, for
+/// traceability only (technical-blueprint section 4.10: "allows payment
+/// history to remain traceable without changing the purchase itself") — the
+/// supplier outstanding-balance calculation always uses the payment's own
+/// `amount`/`status`, never this breakdown. Every allocated purchase must
+/// belong to the same supplier as the payment, and `allocatedAmount` must
+/// never exceed that purchase's remaining unpaid amount
+/// (`totalCost - Σ(allocatedAmount of APPROVED payments)`), re-checked fresh
+/// whenever a payment is approved.
+model PurchasePaymentAllocation {
+  id                String          @id @default(uuid())
+  purchasePaymentId String
+  purchasePayment   PurchasePayment @relation(fields: [purchasePaymentId], references: [id], onDelete: Cascade)
+  purchaseId        String
+  purchase          Purchase        @relation(fields: [purchaseId], references: [id], onDelete: Restrict)
+  allocatedAmount   Decimal         @db.Decimal(14, 2)
+  createdAt         DateTime        @default(now())
+
+  @@index([purchasePaymentId])
+  @@index([purchaseId])
+  @@map("purchase_payment_allocations")
 }
 
 /// Company settings. See business-blueprint section 9.5 (technical blueprint)

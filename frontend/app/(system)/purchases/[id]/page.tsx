@@ -11,6 +11,7 @@ import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { usePurchase } from '@/features/purchases/hooks/use-purchases';
 import { isPumiceMaterial } from '@/features/purchases/types/purchase.types';
+import { PurchasePaymentHistory } from '@/features/purchase-payments/components/purchase-payment-history';
 import { formatDate } from '@/lib/format';
 
 export default function PurchaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -124,6 +125,8 @@ export default function PurchaseDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </CardContent>
         </Card>
+
+        <PurchasePaymentHistory purchaseId={purchase.id} />
       </div>
     </div>
   );

@@ -164,6 +164,26 @@ export async function sumPurchaseTotals(
   return result._sum.totalCost ?? new Prisma.Decimal(0);
 }
 
+/**
+ * Sum of every `APPROVED` PurchasePayment's `amount` for this supplier
+ * (Phase 7D). `PENDING` and `REVERSED` payments are excluded — see
+ * business-blueprint section 2.17 ("reversed payments must not reduce the
+ * balance") and `purchase-payments.service.ts` for the full lifecycle. Same
+ * direct-table-query pattern as `sumPurchaseTotals`, so this module never
+ * depends on `purchase-payments` (which depends on `suppliers` the other way).
+ */
+export async function sumApprovedPurchasePaymentTotals(
+  supplierId: string,
+  client: DbClient = getPrisma(),
+): Promise<Prisma.Decimal> {
+  const result = await client.purchasePayment.aggregate({
+    where: { supplierId, status: 'APPROVED' },
+    _sum: { amount: true },
+  });
+
+  return result._sum.amount ?? new Prisma.Decimal(0);
+}
+
 export async function upsertSupplierOpeningBalance(
   supplierId: string,
   input: SetSupplierOpeningBalanceInput,

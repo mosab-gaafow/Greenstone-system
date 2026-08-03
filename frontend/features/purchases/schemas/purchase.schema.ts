@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { todayInNairobi } from '@/lib/format';
 
 /**
  * Purchase form validation.
@@ -49,7 +50,12 @@ export const purchaseItemFormSchema = z.object({
 
 export const purchaseFormSchema = z.object({
   supplierId: z.string().min(1, 'Select a supplier.'),
-  purchaseDate: z.string().min(1, 'Select a date.'),
+  purchaseDate: z
+    .string()
+    .min(1, 'Select a date.')
+    // Both are plain `YYYY-MM-DD` strings, so lexicographic comparison is
+    // exact — mirrors the backend's `isNotFutureNairobiDate`.
+    .refine((value) => value <= todayInNairobi(), { message: 'Purchase date cannot be in the future.' }),
   reference: z.string().trim().max(150, 'Reference must be 150 characters or fewer.').optional(),
   items: z.array(purchaseItemFormSchema).min(1, 'Add at least one item.'),
 });

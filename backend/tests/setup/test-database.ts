@@ -49,6 +49,8 @@ const TABLES = [
   'broken_product_records',
   'finished_stock_movements',
   'finished_stock_balances',
+  'purchase_payment_allocations',
+  'purchase_payments',
   'purchase_items',
   'purchases',
   'supplier_opening_balances',

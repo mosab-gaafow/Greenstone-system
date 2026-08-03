@@ -49,6 +49,13 @@ export function canApprovePayments(user: Pick<CurrentUser, 'role'> | null | unde
   return isAdministrator(user);
 }
 
+/** May approve or reverse purchase payments (Phase 7D). Never the Accountant. */
+export function canApprovePurchasePayments(
+  user: Pick<CurrentUser, 'role'> | null | undefined,
+): boolean {
+  return isAdministrator(user);
+}
+
 /** May approve, correct, or reverse salary payments. Never the Accountant. */
 export function canApproveSalaries(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
   return isAdministrator(user);
