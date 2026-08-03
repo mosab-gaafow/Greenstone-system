@@ -176,10 +176,33 @@ match. 230MM is not created, connected, or backfilled anywhere — see
 
 ### `suppliers`
 
-Master record only, per business-blueprint section 2.16. Opening balances,
-purchases, and purchase payments (sections 2.17–2.18) are Phase 7. `phone` and
-`email` follow the same dual-column normalisation as `customers`; `address`
-is free text, not normalised or unique.
+Master record, per business-blueprint section 2.16. `phone` and `email`
+follow the same dual-column normalisation as `customers`; `address` is free
+text, not normalised or unique. Purchases and purchase payments (section
+2.17) are Phase 7C/7D.
+
+### `supplier_opening_balances` (Phase 7A)
+
+One row per supplier (`@unique supplierId`), corrected in place rather than
+accumulated as history rows — identical shape to `customer_opening_balances`
+(Phase 5B). Full before/after history lives in the audit log
+(`SET_SUPPLIER_OPENING_BALANCE`), the same pattern `company_settings` and
+`customer_opening_balances` both already use for their own corrections.
+
+Lives in the existing `suppliers` module rather than a separate
+`supplier-balances` module: unlike `customer_opening_balances` (its own
+`customer-credit` module, gated by the separate `customer-credit:set-
+opening-balance` permission, Admin/Super Admin only), there is no
+pre-declared permission resource forcing a split here — `supplier:update`/
+`supplier:read` (already granted to all three roles, including Accountant)
+gate the new endpoints instead. This is a deliberate, flagged asymmetry from
+the customer side, not an oversight.
+
+`GET /suppliers/:id/balance` computes the outstanding balance live, never
+cached — the same as `customer-credit.service.ts`'s `computeCreditStatus`.
+Until Phase 7C/7D exist, `outstandingBalance` equals `openingBalance` alone;
+it then becomes `openingBalance + Σ(unpaid approved Purchase.totalCost) −
+Σ(approved PurchasePayment.amount)`.
 
 ### `company_settings`
 
@@ -575,10 +598,15 @@ number any more, since the `quotations` module itself is gone. See the
   `calculatedLoadTonnes`) are **not** touched by this migration — whether to
   remove them is unconfirmed (see the impact report).
 
-### 5. Future Purchase Item / Delivery snapshot columns (Phase 7 / Phase 8)
+### 5. Future Purchase Item / Delivery snapshot columns (Phase 7C/7D / Phase 8)
 
-Not yet scoped in detail, since Phase 7/8 have not been planned. Expected
-additions when those phases are planned:
+Phase 7 is now fully planned and split into four sub-phases (7A–7D — see
+`docs/implementation-plan.md`). `supplier_opening_balances` (7A) and the
+confirmed Cement/Dust/Pumice raw materials plus Sack/Cubic Metre/Tonne
+measurement units (7B, production seed, no schema change) already exist.
+`purchases`, `purchase_items`, `purchase_payments`, and
+`purchase_payment_allocations` (7C/7D) and the Delivery snapshot columns
+(Phase 8) remain not yet implemented; expected shape below.
 
 - `purchase_items`: Pumice-specific snapshot columns (length, width, height,
   volume per load, number of loads, total volume, rate per cubic metre) —

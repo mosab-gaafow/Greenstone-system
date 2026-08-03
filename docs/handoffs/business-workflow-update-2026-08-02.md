@@ -254,6 +254,55 @@ Phase 7 (Purchases and Supplier Balances) is the next item in
 `docs/implementation-plan.md`'s progress table, but it has not been
 discussed, planned, or approved.
 
+## 6d. Phase 7A and 7B implemented (2026-08-03) — Supplier opening balances; raw-material reference data
+
+Phase 7 (Purchases and Supplier Balances) was planned in full (16-section
+plan: conflicts, entities, workflows, permissions, audit, numbering, Redis,
+files, migrations/tests, excluded work, sub-phases) and approved in
+principle, then split into four sub-phases — 7A–7D — the same way every
+earlier multi-part phase in this project has been. Only 7A and 7B are
+implemented so far.
+
+**Phase 7A — Supplier opening balances and balance display.** Migration
+`20260803145847_phase7a_supplier_opening_balances` added `SupplierOpeningBalance`
+(mirrors `CustomerOpeningBalance` exactly: corrected in place, one row per
+supplier, full history in the audit log). Lives inside the existing
+`suppliers` module rather than a new `supplier-balances` module — unlike the
+customer side, there is no separate pre-declared permission resource forcing
+a split, so `supplier:update`/`supplier:read` (already granted to all three
+roles) gate the new endpoints. This is a deliberate asymmetry from the
+customer equivalent (Admin/Super Admin only): flagged for awareness, not
+changed, since inventing a new restricted permission was out of scope. New
+`PATCH /suppliers/:id/opening-balance` and `GET /suppliers/:id/balance`
+(`outstandingBalance` equals `openingBalance` alone until 7C/7D exist).
+Balance is never cached, matching customer credit status. Frontend gained a
+`SupplierBalanceCard` + opening-balance dialog on the supplier detail page,
+mirroring the customer credit-status card file-for-file.
+
+**Phase 7B — Raw-material reference data.** No schema change. Fixed a gap
+found during Phase 7 planning: the `raw-materials`/`measurement-units`
+modules have existed since Phase 6A but had zero rows in any environment —
+the development demo seed never got a `raw-materials.ts` file. Cement, Dust,
+and Pumice, and their measurement units (Sack, Cubic Metre, Tonne), are
+confirmed real system data (business-blueprint sections 2.12–2.13), so they
+were added to the **production** seed, not the dev demo seed — the same
+reasoning already applied to the confirmed initial products. Idempotent;
+reorder levels left unset; every raw material gets its normal zero-balance
+stock row via the existing `insertRawMaterial` repository function, reused
+rather than duplicated. No stock movement, no audit-log entry, no opening
+quantity of any kind is created by this seed — a real opening quantity is
+still entered later, during production setup, through the existing Phase 6A
+`set-opening` action.
+
+Both sub-phases: backend 570/570 tests passing, backend/frontend
+typecheck/lint/build all clean. Full detail in `docs/implementation-plan.md`'s
+Phase 7A/7B sections.
+
+**Next available phase, unstarted (at the time of writing):** 7C (Purchases
+module) — planned in principle as part of the full Phase 7 plan, but not yet
+separately approved for implementation. 7D (Purchase Payments module) follows
+after it.
+
 ## 7. Exact next step (original, first-round session — historical)
 
 This session (including the second-round confirmations) still did not plan

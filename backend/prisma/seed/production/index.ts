@@ -7,7 +7,8 @@
  *
  * Safe to run more than once: everything here is idempotent.
  *
- * Currently seeds the confirmed initial product definitions and the required
+ * Currently seeds the confirmed initial product definitions, the confirmed
+ * raw materials and their measurement units (Phase 7B), and the required
  * default company-settings row (blank until filled in during production
  * setup). Roles and permissions need no rows, because they live in code as
  * Better Auth access control. The initial Super Admin is created separately
@@ -22,17 +23,25 @@ import '../../../src/config/load-env.js';
 import process from 'node:process';
 import { disconnectPrisma, getPrisma } from '../../../src/shared/database/prisma.js';
 import { seedInitialProducts } from './products.js';
+import { seedRawMaterialReferenceData } from './raw-materials.js';
 import { seedDefaultSettings } from './settings.js';
 
 async function main(): Promise<void> {
   const prisma = getPrisma();
 
   const products = await seedInitialProducts(prisma);
+  const rawMaterialReferenceData = await seedRawMaterialReferenceData(prisma);
   const settings = await seedDefaultSettings(prisma);
 
   console.log('Production seed complete.');
   console.log(
     `  Products: ${String(products.created)} created, ${String(products.skipped)} already present.`,
+  );
+  console.log(
+    `  Measurement units: ${String(rawMaterialReferenceData.measurementUnits.created)} created, ${String(rawMaterialReferenceData.measurementUnits.skipped)} already present.`,
+  );
+  console.log(
+    `  Raw materials: ${String(rawMaterialReferenceData.rawMaterials.created)} created, ${String(rawMaterialReferenceData.rawMaterials.skipped)} already present.`,
   );
   console.log(`  Settings: ${settings.created ? 'default row created' : 'already present'}.`);
 }

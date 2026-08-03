@@ -79,7 +79,10 @@ Claude must not:
 | 6D | Product operational names, pieces per pallet, and truck capacity | COMPLETED |
 | 6E | Customer credit projection formula and balance filters | COMPLETED |
 | 6F | Vehicle Owners; rework Vehicle | COMPLETED |
-| 7 | Purchases and supplier balances (Pumice/Cement calculations) | NOT_STARTED |
+| 7A | Supplier opening balances and balance display | COMPLETED |
+| 7B | Raw-material reference data (Cement, Dust, Pumice; Sack, Cubic Metre, Tonne) | COMPLETED |
+| 7C | Purchases module (Pumice/Cement calculations, raw-material receipt) | NOT_STARTED |
+| 7D | Purchase payments module (allocations, approval, reversal) | NOT_STARTED |
 | 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
 | 10 | Expenses and salaries | NOT_STARTED |
@@ -1508,12 +1511,105 @@ it, and the real "opening raw-material quantity" endpoint (Phase 6A's
 `set-opening` action exists; this phase is where an authorised user actually
 uses it during production setup, per business-blueprint 2.15).
 
+Split into four approved sub-phases, the same pattern as every earlier
+multi-part phase (4A–4D, 5A/5B, 6A–6F), so each ships and is reviewed
+independently:
+
+- **Phase 7A — Supplier opening balances and balance display (COMPLETED).**
+- **Phase 7B — Raw-material reference data (COMPLETED).**
+- **Phase 7C — Purchases module (NOT_STARTED).**
+- **Phase 7D — Purchase payments module (NOT_STARTED).**
+
+## Phase 7A — Supplier opening balances and balance display (COMPLETED)
+
+Migration `20260803145847_phase7a_supplier_opening_balances` added
+`SupplierOpeningBalance` — mirrors `CustomerOpeningBalance` exactly:
+corrected in place, one row per supplier, full before/after history in the
+audit log.
+
+Lives inside the existing `suppliers` module (`suppliers.{controller,
+repository,routes,service,types,validators}.ts`) rather than a new
+`supplier-balances` module: unlike the customer side, there is no separate
+pre-declared permission resource forcing a split, so the existing
+`supplier:update`/`supplier:read` (already granted to all three roles) gate
+the two new endpoints. **Deliberate asymmetry, flagged rather than silently
+decided:** a supplier's opening balance can be set by an Accountant, while a
+customer's cannot (Admin/Super Admin only, via the separate
+`customer-credit:set-opening-balance` action) — inventing a new restricted
+permission was out of scope for this phase.
+
+New `PATCH /suppliers/:id/opening-balance` and `GET /suppliers/:id/balance`.
+`outstandingBalance` equals `openingBalance` alone until Phase 7C/7D add
+Purchases and Purchase Payments. Never cached — read live from MySQL every
+time, the same as `customer-credit.service.ts`'s `computeCreditStatus`.
+Amount must be zero or greater (unlike the customer equivalent, which
+permits negative). Remains settable and readable after the supplier is
+deactivated — an opening balance must stay traceable regardless of the
+supplier's current status.
+
+Frontend: new `SupplierBalanceCard` + `OpeningBalanceDialog` on the supplier
+detail page, mirroring `features/customers/components/credit-status-card.tsx`
+and its opening-balance dialog file-for-file. New `canSetSupplierOpeningBalance`
+permission helper (`lib/permissions.ts`) — every role, unlike its customer
+counterpart.
+
+Backend 561/561 tests passing; frontend typecheck/lint (same 3 pre-existing
+unrelated warnings)/10 tests/26-route build all clean.
+
+### Excluded from Phase 7A
+
+Purchases, Purchase Payments, and the completed supplier outstanding-balance
+formula (opening balance + unpaid approved purchases − approved
+purchase-payment allocations) — Phase 7C/7D.
+
+## Phase 7B — Raw-material reference data (COMPLETED)
+
+No schema change. Fixed a gap found during Phase 7 planning: the
+`raw-materials`/`measurement-units` modules have existed since Phase 6A but
+had zero rows in any environment — the development demo seed never got a
+`raw-materials.ts` file to seed them.
+
+Cement, Dust, and Pumice, and their measurement units (Sack, Cubic Metre,
+Tonne), are confirmed real system data (business-blueprint sections
+2.12–2.13, and
+`docs/decisions/business-workflow-update-2026-08-02.md` sections 8, 9, 14) —
+the same reasoning already applied to the confirmed initial products — so
+they were added to the **production** seed
+(`prisma/seed/production/raw-materials.ts`), not the development demo seed.
+Idempotent, and deliberately never updates an existing row, the same
+"never undo a deliberate later change" rule `seedInitialProducts` already
+follows. Reorder levels are left unset (business-blueprint section 2.14 —
+optional). Every raw material still gets its normal zero-balance stock row
+via the existing `insertRawMaterial` repository function, reused rather than
+duplicated — no stock movement, no audit-log entry, and no opening quantity
+of any kind is created by this seed. A real opening quantity is still
+entered later, during production setup, through the existing Phase 6A
+`set-opening` action, per business-blueprint section 2.15.
+
+Verified directly against `greenstone_dev`: 3 `MeasurementUnit` rows, 3
+`RawMaterial` rows, each with a zero-quantity `RawMaterialStockBalance` row,
+zero `RawMaterialMovement` rows, zero related `AuditLog` rows. Running the
+seed a second time creates no duplicates (verified both by the automated
+test suite and directly against the live dev database). No CI/CD workflow
+or package script invokes either seed automatically — `seed:prod` and
+`seed:dev` are both explicit, manual commands only, so a production
+deployment never creates demo business records by itself.
+
+Backend 570/570 tests passing; frontend untouched (typecheck reconfirmed
+clean).
+
+### Excluded from Phase 7B
+
+Purchases, Purchase Payments, real opening raw-material quantities (entered
+later, during production setup) — Phase 7C/7D and beyond.
+
+## Phase 7C — Purchases module (NOT_STARTED)
+
 ## Modules
 
 Implement:
 
 - Purchases.
-- Purchase payments.
 - Suppliers where remaining functions are needed.
 
 ## Work
@@ -1549,13 +1645,40 @@ Implement:
     is Phase 7 scope, not part of Phase 6D.
 - Purchase receipt into stock (writes a `PURCHASE_RECEIPT` raw-material
   movement using the Phase 6A ledger).
-- Supplier opening balances.
-- Purchase-payment numbering.
-- Purchase-payment records.
-- Supplier outstanding balance.
-- Purchase-payment history.
 - Low-stock alerts only when reorder level exists.
 - Stock adjustments with reasons and audit logs.
+
+Supplier opening balances (Phase 7A) and raw-material reference data
+(Phase 7B) already exist — this sub-phase builds on top of them, and does
+not repeat that work.
+
+### Excluded from Phase 7C
+
+Purchase payments, purchase-payment allocations, and the completed supplier
+outstanding-balance formula — Phase 7D.
+
+## Phase 7D — Purchase payments module (NOT_STARTED)
+
+## Modules
+
+Implement:
+
+- Purchase payments.
+
+## Work
+
+Implement:
+
+- Purchase-payment numbering.
+- Purchase-payment records (amount, method, reference, date, evidence,
+  status — pending/approved/reversed, the same three-state shape already
+  approved for customer payments).
+- Purchase-payment allocation (one payment may be allocated across several
+  purchase or load records, for traceability only — never gating the
+  balance calculation itself).
+- Supplier outstanding balance completed:
+  `openingBalance + Σ(Purchase.totalCost) − Σ(PurchasePayment.amount WHERE status = APPROVED)`.
+- Purchase-payment history.
 
 ## Financial separation
 
@@ -1567,7 +1690,7 @@ Keep separate:
 - Salary payments.
 - Customer payments.
 
-## Completion gate
+## Completion gate (Phase 7C and 7D together)
 
 - Purchases increase raw-material stock.
 - Actual production usage reduces stock.
