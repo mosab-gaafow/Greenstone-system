@@ -113,3 +113,21 @@ export interface ListDeliveriesResult {
   deliveries: DeliverySummary[];
   totalRecords: number;
 }
+
+// --- Phase 8B: Transport calculation ----------------------------------------
+
+export interface SetTransportInput {
+  /** Decimal string, e.g. "8500.00". */
+  transportRate: string;
+  /** Required for mixed-product deliveries; auto-calculated for single-product. */
+  numberOfTrips?: number | undefined;
+}
+
+export interface DeliveryTransportDetail {
+  transportRate: string;
+  numberOfTrips: number;
+  totalTransportCost: string;
+  maxPiecesPerTruckSnapshot: number | null;
+  /** true when trips were auto-calculated from a single-product delivery. */
+  autoCalculated: boolean;
+}

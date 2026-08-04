@@ -1,7 +1,8 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Truck } from 'lucide-react';
+import { ArrowLeft, Calculator, Truck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -10,10 +11,12 @@ import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { useDelivery } from '../hooks/use-deliveries';
 import { DeliveryStatusBadge } from './delivery-status-badge';
+import { TransportDialog } from './transport-dialog';
 import { formatDate } from '@/lib/format';
 
 export function DeliveryDetailView({ id }: { id: string }) {
   const query = useDelivery(id);
+  const [transportOpen, setTransportOpen] = useState(false);
 
   if (query.isPending) {
     return (
@@ -46,6 +49,9 @@ export function DeliveryDetailView({ id }: { id: string }) {
 
   const delivery = query.data;
 
+  const totalPlanned = delivery.items.reduce((s, i) => s + i.plannedQuantity, 0);
+  const uniqueProducts = new Set(delivery.items.map((i) => i.productId)).size;
+
   return (
     <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <Button
@@ -64,6 +70,18 @@ export function DeliveryDetailView({ id }: { id: string }) {
         badge={<DeliveryStatusBadge status={delivery.status} />}
         description={`Order ${delivery.orderNumber} — ${delivery.customerName}`}
       />
+
+      {delivery.status === 'PLANNED' && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setTransportOpen(true)}
+          >
+            <Calculator className="size-4" aria-hidden />
+            {delivery.transportRate ? 'Update transport' : 'Set transport'}
+          </Button>
+        </div>
+      )}
 
       <div className="max-w-2xl space-y-6">
         {/* Core info */}
@@ -143,25 +161,46 @@ export function DeliveryDetailView({ id }: { id: string }) {
           </CardContent>
         </Card>
 
-        {/* Transport (read-only, NULL until 8B/8C) */}
-        {delivery.transportRate && (
-          <Card>
-            <CardContent className="space-y-4">
-              <DetailRow label="Transport rate">
-                KES {delivery.transportRate}
-              </DetailRow>
-              {delivery.numberOfTrips && (
-                <DetailRow label="Trips">{delivery.numberOfTrips}</DetailRow>
-              )}
-              {delivery.totalTransportCost && (
-                <DetailRow label="Transport cost">
-                  KES {delivery.totalTransportCost}
+        {/* Transport (Phase 8B) */}
+        <Card>
+          <CardContent className="space-y-4">
+            {delivery.transportRate ? (
+              <>
+                <DetailRow label="Transport rate">
+                  KES {delivery.transportRate}
                 </DetailRow>
-              )}
-            </CardContent>
-          </Card>
-        )}
+                {delivery.numberOfTrips != null && (
+                  <DetailRow label="Trips">{delivery.numberOfTrips}</DetailRow>
+                )}
+                {delivery.totalTransportCost && (
+                  <DetailRow label="Transport cost">
+                    KES {delivery.totalTransportCost}
+                  </DetailRow>
+                )}
+                {delivery.maxPiecesPerTruckSnapshot != null && (
+                  <DetailRow label="Truck capacity (snapshot)">
+                    {delivery.maxPiecesPerTruckSnapshot}
+                  </DetailRow>
+                )}
+              </>
+            ) : (
+              <p className="text-muted-foreground text-sm">Transport not yet set.</p>
+            )}
+          </CardContent>
+        </Card>
       </div>
+
+      <TransportDialog
+        open={transportOpen}
+        onOpenChange={setTransportOpen}
+        deliveryId={delivery.id}
+        itemCount={uniqueProducts}
+        totalPlanned={totalPlanned}
+        maxPiecesPerTruck={delivery.maxPiecesPerTruckSnapshot}
+        currentRate={delivery.transportRate}
+        currentTrips={delivery.numberOfTrips}
+        currentCost={delivery.totalTransportCost}
+      />
     </div>
   );
 }

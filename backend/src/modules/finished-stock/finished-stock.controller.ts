@@ -15,6 +15,14 @@ import type {
  * Reads validated input, calls the service, returns the standard envelope.
  */
 
+export async function listAll(_req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(res, (await finishedStockService.listAllStock()).rows);
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getStock(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     sendSuccess(res, await finishedStockService.getStock(req.params['id'] as string));

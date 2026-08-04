@@ -23,6 +23,13 @@ export function finishedStockRoutes(): Router {
 
   router.use(requireAuth());
 
+  // Must be before /:id/finished-stock so Express matches this literal first
+  router.get(
+    '/finished-stock',
+    requirePermission('finished-stock', 'read'),
+    finishedStockController.listAll,
+  );
+
   router.get(
     '/:id/finished-stock',
     requirePermission('finished-stock', 'read'),

@@ -76,8 +76,8 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/health`, healthRoutes());
   app.use(`${API_BASE_PATH}/csrf-token`, csrfRoutes());
   app.use(`${API_BASE_PATH}/users`, usersRoutes());
-  app.use(`${API_BASE_PATH}/products`, productsRoutes());
   app.use(`${API_BASE_PATH}/products`, finishedStockRoutes());
+  app.use(`${API_BASE_PATH}/products`, productsRoutes());
   app.use(`${API_BASE_PATH}/customers`, customersRoutes());
   app.use(`${API_BASE_PATH}/customers`, customerCreditRoutes());
   app.use(`${API_BASE_PATH}/employees`, employeesRoutes());

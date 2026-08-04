@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { ApiError } from '@/lib/api-client';
 import * as deliveriesApi from '../api/deliveries.api';
 import type { DeliveryFilters } from '../types/delivery.types';
-import type { DeliveryFormValues } from '../schemas/delivery.schema';
+import type { DeliveryFormValues, TransportFormValues } from '../schemas/delivery.schema';
 
 export const deliveryKeys = {
   all: ['deliveries'] as const,
@@ -47,6 +47,21 @@ export function useCreateDelivery() {
     },
     onError: (error) => {
       toast.error(errorMessage(error, 'The delivery could not be saved.'));
+    },
+  });
+}
+
+export function useSetTransport(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (values: TransportFormValues) => deliveriesApi.setTransport(id, values),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: deliveryKeys.all });
+      toast.success('Transport saved.');
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'Transport could not be saved.'));
     },
   });
 }

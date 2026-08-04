@@ -304,3 +304,28 @@ export async function readLockedOrderItems(
   }
   return result;
 }
+
+/**
+ * Sets transport fields on a PLANNED delivery. Phase 8B.
+ * Called inside the setTransport transaction.
+ */
+export async function updateTransport(
+  tx: TransactionClient,
+  id: string,
+  input: {
+    transportRate: Prisma.Decimal;
+    numberOfTrips: number;
+    totalTransportCost: Prisma.Decimal;
+    maxPiecesPerTruckSnapshot?: number | null;
+  },
+): Promise<Delivery> {
+  return tx.delivery.update({
+    where: { id },
+    data: {
+      transportRate: input.transportRate,
+      numberOfTrips: input.numberOfTrips,
+      totalTransportCost: input.totalTransportCost,
+      maxPiecesPerTruckSnapshot: input.maxPiecesPerTruckSnapshot ?? null,
+    },
+  });
+}

@@ -1,6 +1,6 @@
 import { api, type PaginationMeta } from '@/lib/api-client';
 import type { Delivery, DeliveryDetail, DeliveryFilters } from '../types/delivery.types';
-import type { DeliveryFormValues } from '../schemas/delivery.schema';
+import type { DeliveryFormValues, TransportFormValues } from '../schemas/delivery.schema';
 
 export interface DeliveryListResult {
   deliveries: Delivery[];
@@ -42,6 +42,27 @@ export async function createDelivery(values: DeliveryFormValues): Promise<Delive
     creditOverrideReason: values.creditOverrideReason?.trim()
       ? values.creditOverrideReason.trim()
       : undefined,
+  });
+  return data;
+}
+
+// --- Phase 8B: Transport -----------------------------------------------
+
+export interface TransportResult {
+  transportRate: string;
+  numberOfTrips: number;
+  totalTransportCost: string;
+  maxPiecesPerTruckSnapshot: number | null;
+  autoCalculated: boolean;
+}
+
+export async function setTransport(
+  id: string,
+  values: TransportFormValues,
+): Promise<TransportResult> {
+  const { data } = await api.patch<TransportResult>(`/deliveries/${id}/transport`, {
+    transportRate: values.transportRate,
+    numberOfTrips: values.numberOfTrips ?? undefined,
   });
   return data;
 }

@@ -1,4 +1,4 @@
-import type { CreditStatus, OrderPaymentArrangement } from '../../generated/prisma/client.js';
+import { Prisma, type CreditStatus, type OrderPaymentArrangement } from '../../generated/prisma/client.js';
 import {
   findDeliveries,
   findDeliveryById,
@@ -9,6 +9,7 @@ import {
   lockStockBalances,
   readLockedOrderItems,
   sumCommittedQuantities,
+  updateTransport,
   type DeliveryDetailRow,
   type DeliveryRow,
 } from './deliveries.repository.js';
@@ -24,6 +25,7 @@ import {
   BusinessRuleViolationError,
   CustomerCreditBlockedError,
   InsufficientFinishedStockError,
+  InvalidDocumentStatusError,
   PermissionDeniedError,
   ResourceNotFoundError,
 } from '../../shared/errors/app-error.js';
@@ -39,8 +41,10 @@ import type {
   CreateDeliveryInput,
   DeliveryDetail,
   DeliverySummary,
+  DeliveryTransportDetail,
   ListDeliveriesFilters,
   ListDeliveriesResult,
+  SetTransportInput,
 } from './deliveries.types.js';
 
 /**
@@ -315,6 +319,114 @@ export async function createDelivery(
   await invalidateCache();
 
   return toDetail(await requireDelivery(created.id));
+}
+
+/**
+ * Sets transport rate and trip count on a PLANNED delivery (Phase 8B).
+ *
+ * Single-product deliveries auto-calculate trips from the product's
+ * `maxPiecesPerTruck`. Mixed-product deliveries require a manual trip count.
+ * `totalTransportCost = numberOfTrips × transportRate`, always backend-
+ * calculated using Prisma.Decimal.
+ *
+ * The product's `maxPiecesPerTruck` is snapshotted so a later change never
+ * recalculates an already-recorded delivery.
+ */
+export async function setTransport(
+  id: string,
+  input: SetTransportInput,
+  context: RequestContext,
+): Promise<DeliveryTransportDetail> {
+  const delivery = await requireDelivery(id);
+
+  if (delivery.status !== 'PLANNED') {
+    throw new InvalidDocumentStatusError(
+      `Transport can only be set on PLANNED deliveries. This delivery is ${delivery.status}.`,
+    );
+  }
+
+  const transportRate = new Prisma.Decimal(input.transportRate);
+
+  if (!transportRate.isPositive()) {
+    throw new BusinessRuleViolationError('Transport rate must be greater than zero.');
+  }
+
+  const productIds = new Set(delivery.items.map((item) => item.productId));
+  const uniqueProductCount = productIds.size;
+
+  let numberOfTrips: number;
+  let maxPiecesPerTruckSnapshot: number | null = null;
+  let autoCalculated = false;
+
+  if (uniqueProductCount === 1) {
+    // Single-product: auto-calculate
+    const totalPlanned = delivery.items.reduce((sum, item) => sum + item.plannedQuantity, 0);
+    const product = delivery.items[0]!.product;
+
+    if (!product.maxPiecesPerTruck) {
+      throw new BusinessRuleViolationError(
+        `"${product.name}" has no confirmed truck capacity. ` +
+          'Enter the number of trips manually, or configure the maximum pieces per truck for this product.',
+      );
+    }
+
+    numberOfTrips = Math.ceil(totalPlanned / product.maxPiecesPerTruck);
+    maxPiecesPerTruckSnapshot = product.maxPiecesPerTruck;
+    autoCalculated = true;
+  } else {
+    // Mixed-product: manual entry required
+    if (!input.numberOfTrips) {
+      throw new BusinessRuleViolationError(
+        'Enter the number of trips for a mixed-product delivery.',
+      );
+    }
+
+    numberOfTrips = input.numberOfTrips;
+  }
+
+  if (numberOfTrips < 1) {
+    throw new BusinessRuleViolationError('Number of trips must be at least 1.');
+  }
+
+  const totalTransportCost = transportRate.mul(numberOfTrips);
+
+  await runInTransaction(async (tx: TransactionClient) => {
+    await updateTransport(tx, id, {
+      transportRate,
+      numberOfTrips,
+      totalTransportCost,
+      maxPiecesPerTruckSnapshot,
+    });
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'SET_DELIVERY_TRANSPORT',
+      module: AUDIT_MODULE,
+      entityType: 'Delivery',
+      entityId: id,
+      documentNumber: delivery.deliveryNumber,
+      previousData: {
+        transportRate: delivery.transportRate?.toFixed(2) ?? null,
+        numberOfTrips: delivery.numberOfTrips,
+        totalTransportCost: delivery.totalTransportCost?.toFixed(2) ?? null,
+      },
+      updatedData: {
+        transportRate: transportRate.toFixed(2),
+        numberOfTrips,
+        totalTransportCost: totalTransportCost.toFixed(2),
+        maxPiecesPerTruckSnapshot,
+        autoCalculated,
+      },
+    });
+  });
+
+  return {
+    transportRate: transportRate.toFixed(2),
+    numberOfTrips,
+    totalTransportCost: totalTransportCost.toFixed(2),
+    maxPiecesPerTruckSnapshot,
+    autoCalculated,
+  };
 }
 
 // --- Customer deactivation helpers (called by customers.service) ------------

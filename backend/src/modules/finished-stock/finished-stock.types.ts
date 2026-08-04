@@ -51,3 +51,17 @@ export interface AdjustFinishedStockInput {
   quantity: number;
   reason: string;
 }
+
+/** A stock balance row with the product name denormalised for list display. */
+export interface FinishedStockListRow {
+  productId: string;
+  productName: string;
+  physicalQuantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  updatedAt: string;
+}
+
+export interface ListAllStockResult {
+  rows: FinishedStockListRow[];
+}

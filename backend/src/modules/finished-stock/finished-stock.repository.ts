@@ -117,6 +117,27 @@ export async function reserveStock(
   });
 }
 
+/** Lists all finished-stock balances with product names for the stock page. */
+export async function findAllStockBalances(
+  client: DbClient = getPrisma(),
+): Promise<
+  { productId: string; productName: string; physicalQuantity: number; reservedQuantity: number; availableQuantity: number; updatedAt: Date }[]
+> {
+  const rows = await client.finishedStockBalance.findMany({
+    include: { product: { select: { name: true } } },
+    orderBy: { product: { name: 'asc' } },
+  });
+
+  return rows.map((row) => ({
+    productId: row.productId,
+    productName: row.product.name,
+    physicalQuantity: row.physicalQuantity,
+    reservedQuantity: row.reservedQuantity,
+    availableQuantity: row.availableQuantity,
+    updatedAt: row.updatedAt,
+  }));
+}
+
 export async function findMovements(
   productId: string,
   filters: ListFinishedStockMovementsFilters,

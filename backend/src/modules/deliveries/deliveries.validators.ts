@@ -46,3 +46,21 @@ export const listDeliveriesQuerySchema = z.object({
   sortBy: z.enum(['deliveryNumber', 'createdAt', 'deliveryDate']).default('createdAt'),
   sortDirection: z.enum(['asc', 'desc']).default('desc'),
 });
+
+const moneySchema = z
+  .string()
+  .trim()
+  .regex(/^\d+(\.\d{1,2})?$/, 'Enter an amount with up to two decimal places.');
+
+export const setTransportBodySchema = z
+  .object({
+    transportRate: moneySchema.refine((v) => Number(v) > 0, {
+      message: 'Transport rate must be greater than zero.',
+    }),
+    numberOfTrips: z.coerce
+      .number()
+      .int('Trips must be a whole number.')
+      .positive('Trips must be at least 1.')
+      .optional(),
+  })
+  .strict();

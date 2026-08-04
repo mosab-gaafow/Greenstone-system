@@ -8,13 +8,11 @@ import {
   createDeliveryBodySchema,
   listDeliveriesQuerySchema,
   deliveryIdParamsSchema,
+  setTransportBodySchema,
 } from './deliveries.validators.js';
 
 /**
- * Delivery routes (Phase 8A).
- *
- * PLANNED deliveries only — no dispatch, completion, cancellation, or
- * correction endpoints (those are 8C/8D/8E/8F).
+ * Delivery routes (Phase 8A/8B).
  */
 export function deliveriesRoutes(): Router {
   const router = Router();
@@ -41,6 +39,14 @@ export function deliveriesRoutes(): Router {
     requirePermission('delivery', 'create'),
     validate({ body: createDeliveryBodySchema }),
     deliveriesController.create,
+  );
+
+  router.patch(
+    '/:id/transport',
+    csrfProtection(),
+    requirePermission('delivery', 'create'),
+    validate({ params: deliveryIdParamsSchema, body: setTransportBodySchema }),
+    deliveriesController.setTransport,
   );
 
   return router;

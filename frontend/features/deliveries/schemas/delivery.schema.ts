@@ -32,3 +32,21 @@ export const deliveryFormSchema = z.object({
 
 export type DeliveryFormInput = z.input<typeof deliveryFormSchema>;
 export type DeliveryFormValues = z.output<typeof deliveryFormSchema>;
+
+// --- Phase 8B: Transport -----------------------------------------------
+
+export const transportFormSchema = z.object({
+  transportRate: z
+    .string()
+    .trim()
+    .min(1, 'Enter a transport rate.')
+    .regex(/^\d+(\.\d{1,2})?$/, 'Enter an amount with up to two decimal places.')
+    .refine((v) => Number(v) > 0, 'Rate must be greater than zero.'),
+  numberOfTrips: z.coerce
+    .number()
+    .int('Trips must be a whole number.')
+    .positive('Trips must be at least 1.')
+    .optional(),
+});
+
+export type TransportFormValues = z.output<typeof transportFormSchema>;

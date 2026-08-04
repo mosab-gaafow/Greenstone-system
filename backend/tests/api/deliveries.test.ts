@@ -662,4 +662,314 @@ describe('deliveries module', () => {
         .expect(404);
     });
   });
+
+  // =========================================================================
+  // Phase 8B — Transport
+  // =========================================================================
+
+  describe('PATCH /deliveries/:id/transport', () => {
+    async function seedPlannedDelivery() {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('Transport Block', 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('Transport Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-9001',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID',
+          totalAmount: '5000.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 200,
+              agreedUnitPrice: '25.00',
+              lineTotal: '5000.00',
+              remainingQuantity: 200,
+              allocatedQuantity: 200,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('Transport Driver');
+      const vehicleOwner = await seedVehicleOwner('Transport Owner');
+      const vehicle = await seedVehicle('KZZ 800Z', vehicleOwner.id);
+
+      const res = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 },
+          ],
+        })
+        .expect(201);
+
+      return { deliveryId: res.body.data.id as string, cookie: adminCookie, headers };
+    }
+
+    it('auto-calculates trips for single-product delivery', async () => {
+      const { deliveryId, headers } = await seedPlannedDelivery();
+
+      const res = await request(app)
+        .patch(`${DELIVERIES}/${deliveryId}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00' })
+        .expect(200);
+
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.numberOfTrips).toBe(1);
+      expect(res.body.data.totalTransportCost).toBe('8500.00');
+      expect(res.body.data.autoCalculated).toBe(true);
+    });
+
+    it('auto-calculates ceiling for trips', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('Ceiling Block', 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('Ceiling Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-9002',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID',
+          totalAmount: '7500.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 300,
+              agreedUnitPrice: '25.00',
+              lineTotal: '7500.00',
+              remainingQuantity: 300,
+              allocatedQuantity: 300,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('Ceiling Driver');
+      const vehicleOwner = await seedVehicleOwner('Ceiling Owner');
+      const vehicle = await seedVehicle('KZZ 700Z', vehicleOwner.id);
+
+      const delivery = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 150 },
+          ],
+        })
+        .expect(201);
+
+      const res = await request(app)
+        .patch(`${DELIVERIES}/${delivery.body.data.id}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00' })
+        .expect(200);
+
+      expect(res.body.data.numberOfTrips).toBe(2);
+      expect(res.body.data.totalTransportCost).toBe('17000.00');
+    });
+
+    it('rejects auto-calc when maxPiecesPerTruck is null', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await getTestPrisma().product.create({
+        data: {
+          name: 'No Capacity Block',
+          nameNormalized: 'no capacity block',
+          category: 'HOLLOW_BLOCK',
+          size: 'Test',
+          piecesPerPallet: 12,
+          maxPiecesPerTruck: null,
+          isActive: true,
+        },
+      });
+      await seedFinishedStock(product.id, 200);
+      const customer = await seedCustomer('NoCap Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-9003',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID',
+          totalAmount: '2500.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 100,
+              agreedUnitPrice: '25.00',
+              lineTotal: '2500.00',
+              remainingQuantity: 100,
+              allocatedQuantity: 100,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('NoCap Driver');
+      const vehicleOwner = await seedVehicleOwner('NoCap Owner');
+      const vehicle = await seedVehicle('KZZ 600Z', vehicleOwner.id);
+
+      const delivery = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 },
+          ],
+        })
+        .expect(201);
+
+      await request(app)
+        .patch(`${DELIVERIES}/${delivery.body.data.id}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00' })
+        .expect(422);
+    });
+
+    it('requires manual trips for mixed-product delivery', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product1 = await seedProduct('Mixed Block 1', 100);
+      const product2 = await seedProduct('Mixed Block 2', 100);
+      await seedFinishedStock(product1.id, 500);
+      await seedFinishedStock(product2.id, 500);
+      const customer = await seedCustomer('Mixed Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-9004',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID',
+          totalAmount: '5000.00',
+          items: {
+            create: [
+              {
+                productId: product1.id,
+                quantity: 100,
+                agreedUnitPrice: '25.00',
+                lineTotal: '2500.00',
+                remainingQuantity: 100,
+                allocatedQuantity: 100,
+                sortOrder: 1,
+              },
+              {
+                productId: product2.id,
+                quantity: 100,
+                agreedUnitPrice: '25.00',
+                lineTotal: '2500.00',
+                remainingQuantity: 100,
+                allocatedQuantity: 100,
+                sortOrder: 2,
+              },
+            ],
+          },
+        },
+        include: { items: { orderBy: { sortOrder: 'asc' } } },
+      });
+
+      const orderItem1 = order.items[0]!;
+      const orderItem2 = order.items[1]!;
+
+      const driver = await seedDriver('Mixed Driver');
+      const vehicleOwner = await seedVehicleOwner('Mixed Owner');
+      const vehicle = await seedVehicle('KZZ 500Z', vehicleOwner.id);
+
+      const delivery = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: orderItem1.id, productId: product1.id, plannedQuantity: 50 },
+            { orderItemId: orderItem2.id, productId: product2.id, plannedQuantity: 30 },
+          ],
+        })
+        .expect(201);
+
+      // Without numberOfTrips — should reject
+      await request(app)
+        .patch(`${DELIVERIES}/${delivery.body.data.id}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00' })
+        .expect(422);
+
+      // With numberOfTrips — should succeed
+      const res = await request(app)
+        .patch(`${DELIVERIES}/${delivery.body.data.id}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00', numberOfTrips: 3 })
+        .expect(200);
+
+      expect(res.body.data.numberOfTrips).toBe(3);
+      expect(res.body.data.totalTransportCost).toBe('25500.00');
+      expect(res.body.data.autoCalculated).toBe(false);
+    });
+
+    it('rejects transport on non-PLANNED delivery', async () => {
+      const { deliveryId, headers } = await seedPlannedDelivery();
+
+      await getTestPrisma().delivery.update({
+        where: { id: deliveryId },
+        data: { status: 'DISPATCHED' },
+      });
+
+      await request(app)
+        .patch(`${DELIVERIES}/${deliveryId}/transport`)
+        .set(headers)
+        .send({ transportRate: '8500.00' })
+        .expect(409);
+    });
+  });
 });

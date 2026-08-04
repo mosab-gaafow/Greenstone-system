@@ -3,12 +3,10 @@ import { getRequestContext } from '../../shared/auth/session.middleware.js';
 import { buildPaginationMeta, sendCreated, sendSuccess } from '../../shared/responses/api-response.js';
 import { getValidatedQuery } from '../../shared/validation/validate.js';
 import * as deliveriesService from './deliveries.service.js';
-import type { CreateDeliveryInput, ListDeliveriesFilters } from './deliveries.types.js';
+import type { CreateDeliveryInput, ListDeliveriesFilters, SetTransportInput } from './deliveries.types.js';
 
 /**
- * HTTP handling for deliveries (Phase 8A).
- *
- * Reads validated input, calls the service, returns the standard envelope.
+ * HTTP handling for deliveries (Phase 8A, 8B).
  */
 
 export async function list(_req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -40,6 +38,21 @@ export async function create(req: Request, res: Response, next: NextFunction): P
       res,
       await deliveriesService.createDelivery(
         req.body as CreateDeliveryInput,
+        getRequestContext(res),
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function setTransport(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await deliveriesService.setTransport(
+        req.params['id'] as string,
+        req.body as SetTransportInput,
         getRequestContext(res),
       ),
     );

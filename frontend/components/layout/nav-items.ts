@@ -84,7 +84,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Production', href: '/production', icon: Factory, available: true },
       { label: 'Curing', href: '/curing', icon: Layers, available: true },
-      { label: 'Stock', href: '/stock', icon: Boxes, available: false },
+      { label: 'Stock', href: '/stock', icon: Boxes, available: true },
       { label: 'Deliveries', href: '/deliveries', icon: Truck, available: true },
       { label: 'Drivers', href: '/drivers', icon: Users, available: true },
       { label: 'Vehicle owners', href: '/vehicle-owners', icon: Building2, available: true },

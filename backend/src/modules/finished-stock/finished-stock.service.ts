@@ -1,6 +1,7 @@
 import type { FinishedStockMovementType } from '../../generated/prisma/client.js';
 import {
   ensureBalance,
+  findAllStockBalances,
   findMovements,
   insertMovement,
   lockBalance,
@@ -18,6 +19,7 @@ import type {
   AdjustFinishedStockInput,
   FinishedStockBalanceDetail,
   FinishedStockMovementSummary,
+  ListAllStockResult,
   ListFinishedStockMovementsFilters,
   ListFinishedStockMovementsResult,
   SetOpeningFinishedStockInput,
@@ -39,6 +41,22 @@ import type {
  */
 
 const AUDIT_MODULE = 'finished-stock';
+
+/** Lists all stock balances with product names. Never cached. */
+export async function listAllStock(): Promise<ListAllStockResult> {
+  const rows = await findAllStockBalances();
+
+  return {
+    rows: rows.map((row) => ({
+      productId: row.productId,
+      productName: row.productName,
+      physicalQuantity: row.physicalQuantity,
+      reservedQuantity: row.reservedQuantity,
+      availableQuantity: row.availableQuantity,
+      updatedAt: row.updatedAt.toISOString(),
+    })),
+  };
+}
 
 export async function getStock(productId: string): Promise<FinishedStockBalanceDetail> {
   await productsService.getProduct(productId);
