@@ -2,6 +2,7 @@ import type {
   Delivery,
   DeliveryItem,
   Driver,
+  OrderPaymentArrangement,
   Prisma,
   Product,
   Vehicle,
@@ -26,7 +27,7 @@ export type DeliveryRow = Delivery & {
 };
 
 export type DeliveryDetailRow = Delivery & {
-  order: { orderNumber: string };
+  order: { orderNumber: string; paymentArrangement: OrderPaymentArrangement };
   customer: { name: string };
   driver: Driver;
   vehicle: Vehicle & { vehicleOwner: VehicleOwner };
@@ -73,7 +74,7 @@ export async function findDeliveries(
       take: filters.pageSize,
       orderBy: { [filters.sortBy]: filters.sortDirection },
       include: {
-        order: { select: { orderNumber: true } },
+        order: { select: { orderNumber: true, paymentArrangement: true } },
         customer: { select: { name: true } },
         driver: { select: { name: true } },
         vehicle: { select: { registrationNumber: true } },
@@ -93,7 +94,7 @@ export async function findDeliveryById(
   return client.delivery.findUnique({
     where: { id },
     include: {
-      order: { select: { orderNumber: true } },
+      order: { select: { orderNumber: true, paymentArrangement: true } },
       customer: { select: { name: true } },
       driver: true,
       vehicle: { include: { vehicleOwner: true } },
@@ -149,7 +150,7 @@ export async function insertDelivery(
       },
     },
     include: {
-      order: { select: { orderNumber: true } },
+      order: { select: { orderNumber: true, paymentArrangement: true } },
       customer: { select: { name: true } },
       driver: true,
       vehicle: { include: { vehicleOwner: true } },
@@ -326,6 +327,34 @@ export async function updateTransport(
       numberOfTrips: input.numberOfTrips,
       totalTransportCost: input.totalTransportCost,
       maxPiecesPerTruckSnapshot: input.maxPiecesPerTruckSnapshot ?? null,
+    },
+  });
+}
+
+/**
+ * Marks a delivery as DISPATCHED and zeroes reservedQuantity on all items.
+ * Phase 8C. Only succeeds if status is currently PLANNED.
+ */
+export async function dispatchDelivery(
+  tx: TransactionClient,
+  id: string,
+  input: {
+    dispatchedByUserId: string | null;
+    dispatchedAt: Date;
+  },
+): Promise<Delivery> {
+  return tx.delivery.update({
+    where: { id, status: 'PLANNED' },
+    data: {
+      status: 'DISPATCHED',
+      dispatchedByUserId: input.dispatchedByUserId,
+      dispatchedAt: input.dispatchedAt,
+      items: {
+        updateMany: {
+          where: {},
+          data: { reservedQuantity: 0 },
+        },
+      },
     },
   });
 }

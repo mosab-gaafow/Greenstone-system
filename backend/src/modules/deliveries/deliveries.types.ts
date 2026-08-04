@@ -131,3 +131,12 @@ export interface DeliveryTransportDetail {
   /** true when trips were auto-calculated from a single-product delivery. */
   autoCalculated: boolean;
 }
+
+// --- Phase 8C: Dispatch ----------------------------------------------------
+
+export interface DispatchResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DISPATCHED';
+  dispatchedAt: string;
+}

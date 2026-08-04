@@ -49,5 +49,13 @@ export function deliveriesRoutes(): Router {
     deliveriesController.setTransport,
   );
 
+  router.post(
+    '/:id/dispatch',
+    csrfProtection(),
+    requirePermission('delivery', 'dispatch'),
+    validate({ params: deliveryIdParamsSchema }),
+    deliveriesController.dispatch,
+  );
+
   return router;
 }

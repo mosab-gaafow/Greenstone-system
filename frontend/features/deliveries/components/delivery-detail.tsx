@@ -2,21 +2,24 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Calculator, Truck } from 'lucide-react';
+import { ArrowLeft, Calculator, Truck, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { useDelivery } from '../hooks/use-deliveries';
+import { useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
 import { DeliveryStatusBadge } from './delivery-status-badge';
 import { TransportDialog } from './transport-dialog';
 import { formatDate } from '@/lib/format';
+import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 
 export function DeliveryDetailView({ id }: { id: string }) {
   const query = useDelivery(id);
   const [transportOpen, setTransportOpen] = useState(false);
+  const [dispatchOpen, setDispatchOpen] = useState(false);
+  const dispatchMutation = useDispatchDelivery(id);
 
   if (query.isPending) {
     return (
@@ -79,6 +82,13 @@ export function DeliveryDetailView({ id }: { id: string }) {
           >
             <Calculator className="size-4" aria-hidden />
             {delivery.transportRate ? 'Update transport' : 'Set transport'}
+          </Button>
+          <Button
+            onClick={() => setDispatchOpen(true)}
+            disabled={dispatchMutation.isPending}
+          >
+            <Send className="size-4" aria-hidden />
+            Dispatch
           </Button>
         </div>
       )}
@@ -200,6 +210,21 @@ export function DeliveryDetailView({ id }: { id: string }) {
         currentRate={delivery.transportRate}
         currentTrips={delivery.numberOfTrips}
         currentCost={delivery.totalTransportCost}
+      />
+
+      <ConfirmDialog
+        open={dispatchOpen}
+        onOpenChange={setDispatchOpen}
+        title={`Dispatch ${delivery.deliveryNumber}?`}
+        description="Finished stock will be permanently reduced. This cannot be undone."
+        confirmLabel="Dispatch"
+        destructive
+        pending={dispatchMutation.isPending}
+        onConfirm={() => {
+          dispatchMutation.mutate(undefined, {
+            onSuccess: () => setDispatchOpen(false),
+          });
+        }}
       />
     </div>
   );

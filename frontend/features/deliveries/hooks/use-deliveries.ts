@@ -51,6 +51,23 @@ export function useCreateDelivery() {
   });
 }
 
+export function useDispatchDelivery(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => deliveriesApi.dispatchDelivery(id),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: deliveryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: ['stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(`${result.deliveryNumber} dispatched.`);
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'The delivery could not be dispatched.'));
+    },
+  });
+}
+
 export function useSetTransport(id: string) {
   const queryClient = useQueryClient();
 

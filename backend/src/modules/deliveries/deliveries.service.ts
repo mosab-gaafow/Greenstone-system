@@ -4,6 +4,7 @@ import {
   findDeliveryById,
   hasActiveDeliveriesForCustomer,
   getReservedStockProductIdsForCustomer,
+  dispatchDelivery,
   insertDelivery,
   lockOrderItems,
   lockStockBalances,
@@ -35,13 +36,14 @@ import * as vehiclesService from '../vehicles/vehicles.service.js';
 import * as vehicleOwnersService from '../vehicle-owners/vehicle-owners.service.js';
 import * as finishedStockService from '../finished-stock/finished-stock.service.js';
 import * as customerCreditService from '../customer-credit/customer-credit.service.js';
-import { ensureBalance, lockBalance } from '../finished-stock/finished-stock.repository.js';
+import { ensureBalance, insertMovement, lockBalance, setBalanceQuantities } from '../finished-stock/finished-stock.repository.js';
 import { validateAddressForDelivery } from './deliveries.repository.js';
 import type {
   CreateDeliveryInput,
   DeliveryDetail,
   DeliverySummary,
   DeliveryTransportDetail,
+  DispatchResult,
   ListDeliveriesFilters,
   ListDeliveriesResult,
   SetTransportInput,
@@ -426,6 +428,117 @@ export async function setTransport(
     totalTransportCost: totalTransportCost.toFixed(2),
     maxPiecesPerTruckSnapshot,
     autoCalculated,
+  };
+}
+
+/**
+ * Dispatches a PLANNED delivery (Phase 8C).
+ *
+ * Reduces physicalQuantity and reservedQuantity atomically, writes one
+ * DELIVERY_DISPATCH movement per item, and records dispatchedByUserId/
+ * dispatchedAt. PREPAID orders are blocked until Phase 9 — until then,
+ * the dispatch is rejected with a clear business-rule error.
+ *
+ * Does NOT touch OrderItem.deliveredQuantity or Order.status — that is
+ * Phase 8D (DELIVERED).
+ */
+export async function dispatch(
+  id: string,
+  context: RequestContext,
+): Promise<DispatchResult> {
+  const delivery = await requireDelivery(id);
+
+  if (delivery.status !== 'PLANNED') {
+    throw new InvalidDocumentStatusError(
+      `Only PLANNED deliveries can be dispatched. This delivery is ${delivery.status}.`,
+    );
+  }
+
+  // PREPAID block — deliberate, temporary (handoff §7)
+  if (delivery.order.paymentArrangement === 'PREPAID') {
+    throw new BusinessRuleViolationError(
+      'PREPAID deliveries cannot be dispatched until an approved Customer Payment confirms full payment. ' +
+        'This restriction will be lifted in Phase 9. Use a CREDIT order for testing.',
+    );
+  }
+
+  const now = new Date();
+
+  const updated = await runInTransaction(async (tx: TransactionClient) => {
+    // Lock all affected stock balances
+    const productIds = [...new Set(delivery.items.map((item) => item.productId))];
+    for (const productId of productIds.sort()) {
+      await lockBalance(tx, productId);
+    }
+
+    // Reduce physicalQuantity and reservedQuantity, write movement per item
+    for (const item of delivery.items) {
+      const balance = await tx.finishedStockBalance.findUnique({
+        where: { productId: item.productId },
+      });
+      if (!balance) {
+        throw new Error(`No stock balance for product ${item.productId}.`);
+      }
+
+      const newPhysical = balance.physicalQuantity - item.plannedQuantity;
+      const newReserved = balance.reservedQuantity - item.plannedQuantity;
+      const newAvailable = newPhysical - newReserved;
+
+      await setBalanceQuantities(tx, item.productId, newPhysical, newAvailable);
+
+      // Also decrement reservedQuantity directly since setBalanceQuantities doesn't touch it
+      await tx.finishedStockBalance.update({
+        where: { productId: item.productId },
+        data: { reservedQuantity: newReserved, version: { increment: 1 } },
+      });
+
+      await insertMovement(tx, {
+        productId: item.productId,
+        movementType: 'DELIVERY_DISPATCH',
+        quantity: -item.plannedQuantity,
+        balanceAfter: newPhysical,
+        relatedEntityId: id,
+        createdByUserId: context.user.id,
+      });
+    }
+
+    // Mark delivery as DISPATCHED
+    const result = await dispatchDelivery(tx, id, {
+      dispatchedByUserId: context.user.id,
+      dispatchedAt: now,
+    });
+
+    if (!result) {
+      throw new InvalidDocumentStatusError(
+        'Delivery could not be dispatched — it may no longer be PLANNED.',
+      );
+    }
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'DISPATCH_DELIVERY',
+      module: AUDIT_MODULE,
+      entityType: 'Delivery',
+      entityId: id,
+      documentNumber: delivery.deliveryNumber,
+      updatedData: {
+        status: 'DISPATCHED',
+        dispatchedAt: now.toISOString(),
+        itemCount: delivery.items.length,
+        totalDispatched: delivery.items.reduce((s, i) => s + i.plannedQuantity, 0),
+      },
+    });
+
+    return result;
+  });
+
+  await invalidateCache();
+
+  return {
+    id: updated.id,
+    deliveryNumber: updated.deliveryNumber,
+    status: 'DISPATCHED',
+    dispatchedAt: now.toISOString(),
   };
 }
 

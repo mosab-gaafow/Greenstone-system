@@ -56,6 +56,18 @@ export interface TransportResult {
   autoCalculated: boolean;
 }
 
+export interface DispatchResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DISPATCHED';
+  dispatchedAt: string;
+}
+
+export async function dispatchDelivery(id: string): Promise<DispatchResult> {
+  const { data } = await api.post<DispatchResult>(`/deliveries/${id}/dispatch`);
+  return data;
+}
+
 export async function setTransport(
   id: string,
   values: TransportFormValues,

@@ -60,3 +60,14 @@ export async function setTransport(req: Request, res: Response, next: NextFuncti
     next(error);
   }
 }
+
+export async function dispatch(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await deliveriesService.dispatch(req.params['id'] as string, getRequestContext(res)),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
