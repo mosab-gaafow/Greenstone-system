@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { useCompleteDelivery, useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
+import { useCancelDelivery, useCompleteDelivery, useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
 import { DeliveryStatusBadge } from './delivery-status-badge';
 import { TransportDialog } from './transport-dialog';
 import { formatDate } from '@/lib/format';
@@ -21,6 +21,10 @@ export function DeliveryDetailView({ id }: { id: string }) {
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const dispatchMutation = useDispatchDelivery(id);
   const completeMutation = useCompleteDelivery(id);
+  const cancelMutation = useCancelDelivery(id);
+  const [cancelOpen, setCancelOpen] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
 
   if (query.isPending) {
     return (
@@ -90,6 +94,12 @@ export function DeliveryDetailView({ id }: { id: string }) {
           >
             <Send className="size-4" aria-hidden />
             Dispatch
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => { setCancelOpen(true); setCancelReason(''); setCancelReasonError(null); }}
+          >
+            Cancel delivery
           </Button>
         </div>
       )}
@@ -249,6 +259,34 @@ export function DeliveryDetailView({ id }: { id: string }) {
           });
         }}
       />
+
+      <ConfirmDialog
+        open={cancelOpen}
+        onOpenChange={(open) => {
+          if (!open) { setCancelOpen(false); setCancelReason(''); setCancelReasonError(null); }
+        }}
+        title={`Cancel ${delivery.deliveryNumber}?`}
+        description="Reserved stock will be released. This cannot be undone."
+        confirmLabel="Cancel delivery"
+        destructive
+        pending={cancelMutation.isPending}
+        onConfirm={() => {
+          const trimmed = cancelReason.trim();
+          if (!trimmed) { setCancelReasonError('A reason is required.'); return; }
+          cancelMutation.mutate(trimmed, {
+            onSuccess: () => { setCancelOpen(false); setCancelReason(''); },
+          });
+        }}
+      >
+        <textarea
+          className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+          rows={3}
+          placeholder="Reason for cancellation (required)"
+          value={cancelReason}
+          onChange={(e) => { setCancelReason(e.target.value); if (cancelReasonError) setCancelReasonError(null); }}
+        />
+        {cancelReasonError && <p className="text-destructive text-sm" role="alert">{cancelReasonError}</p>}
+      </ConfirmDialog>
     </div>
   );
 }

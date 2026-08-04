@@ -1545,3 +1545,71 @@ describe('deliveries module', () => {
     });
   });
 });
+
+  // =========================================================================
+  // Phase 8E — Cancellation
+  // =========================================================================
+
+  describe('POST /deliveries/:id/cancel', () => {
+    async function seedCancelDelivery() {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+      const product = await seedProduct('CancelBlock-' + Math.random().toString(36).slice(2,8), 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('CancelCust' + Math.random().toString(36).slice(2,6));
+      const address = await seedAddress(customer.id, 'Site');
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: `ORD-2026-${String(9400 + Math.floor(Math.random() * 100))}`,
+          customerId: customer.id, customerAddressId: address.id,
+          addressLabel: address.label, addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT', totalAmount: '5000.00',
+          items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } },
+        },
+        include: { items: true },
+      });
+      const driver = await seedDriver('CancelDrv' + Math.random().toString(36).slice(2,6));
+      const vo = await seedVehicleOwner('CancelVO' + Math.random().toString(36).slice(2,6));
+      const vehicle = await seedVehicle('KZZ020' + Math.random().toString(36).slice(2,5), vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(headers).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id,
+        vehicleId: vehicle.id, deliveryDate: new Date().toISOString(),
+        items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 }],
+      }).expect(201);
+      return { deliveryId: delivery.body.data.id as string, productId: product.id, headers, adminCookie };
+    }
+
+    it('cancels PLANNED delivery and releases reserved stock', async () => {
+      const { deliveryId, productId, headers, adminCookie } = await seedCancelDelivery();
+      const before = await getTestPrisma().finishedStockBalance.findUnique({ where: { productId } });
+      expect(before!.reservedQuantity).toBe(50);
+
+      const res = await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`)
+        .set(headers).send({ reason: 'Customer requested cancellation' }).expect(200);
+      expect(res.body.data.status).toBe('CANCELLED');
+
+      const after = await getTestPrisma().finishedStockBalance.findUnique({ where: { productId } });
+      expect(after!.reservedQuantity).toBe(0);
+      expect(after!.physicalQuantity).toBe(before!.physicalQuantity);
+
+      const updated = await request(app).get(`${DELIVERIES}/${deliveryId}`).set('Cookie', adminCookie).expect(200);
+      expect(updated.body.data.status).toBe('CANCELLED');
+    });
+
+    it('rejects cancellation without a reason', async () => {
+      const { deliveryId, headers } = await seedCancelDelivery();
+      await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({}).expect(422);
+    });
+
+    it('rejects cancelling a DISPATCHED delivery', async () => {
+      const { deliveryId, headers } = await seedCancelDelivery();
+      await getTestPrisma().delivery.update({ where: { id: deliveryId }, data: { status: 'DISPATCHED' } });
+      await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({ reason: 'x' }).expect(409);
+    });
+
+    it('rejects double cancellation', async () => {
+      const { deliveryId, headers } = await seedCancelDelivery();
+      await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({ reason: 'a' }).expect(200);
+      await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({ reason: 'b' }).expect(409);
+    });
+  });

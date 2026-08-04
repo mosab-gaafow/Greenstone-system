@@ -80,6 +80,22 @@ export interface CompleteDeliveryResult {
   orderStatus: string;
 }
 
+export interface CancelDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'CANCELLED';
+  cancelledAt: string;
+  reason: string;
+}
+
+export async function cancelDelivery(
+  id: string,
+  reason: string,
+): Promise<CancelDeliveryResult> {
+  const { data } = await api.post<CancelDeliveryResult>(`/deliveries/${id}/cancel`, { reason });
+  return data;
+}
+
 export async function completeDelivery(
   id: string,
   input: CompleteDeliveryInput,

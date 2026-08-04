@@ -319,6 +319,36 @@ export async function isCustomerActive(
 }
 
 /**
+ * Cancels a PLANNED delivery. Phase 8E.
+ * Sets status, reason, and zeroes reservedQuantity on all items.
+ */
+export async function cancelDelivery(
+  tx: TransactionClient,
+  id: string,
+  input: {
+    cancelledReason: string;
+    cancelledByUserId: string | null;
+    cancelledAt: Date;
+  },
+): Promise<Delivery> {
+  return tx.delivery.update({
+    where: { id, status: 'PLANNED' },
+    data: {
+      status: 'CANCELLED',
+      cancelledReason: input.cancelledReason,
+      cancelledByUserId: input.cancelledByUserId,
+      cancelledAt: input.cancelledAt,
+      items: {
+        updateMany: {
+          where: {},
+          data: { reservedQuantity: 0 },
+        },
+      },
+    },
+  });
+}
+
+/**
  * Sets transport fields on a PLANNED delivery. Phase 8B.
  * Called inside the setTransport transaction.
  */

@@ -160,3 +160,17 @@ export interface CompleteDeliveryResult {
   completedAt: string;
   orderStatus: string;
 }
+
+// --- Phase 8E: Cancellation -------------------------------------------------
+
+export interface CancelDeliveryInput {
+  reason: string;
+}
+
+export interface CancelDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'CANCELLED';
+  cancelledAt: string;
+  reason: string;
+}

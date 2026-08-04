@@ -5,6 +5,7 @@ import { csrfProtection } from '../../shared/middleware/csrf.js';
 import { validate } from '../../shared/validation/validate.js';
 import * as deliveriesController from './deliveries.controller.js';
 import {
+  cancelDeliveryBodySchema,
   completeDeliveryBodySchema,
   createDeliveryBodySchema,
   listDeliveriesQuerySchema,
@@ -64,6 +65,14 @@ export function deliveriesRoutes(): Router {
     requirePermission('delivery', 'complete'),
     validate({ params: deliveryIdParamsSchema, body: completeDeliveryBodySchema }),
     deliveriesController.complete,
+  );
+
+  router.post(
+    '/:id/cancel',
+    csrfProtection(),
+    requirePermission('delivery', 'cancel'),
+    validate({ params: deliveryIdParamsSchema, body: cancelDeliveryBodySchema }),
+    deliveriesController.cancel,
   );
 
   return router;

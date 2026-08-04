@@ -73,6 +73,12 @@ export const completeDeliveryBodySchema = z
   })
   .strict();
 
+export const cancelDeliveryBodySchema = z
+  .object({
+    reason: z.string().trim().min(1, 'A reason is required to cancel a delivery.').max(500),
+  })
+  .strict();
+
 export const setTransportBodySchema = z
   .object({
     transportRate: moneySchema.refine((v) => Number(v) > 0, {

@@ -1,5 +1,6 @@
 import { Prisma, type CreditStatus, type OrderPaymentArrangement } from '../../generated/prisma/client.js';
 import {
+  cancelDelivery,
   findDeliveries,
   findDeliveryById,
   hasActiveDeliveriesForCustomer,
@@ -41,6 +42,8 @@ import * as brokenProductsService from '../broken-products/broken-products.servi
 import { ensureBalance, insertMovement, lockBalance, setBalanceQuantities } from '../finished-stock/finished-stock.repository.js';
 import { validateAddressForDelivery } from './deliveries.repository.js';
 import type {
+  CancelDeliveryInput,
+  CancelDeliveryResult,
   CompleteDeliveryInput,
   CompleteDeliveryResult,
   CreateDeliveryInput,
@@ -566,6 +569,93 @@ export async function dispatch(
     deliveryNumber: updated.deliveryNumber,
     status: 'DISPATCHED',
     dispatchedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Cancels a PLANNED delivery (Phase 8E).
+ *
+ * Releases all reserved stock: decrements FinishedStockBalance.reservedQuantity,
+ * increments availableQuantity, zeroes DeliveryItem.reservedQuantity.
+ * physicalQuantity is NOT changed. Only from PLANNED.
+ */
+export async function cancel(
+  id: string,
+  input: CancelDeliveryInput,
+  context: RequestContext,
+): Promise<CancelDeliveryResult> {
+  const delivery = await requireDelivery(id);
+
+  if (delivery.status !== 'PLANNED') {
+    throw new InvalidDocumentStatusError(
+      `Only PLANNED deliveries can be cancelled. This delivery is ${delivery.status}.`,
+    );
+  }
+
+  const now = new Date();
+  const reason = input.reason.trim();
+
+  await runInTransaction(async (tx: TransactionClient) => {
+    // Release reserved stock per item
+    const productIds = [...new Set(delivery.items.map((i) => i.productId))];
+    for (const productId of productIds.sort()) {
+      await lockBalance(tx, productId);
+
+      const totalReserved = delivery.items
+        .filter((i) => i.productId === productId)
+        .reduce((s, i) => s + i.plannedQuantity, 0);
+
+      if (totalReserved > 0) {
+        await tx.finishedStockBalance.update({
+          where: { productId },
+          data: {
+            reservedQuantity: { decrement: totalReserved },
+            availableQuantity: { increment: totalReserved },
+            version: { increment: 1 },
+          },
+        });
+      }
+    }
+
+    const result = await cancelDelivery(tx, id, {
+      cancelledReason: reason,
+      cancelledByUserId: context.user.id,
+      cancelledAt: now,
+    });
+
+    if (!result) {
+      throw new InvalidDocumentStatusError(
+        'Delivery could not be cancelled — it may no longer be PLANNED.',
+      );
+    }
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'CANCEL_DELIVERY',
+      module: AUDIT_MODULE,
+      entityType: 'Delivery',
+      entityId: id,
+      documentNumber: delivery.deliveryNumber,
+      reason,
+      previousData: { status: 'PLANNED' },
+      updatedData: {
+        status: 'CANCELLED',
+        cancelledReason: reason,
+        cancelledAt: now.toISOString(),
+        releasedQuantity: delivery.items.reduce((s, i) => s + i.plannedQuantity, 0),
+        itemCount: delivery.items.length,
+      },
+    });
+  });
+
+  await invalidateCache();
+
+  return {
+    id: delivery.id,
+    deliveryNumber: delivery.deliveryNumber,
+    status: 'CANCELLED',
+    cancelledAt: now.toISOString(),
+    reason,
   };
 }
 

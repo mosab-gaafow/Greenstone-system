@@ -51,6 +51,23 @@ export function useCreateDelivery() {
   });
 }
 
+export function useCancelDelivery(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (reason: string) => deliveriesApi.cancelDelivery(id, reason),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: deliveryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: ['stock'] });
+      await queryClient.invalidateQueries({ queryKey: ['products'] });
+      toast.success(`${result.deliveryNumber} cancelled.`);
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'The delivery could not be cancelled.'));
+    },
+  });
+}
+
 export function useCompleteDelivery(id: string) {
   const queryClient = useQueryClient();
 
