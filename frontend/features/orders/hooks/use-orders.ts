@@ -32,6 +32,14 @@ function errorMessage(error: unknown, fallback: string): string {
   return error instanceof ApiError ? error.message : fallback;
 }
 
+export function useOrderDeliveryAvailability(id: string) {
+  return useQuery({
+    queryKey: [...orderKeys.detail(id), 'delivery-availability'],
+    queryFn: () => ordersApi.fetchOrderDeliveryAvailability(id),
+    enabled: !!id,
+  });
+}
+
 export function useCreateOrder() {
   const queryClient = useQueryClient();
 

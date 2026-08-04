@@ -9,19 +9,23 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { useCancelDelivery, useCompleteDelivery, useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
+import { useCancelDelivery, useCompleteDelivery, useCorrectDelivery, useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
 import { DeliveryStatusBadge } from './delivery-status-badge';
 import { TransportDialog } from './transport-dialog';
 import { formatDate } from '@/lib/format';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
+import { isAdministrator } from '@/lib/permissions';
 
 export function DeliveryDetailView({ id }: { id: string }) {
   const query = useDelivery(id);
+  const { user } = useCurrentUser();
   const [transportOpen, setTransportOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const dispatchMutation = useDispatchDelivery(id);
   const completeMutation = useCompleteDelivery(id);
   const cancelMutation = useCancelDelivery(id);
+  const correctMutation = useCorrectDelivery(id);
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
@@ -108,7 +112,6 @@ export function DeliveryDetailView({ id }: { id: string }) {
         <div className="flex flex-wrap gap-2">
           <Button
             onClick={() => {
-              // Build completion input: each item gets dispatched = delivered, broken = 0 by default
               const input = {
                 items: delivery.items.map((item) => ({
                   orderItemId: item.orderItemId,
@@ -123,6 +126,25 @@ export function DeliveryDetailView({ id }: { id: string }) {
             <Send className="size-4" aria-hidden />
             {completeMutation.isPending ? 'Completing…' : 'Complete delivery'}
           </Button>
+          {isAdministrator(user) && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const reason = prompt('Reason for correction:');
+                if (!reason?.trim()) return;
+                correctMutation.mutate({
+                  reason: reason.trim(),
+                  items: delivery.items.map((item) => ({
+                    orderItemId: item.orderItemId,
+                    dispatchedQuantity: item.dispatchedQuantity,
+                  })),
+                });
+              }}
+              disabled={correctMutation.isPending}
+            >
+              Correct
+            </Button>
+          )}
         </div>
       )}
 

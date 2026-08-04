@@ -32,6 +32,13 @@ export function ordersRoutes(): Router {
   );
 
   router.get(
+    '/:id/delivery-availability',
+    requirePermission('order', 'read'),
+    validate({ params: orderIdParamsSchema }),
+    ordersController.deliveryAvailability,
+  );
+
+  router.get(
     '/:id',
     requirePermission('order', 'read'),
     validate({ params: orderIdParamsSchema }),

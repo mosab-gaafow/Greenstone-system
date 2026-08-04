@@ -621,60 +621,61 @@ describe('deliveries module', () => {
         .expect(422);
     });
 
-    it('rejects when allocatedQuantity is 0 despite having stock', async () => {
+    it('succeeds when allocated is 0 but stock is available (stock-first)', async () => {
       const { cookie: adminCookie } = await seedAdmin();
       const headers = await csrfHeaders(adminCookie);
 
-      const product = await seedProduct('AllocZero Block', 100);
-      await seedFinishedStock(product.id, 50); // physical stock exists
-      const customer = await seedCustomer('AllocZero Customer');
+      const product = await seedProduct('StockFirst Block', 100);
+      await seedFinishedStock(product.id, 50);
+      const customer = await seedCustomer('StockFirst Customer');
       const address = await seedAddress(customer.id, 'Main Site');
 
       const order = await getTestPrisma().order.create({
         data: {
           orderNumber: 'ORD-2026-8011',
-          customerId: customer.id,
-          customerAddressId: address.id,
-          addressLabel: address.label,
-          addressLine: address.addressLine,
-          paymentArrangement: 'CREDIT',
-          totalAmount: '2500.00',
-          items: {
-            create: {
-              productId: product.id,
-              quantity: 1000,
-              agreedUnitPrice: '2.50',
-              lineTotal: '2500.00',
-              remainingQuantity: 1000,
-              allocatedQuantity: 0, // nothing allocated yet
-              producedQuantity: 804,
-              sortOrder: 1,
-            },
-          },
+          customerId: customer.id, customerAddressId: address.id,
+          addressLabel: address.label, addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID', totalAmount: '20.00',
+          items: { create: { productId: product.id, quantity: 100, agreedUnitPrice: '0.20', lineTotal: '20.00', remainingQuantity: 100, allocatedQuantity: 0, sortOrder: 1 } },
         },
         include: { items: true },
       });
 
-      const driver = await seedDriver('AllocZero Driver');
-      const vehicleOwner = await seedVehicleOwner('AllocZero Owner');
-      const vehicle = await seedVehicle('KZZ 880Z', vehicleOwner.id);
+      const driver = await seedDriver('SF Driver');
+      const vo = await seedVehicleOwner('SF Owner');
+      const vehicle = await seedVehicle('KZZ 880Z', vo.id);
 
-      const res = await request(app)
-        .post(DELIVERIES)
-        .set(headers)
-        .send({
-          orderId: order.id,
-          customerAddressId: address.id,
-          driverId: driver.id,
-          vehicleId: vehicle.id,
-          deliveryDate: new Date().toISOString(),
-          items: [
-            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 8 },
-          ],
-        })
-        .expect(422);
+      await request(app).post(DELIVERIES).set(headers).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id,
+        vehicleId: vehicle.id, deliveryDate: new Date().toISOString(),
+        items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 8 }],
+      }).expect(201);
+    });
 
-      expect(res.body.error.message).toContain('allocated');
+    it('rejects when stock is insufficient even with remaining quantity', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+      const product = await seedProduct('LowStock Block', 100);
+      await seedFinishedStock(product.id, 5);
+      const customer = await seedCustomer('LowStock Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-8015', customerId: customer.id, customerAddressId: address.id,
+          addressLabel: address.label, addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID', totalAmount: '200.00',
+          items: { create: { productId: product.id, quantity: 1000, agreedUnitPrice: '0.20', lineTotal: '200.00', remainingQuantity: 1000, allocatedQuantity: 0, sortOrder: 1 } },
+        },
+        include: { items: true },
+      });
+      const driver = await seedDriver('LS Driver');
+      const vo = await seedVehicleOwner('LS Owner');
+      const vehicle = await seedVehicle('KZZ 870Z', vo.id);
+      await request(app).post(DELIVERIES).set(headers).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id,
+        vehicleId: vehicle.id, deliveryDate: new Date().toISOString(),
+        items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 10 }],
+      }).expect(422);
     });
 
     it('succeeds when allocated > 0 and stock covers the quantity', async () => {
@@ -1611,5 +1612,95 @@ describe('deliveries module', () => {
       const { deliveryId, headers } = await seedCancelDelivery();
       await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({ reason: 'a' }).expect(200);
       await request(app).post(`${DELIVERIES}/${deliveryId}/cancel`).set(headers).send({ reason: 'b' }).expect(409);
+    });
+  });
+
+  // =========================================================================
+  // Phase 8F — Correction
+  // =========================================================================
+
+  describe('POST /deliveries/:id/correct', () => {
+    async function seedDispatchedForCorrection() {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+      const product = await seedProduct('Correct' + Math.random().toString(36).slice(2,6), 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('Correct' + Math.random().toString(36).slice(2,6));
+      const address = await seedAddress(customer.id, 'Site');
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: `ORD-2026-${String(9500 + Math.floor(Math.random() * 100))}`,
+          customerId: customer.id, customerAddressId: address.id,
+          addressLabel: address.label, addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT', totalAmount: '5000.00',
+          items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } },
+        },
+        include: { items: true },
+      });
+      const driver = await seedDriver('Correct' + Math.random().toString(36).slice(2,6));
+      const vo = await seedVehicleOwner('Correct' + Math.random().toString(36).slice(2,6));
+      const vehicle = await seedVehicle('CR' + Math.random().toString(36).slice(2,5).toUpperCase(), vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(headers).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id,
+        vehicleId: vehicle.id, deliveryDate: new Date().toISOString(),
+        items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 100 }],
+      }).expect(201);
+      await request(app).post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`).set(headers).expect(200);
+      return { deliveryId: delivery.body.data.id as string, orderItemId: order.items[0]!.id, productId: product.id, headers };
+    }
+
+    it('corrects dispatch quantity down and restores stock', async () => {
+      const { deliveryId, orderItemId, productId, headers } = await seedDispatchedForCorrection();
+      const before = await getTestPrisma().finishedStockBalance.findUnique({ where: { productId } });
+
+      const res = await request(app).post(`${DELIVERIES}/${deliveryId}/correct`)
+        .set(headers).send({ reason: 'Dispatched 100, should be 80', items: [{ orderItemId, dispatchedQuantity: 80 }] })
+        .expect(200);
+      expect(res.body.data.status).toBe('DISPATCHED');
+
+      const after = await getTestPrisma().finishedStockBalance.findUnique({ where: { productId } });
+      expect(after!.physicalQuantity).toBe(before!.physicalQuantity + 20); // returned 20
+
+      const movements = await getTestPrisma().finishedStockMovement.findMany({
+        where: { productId, movementType: 'CORRECTION' },
+      });
+      expect(movements).toHaveLength(1);
+      expect(movements[0]!.quantity).toBe(20);
+    });
+
+    it('corrects dispatch quantity up and reduces stock further', async () => {
+      const { deliveryId, orderItemId, headers } = await seedDispatchedForCorrection();
+      await request(app).post(`${DELIVERIES}/${deliveryId}/correct`)
+        .set(headers).send({ reason: 'Should be 120', items: [{ orderItemId, dispatchedQuantity: 120 }] })
+        .expect(200);
+    });
+
+    it('rejects correction on PLANNED delivery', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+      const product = await seedProduct('CorrPlan' + Math.random().toString(36).slice(2,6), 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('CorrPlan' + Math.random().toString(36).slice(2,6));
+      const address = await seedAddress(customer.id, 'Site');
+      const order = await getTestPrisma().order.create({
+        data: { orderNumber: `ORD-2026-${String(9600 + Math.floor(Math.random() * 100))}`, customerId: customer.id, customerAddressId: address.id, addressLabel: address.label, addressLine: address.addressLine, paymentArrangement: 'CREDIT', totalAmount: '5000.00', items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } } },
+        include: { items: true },
+      });
+      const driver = await seedDriver('CorrPlan' + Math.random().toString(36).slice(2,6));
+      const vo = await seedVehicleOwner('CorrPlan' + Math.random().toString(36).slice(2,6));
+      const vehicle = await seedVehicle('CP' + Math.random().toString(36).slice(2,5).toUpperCase(), vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(headers).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id, vehicleId: vehicle.id, deliveryDate: new Date().toISOString(), items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 }],
+      }).expect(201);
+      await request(app).post(`${DELIVERIES}/${delivery.body.data.id}/correct`)
+        .set(headers).send({ reason: 'x', items: [{ orderItemId: order.items[0]!.id, dispatchedQuantity: 10 }] })
+        .expect(409);
+    });
+
+    it('rejects correction without a reason', async () => {
+      const { deliveryId, orderItemId, headers } = await seedDispatchedForCorrection();
+      await request(app).post(`${DELIVERIES}/${deliveryId}/correct`)
+        .set(headers).send({ items: [{ orderItemId, dispatchedQuantity: 10 }] })
+        .expect(422);
     });
   });

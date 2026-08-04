@@ -7,6 +7,7 @@ import * as deliveriesController from './deliveries.controller.js';
 import {
   cancelDeliveryBodySchema,
   completeDeliveryBodySchema,
+  correctDeliveryBodySchema,
   createDeliveryBodySchema,
   listDeliveriesQuerySchema,
   deliveryIdParamsSchema,
@@ -73,6 +74,14 @@ export function deliveriesRoutes(): Router {
     requirePermission('delivery', 'cancel'),
     validate({ params: deliveryIdParamsSchema, body: cancelDeliveryBodySchema }),
     deliveriesController.cancel,
+  );
+
+  router.post(
+    '/:id/correct',
+    csrfProtection(),
+    requirePermission('delivery', 'correct'),
+    validate({ params: deliveryIdParamsSchema, body: correctDeliveryBodySchema }),
+    deliveriesController.correct,
   );
 
   return router;

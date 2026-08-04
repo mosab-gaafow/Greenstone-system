@@ -59,3 +59,15 @@ export async function cancel(req: Request, res: Response, next: NextFunction): P
     next(error);
   }
 }
+
+export async function deliveryAvailability(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    sendSuccess(res, await ordersService.getDeliveryAvailability(req.params['id'] as string));
+  } catch (error) {
+    next(error);
+  }
+}

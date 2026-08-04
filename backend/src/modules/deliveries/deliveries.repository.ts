@@ -349,6 +349,37 @@ export async function cancelDelivery(
 }
 
 /**
+ * Updates dispatchedQuantity on delivery items. Phase 8F.
+ * Only succeeds if delivery status is DISPATCHED.
+ */
+export async function correctDeliveryItems(
+  tx: TransactionClient,
+  deliveryId: string,
+  items: { orderItemId: string; dispatchedQuantity: number }[],
+): Promise<void> {
+  for (const item of items) {
+    await tx.deliveryItem.updateMany({
+      where: { deliveryId, orderItemId: item.orderItemId },
+      data: { dispatchedQuantity: item.dispatchedQuantity },
+    });
+  }
+}
+
+/**
+ * Sets the correctionReason on a delivery. Phase 8F.
+ */
+export async function setCorrectionReason(
+  tx: TransactionClient,
+  id: string,
+  reason: string,
+): Promise<void> {
+  await tx.delivery.update({
+    where: { id },
+    data: { correctionReason: reason },
+  });
+}
+
+/**
  * Sets transport fields on a PLANNED delivery. Phase 8B.
  * Called inside the setTransport transaction.
  */

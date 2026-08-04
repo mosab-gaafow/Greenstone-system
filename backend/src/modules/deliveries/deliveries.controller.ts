@@ -3,7 +3,7 @@ import { getRequestContext } from '../../shared/auth/session.middleware.js';
 import { buildPaginationMeta, sendCreated, sendSuccess } from '../../shared/responses/api-response.js';
 import { getValidatedQuery } from '../../shared/validation/validate.js';
 import * as deliveriesService from './deliveries.service.js';
-import type { CancelDeliveryInput, CompleteDeliveryInput, CreateDeliveryInput, ListDeliveriesFilters, SetTransportInput } from './deliveries.types.js';
+import type { CancelDeliveryInput, CompleteDeliveryInput, CorrectDeliveryInput, CreateDeliveryInput, ListDeliveriesFilters, SetTransportInput } from './deliveries.types.js';
 
 /**
  * HTTP handling for deliveries (Phase 8A, 8B).
@@ -94,6 +94,21 @@ export async function cancel(req: Request, res: Response, next: NextFunction): P
       await deliveriesService.cancel(
         req.params['id'] as string,
         req.body as CancelDeliveryInput,
+        getRequestContext(res),
+      ),
+    );
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function correct(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    sendSuccess(
+      res,
+      await deliveriesService.correct(
+        req.params['id'] as string,
+        req.body as CorrectDeliveryInput,
         getRequestContext(res),
       ),
     );

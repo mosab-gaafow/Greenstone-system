@@ -34,10 +34,13 @@ import {
 } from '../../shared/errors/app-error.js';
 import * as customersService from '../customers/customers.service.js';
 import * as productsService from '../products/products.service.js';
+import { sumCommittedQuantities } from '../deliveries/deliveries.repository.js';
+import { findAllStockBalances } from '../finished-stock/finished-stock.repository.js';
 import * as customerCreditService from '../customer-credit/customer-credit.service.js';
 import type {
   CancelOrderInput,
   CreateOrderInput,
+  DeliveryAvailabilityResult,
   ListOrdersFilters,
   ListOrdersResult,
   OrderDetail,
@@ -76,6 +79,39 @@ const CANCELLABLE_STATUSES: OrderStatus[] = [
 interface OverridePlan {
   previousCreditStatus: CreditStatus;
   reason: string;
+}
+
+/** Returns per-item delivery availability for an order (Phase 8 stock-first). */
+export async function getDeliveryAvailability(
+  orderId: string,
+): Promise<DeliveryAvailabilityResult> {
+  const order = await getOrder(orderId);
+
+  const orderItemIds = order.items.map((i) => i.id);
+  const [committedMap, stockRows] = await Promise.all([
+    sumCommittedQuantities(orderItemIds),
+    findAllStockBalances(),
+  ]);
+
+  const stockByProduct = new Map(stockRows.map((r) => [r.productId, r.availableQuantity]));
+
+  const items = order.items.map((oi) => {
+    const committed = committedMap.get(oi.id) ?? 0;
+    const stockAvail = stockByProduct.get(oi.productId) ?? 0;
+    const maxPlannable = Math.max(0, Math.min(oi.remainingQuantity - committed, stockAvail));
+
+    return {
+      orderItemId: oi.id,
+      productId: oi.productId,
+      productName: oi.productName,
+      remainingQuantity: oi.remainingQuantity,
+      committedQuantity: committed,
+      stockAvailableQuantity: stockAvail,
+      maxPlannableQuantity: maxPlannable,
+    };
+  });
+
+  return { orderId, items };
 }
 
 export async function listOrders(filters: ListOrdersFilters): Promise<ListOrdersResult> {

@@ -87,3 +87,20 @@ export interface ListOrdersResult {
   orders: OrderSummary[];
   totalRecords: number;
 }
+
+// --- Phase 8 stock-first: delivery availability per order item -------------
+
+export interface DeliveryAvailabilityItem {
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  remainingQuantity: number;
+  committedQuantity: number;
+  stockAvailableQuantity: number;
+  maxPlannableQuantity: number;
+}
+
+export interface DeliveryAvailabilityResult {
+  orderId: string;
+  items: DeliveryAvailabilityItem[];
+}

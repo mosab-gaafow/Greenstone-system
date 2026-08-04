@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import { useForm, useWatch, useFieldArray, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Calendar, User, Car, ShoppingCart, MapPin, Package, Plus, Trash2 } from 'lucide-react';
-import { useQueries } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -13,39 +12,16 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { SearchableSelect } from '@/components/forms/searchable-select';
 import { FormSection } from '@/components/forms/form-section';
 import { useCreateDelivery } from '../hooks/use-deliveries';
-import { useOrders, useOrder } from '@/features/orders/hooks/use-orders';
+import { useOrders, useOrder, useOrderDeliveryAvailability } from '@/features/orders/hooks/use-orders';
 import { useCustomer } from '@/features/customers/hooks/use-customers';
 import { useDrivers } from '@/features/drivers/hooks/use-drivers';
 import { useVehicles } from '@/features/vehicles/hooks/use-vehicles';
 import { useCreditStatus } from '@/features/customers/hooks/use-customer-credit';
-import { fetchFinishedStock } from '@/features/products/api/finished-stock.api';
 import { canOverrideCredit } from '@/lib/permissions';
 import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
 import { deliveryFormSchema, type DeliveryFormInput } from '../schemas/delivery.schema';
+import type { DeliveryAvailabilityItem } from '@/features/orders/api/orders.api';
 import type { OrderDetail } from '@/features/orders/types/order.types';
-
-function useStockByProduct(order: OrderDetail | undefined) {
-  const productIds = useMemo(
-    () => (order ? [...new Set(order.items.map((oi) => oi.productId))] : []),
-    [order],
-  );
-
-  const stockQueries = useQueries({
-    queries: productIds.map((pid) => ({
-      queryKey: ['products', pid, 'finished-stock'] as const,
-      queryFn: () => fetchFinishedStock(pid),
-      enabled: productIds.length > 0 && !!pid,
-    })),
-  });
-
-  return useMemo(() => {
-    const map: Record<string, number> = {};
-    productIds.forEach((pid, i) => {
-      map[pid] = stockQueries[i]?.data?.availableQuantity ?? 0;
-    });
-    return map;
-  }, [productIds, stockQueries]);
-}
 
 export function DeliveryForm() {
   const router = useRouter();
@@ -92,8 +68,15 @@ export function DeliveryForm() {
       ? (orderQuery.data as OrderDetail)
       : undefined;
 
-  // Stock availability
-  const stockByProductId = useStockByProduct(selectedOrder);
+  // Backend-authoritative delivery availability
+  const availabilityQuery = useOrderDeliveryAvailability(orderId || '');
+  const availabilityById = useMemo(() => {
+    const map: Record<string, DeliveryAvailabilityItem | undefined> = {};
+    for (const item of availabilityQuery.data?.items ?? []) {
+      map[item.orderItemId] = item;
+    }
+    return map;
+  }, [availabilityQuery.data]);
 
   // Customer info
   const customerId = selectedOrder?.customerId ?? '';
@@ -144,46 +127,31 @@ export function DeliveryForm() {
   }, [selectedOrder, items]);
 
   // Max plannable
+  // Max plannable from backend authority
   function maxPlannable(item: { orderItemId: string }): {
     orderRemaining: number;
-    orderAllocated: number;
+    committedQuantity: number;
     stockAvailable: number;
     maxPlannable: number;
-    reason: string | null;
   } | null {
-    if (!selectedOrder) return null;
-    const oi = selectedOrder.items.find((i) => i.id === item.orderItemId);
-    if (!oi) return null;
-    const stockAvail = stockByProductId[oi.productId] ?? 0;
-    const allocAvail = oi.allocatedQuantity - oi.deliveredQuantity;
-    const max = Math.max(0, Math.min(oi.remainingQuantity, allocAvail, stockAvail));
-
-    let reason: string | null = null;
-    if (max === 0) {
-      if (oi.allocatedQuantity === 0) reason = 'No stock allocated to this order item';
-      else if (stockAvail === 0) reason = 'No finished stock available';
-      else if (oi.remainingQuantity === 0) reason = 'Order item fully delivered';
-    }
-
+    const info = availabilityById[item.orderItemId];
+    if (!info) return null;
     return {
-      orderRemaining: oi.remainingQuantity,
-      orderAllocated: allocAvail,
-      stockAvailable: stockAvail,
-      maxPlannable: max,
-      reason,
+      orderRemaining: info.remainingQuantity,
+      committedQuantity: info.committedQuantity,
+      stockAvailable: info.stockAvailableQuantity,
+      maxPlannable: info.maxPlannableQuantity,
     };
   }
 
   const canPlanAny = useMemo(() => {
-    if (!selectedOrder?.items?.length) return false;
-    return selectedOrder.items.some((oi) => {
-      const stockAvail = stockByProductId[oi.productId] ?? 0;
-      const allocAvail = oi.allocatedQuantity - oi.deliveredQuantity;
-      return Math.min(oi.remainingQuantity, allocAvail, stockAvail) > 0;
-    });
-  }, [selectedOrder, stockByProductId]);
+    for (const item of availabilityQuery.data?.items ?? []) {
+      if (item.maxPlannableQuantity > 0) return true;
+    }
+    return false;
+  }, [availabilityQuery.data]);
 
-  const stockIsLoading = selectedOrder && !Object.keys(stockByProductId).length;
+  const stockIsLoading = !!orderId && availabilityQuery.isPending;
 
   const onSubmit = useCallback(
     (values: DeliveryFormInput) => {
@@ -387,12 +355,8 @@ export function DeliveryForm() {
                           <span className="font-medium tabular-nums">{info.orderRemaining}</span>
                         </span>
                         <span>
-                          Allocated:{' '}
-                          <span
-                            className={`font-medium tabular-nums ${info.orderAllocated === 0 ? 'text-destructive' : ''}`}
-                          >
-                            {info.orderAllocated}
-                          </span>
+                          Planned:{' '}
+                          <span className="font-medium tabular-nums">{info.committedQuantity}</span>
                         </span>
                         <span>
                           Stock:{' '}
@@ -410,9 +374,6 @@ export function DeliveryForm() {
                             {info.maxPlannable}
                           </span>
                         </span>
-                        {info.reason && (
-                          <span className="text-destructive w-full">{info.reason}</span>
-                        )}
                       </div>
                     )}
                   </div>
@@ -506,7 +467,7 @@ export function DeliveryForm() {
               : stockIsLoading
                 ? 'Loading stock…'
                 : !canPlanAny
-                  ? 'No plannable quantity — check allocated stock'
+                  ? 'No plannable quantity — check remaining and stock'
                   : 'Plan delivery'}
         </Button>
         <Button

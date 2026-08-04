@@ -174,3 +174,24 @@ export interface CancelDeliveryResult {
   cancelledAt: string;
   reason: string;
 }
+
+// --- Phase 8F: Correction --------------------------------------------------
+
+export interface CorrectDeliveryItemInput {
+  orderItemId: string;
+  dispatchedQuantity: number;
+}
+
+export interface CorrectDeliveryInput {
+  reason: string;
+  items: CorrectDeliveryItemInput[];
+}
+
+export interface CorrectDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DISPATCHED';
+  correctedAt: string;
+  reason: string;
+  items: { orderItemId: string; previousDispatched: number; newDispatched: number }[];
+}

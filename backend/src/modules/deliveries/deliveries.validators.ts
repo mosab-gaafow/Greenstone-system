@@ -79,6 +79,20 @@ export const cancelDeliveryBodySchema = z
   })
   .strict();
 
+const correctItemSchema = z
+  .object({
+    orderItemId: z.string().min(1),
+    dispatchedQuantity: z.coerce.number().int().min(0, 'Dispatched quantity cannot be negative.'),
+  })
+  .strict();
+
+export const correctDeliveryBodySchema = z
+  .object({
+    reason: z.string().trim().min(1, 'A reason is required.').max(500),
+    items: z.array(correctItemSchema).min(1, 'Add at least one item.'),
+  })
+  .strict();
+
 export const setTransportBodySchema = z
   .object({
     transportRate: moneySchema.refine((v) => Number(v) > 0, {

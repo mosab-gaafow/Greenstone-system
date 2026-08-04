@@ -88,6 +88,28 @@ export interface CancelDeliveryResult {
   reason: string;
 }
 
+export interface CorrectDeliveryInput {
+  reason: string;
+  items: { orderItemId: string; dispatchedQuantity: number }[];
+}
+
+export interface CorrectDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DISPATCHED';
+  correctedAt: string;
+  reason: string;
+  items: { orderItemId: string; previousDispatched: number; newDispatched: number }[];
+}
+
+export async function correctDelivery(
+  id: string,
+  input: CorrectDeliveryInput,
+): Promise<CorrectDeliveryResult> {
+  const { data } = await api.post<CorrectDeliveryResult>(`/deliveries/${id}/correct`, input);
+  return data;
+}
+
 export async function cancelDelivery(
   id: string,
   reason: string,

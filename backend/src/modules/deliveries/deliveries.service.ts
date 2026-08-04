@@ -1,6 +1,7 @@
 import { Prisma, type CreditStatus, type OrderPaymentArrangement } from '../../generated/prisma/client.js';
 import {
   cancelDelivery,
+  correctDeliveryItems,
   findDeliveries,
   findDeliveryById,
   hasActiveDeliveriesForCustomer,
@@ -11,6 +12,7 @@ import {
   lockOrderItems,
   lockStockBalances,
   readLockedOrderItems,
+  setCorrectionReason,
   sumCommittedQuantities,
   updateTransport,
   type DeliveryDetailRow,
@@ -46,6 +48,8 @@ import type {
   CancelDeliveryResult,
   CompleteDeliveryInput,
   CompleteDeliveryResult,
+  CorrectDeliveryInput,
+  CorrectDeliveryResult,
   CreateDeliveryInput,
   DeliveryDetail,
   DeliverySummary,
@@ -175,7 +179,7 @@ export async function createDelivery(
   for (const item of input.items) {
     const oi = orderItemMap.get(item.orderItemId)!;
     const committed = preCheckCommitted.get(item.orderItemId) ?? 0;
-    const available = oi.allocatedQuantity - oi.deliveredQuantity - committed;
+    const available = oi.remainingQuantity - committed;
 
     if (item.plannedQuantity > oi.remainingQuantity) {
       throw new BusinessRuleViolationError(
@@ -185,20 +189,10 @@ export async function createDelivery(
     }
 
     if (item.plannedQuantity > available) {
-      const reasons: string[] = [];
-      if (oi.allocatedQuantity === 0) {
-        reasons.push('no finished stock has been allocated to this order item yet');
-      }
-      if (oi.deliveredQuantity > 0) {
-        reasons.push(`${oi.deliveredQuantity} already delivered`);
-      }
-      if (committed > 0) {
-        reasons.push(`${committed} already committed to other active deliveries`);
-      }
-      const reasonText = reasons.length > 0 ? ` (${reasons.join('; ')})` : '';
       throw new BusinessRuleViolationError(
         `Requested quantity ${item.plannedQuantity} exceeds available quantity ` +
-          `${available} for "${oi.productName}".` + reasonText,
+          `${available} for "${oi.productName}".` +
+          `${committed > 0 ? ` (${committed} already committed to other active deliveries)` : ''}`,
       );
     }
   }
@@ -240,7 +234,7 @@ export async function createDelivery(
       }
 
       const committed = committedInTx.get(item.orderItemId) ?? 0;
-      const available = locked.allocatedQuantity - locked.deliveredQuantity - committed;
+      const available = locked.remainingQuantity - committed;
 
       if (item.plannedQuantity > locked.remainingQuantity) {
         throw new BusinessRuleViolationError(
@@ -656,6 +650,116 @@ export async function cancel(
     status: 'CANCELLED',
     cancelledAt: now.toISOString(),
     reason,
+  };
+}
+
+/**
+ * Corrects dispatch quantities on a DISPATCHED delivery (Phase 8F).
+ *
+ * Adjusts physical stock and writes CORRECTION movements for any delta.
+ * Never used for ordinary delivery breakage (that is Phase 8D).
+ */
+export async function correct(
+  id: string,
+  input: CorrectDeliveryInput,
+  context: RequestContext,
+): Promise<CorrectDeliveryResult> {
+  const delivery = await requireDelivery(id);
+
+  if (delivery.status !== 'DISPATCHED') {
+    throw new InvalidDocumentStatusError(
+      `Only DISPATCHED deliveries can be corrected. This delivery is ${delivery.status}.`,
+    );
+  }
+
+  const reason = input.reason.trim();
+  const itemMap = new Map(delivery.items.map((di) => [di.orderItemId, di]));
+  const corrections: { orderItemId: string; previousDispatched: number; newDispatched: number }[] = [];
+
+  // Validate all items belong to this delivery
+  for (const inputItem of input.items) {
+    const di = itemMap.get(inputItem.orderItemId);
+    if (!di) {
+      throw new BusinessRuleViolationError(
+        `Order item ${inputItem.orderItemId} is not part of this delivery.`,
+      );
+    }
+    corrections.push({
+      orderItemId: inputItem.orderItemId,
+      previousDispatched: di.dispatchedQuantity,
+      newDispatched: inputItem.dispatchedQuantity,
+    });
+  }
+
+  await runInTransaction(async (tx: TransactionClient) => {
+    // Lock affected stock balances
+    const productIds = [...new Set(delivery.items.map((i) => i.productId))];
+    for (const pid of productIds.sort()) {
+      await lockBalance(tx, pid);
+    }
+
+    for (const corr of corrections) {
+      const di = itemMap.get(corr.orderItemId)!;
+      const delta = corr.previousDispatched - corr.newDispatched; // positive = returning stock
+
+      if (delta !== 0) {
+        const balance = await tx.finishedStockBalance.findUnique({
+          where: { productId: di.productId },
+        });
+        if (!balance) throw new Error(`No stock balance for product ${di.productId}.`);
+
+        const newPhysical = balance.physicalQuantity + delta;
+        if (newPhysical < 0) {
+          throw new InsufficientFinishedStockError(
+            `Correction would make stock negative for this product.`,
+          );
+        }
+        const newAvailable = newPhysical - balance.reservedQuantity;
+
+        await setBalanceQuantities(tx, di.productId, newPhysical, newAvailable);
+
+        await insertMovement(tx, {
+          productId: di.productId,
+          movementType: 'CORRECTION',
+          quantity: delta,
+          balanceAfter: newPhysical,
+          relatedEntityId: id,
+          reason,
+          createdByUserId: context.user.id,
+        });
+      }
+    }
+
+    await correctDeliveryItems(
+      tx,
+      id,
+      corrections.map((c) => ({ orderItemId: c.orderItemId, dispatchedQuantity: c.newDispatched })),
+    );
+
+    await setCorrectionReason(tx, id, reason);
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'CORRECT_DELIVERY',
+      module: AUDIT_MODULE,
+      entityType: 'Delivery',
+      entityId: id,
+      documentNumber: delivery.deliveryNumber,
+      reason,
+      previousData: { items: corrections.map((c) => ({ orderItemId: c.orderItemId, dispatchedQuantity: c.previousDispatched })) },
+      updatedData: { items: corrections.map((c) => ({ orderItemId: c.orderItemId, dispatchedQuantity: c.newDispatched })) },
+    });
+  });
+
+  await invalidateCache();
+
+  return {
+    id: delivery.id,
+    deliveryNumber: delivery.deliveryNumber,
+    status: 'DISPATCHED',
+    correctedAt: new Date().toISOString(),
+    reason,
+    items: corrections,
   };
 }
 

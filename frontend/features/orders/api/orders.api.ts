@@ -32,6 +32,30 @@ export async function createOrder(values: OrderFormValues): Promise<OrderDetail>
   return data;
 }
 
+export interface DeliveryAvailabilityItem {
+  orderItemId: string;
+  productId: string;
+  productName: string;
+  remainingQuantity: number;
+  committedQuantity: number;
+  stockAvailableQuantity: number;
+  maxPlannableQuantity: number;
+}
+
+export interface DeliveryAvailabilityResult {
+  orderId: string;
+  items: DeliveryAvailabilityItem[];
+}
+
+export async function fetchOrderDeliveryAvailability(
+  id: string,
+): Promise<DeliveryAvailabilityResult> {
+  const { data } = await api.get<DeliveryAvailabilityResult>(
+    `/orders/${id}/delivery-availability`,
+  );
+  return data;
+}
+
 export async function cancelOrder(
   id: string,
   values: CancelOrderFormValues,

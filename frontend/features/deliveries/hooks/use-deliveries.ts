@@ -51,6 +51,23 @@ export function useCreateDelivery() {
   });
 }
 
+export function useCorrectDelivery(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: deliveriesApi.CorrectDeliveryInput) =>
+      deliveriesApi.correctDelivery(id, input),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: deliveryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: ['stock'] });
+      toast.success('Delivery corrected.');
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'The delivery could not be corrected.'));
+    },
+  });
+}
+
 export function useCancelDelivery(id: string) {
   const queryClient = useQueryClient();
 
