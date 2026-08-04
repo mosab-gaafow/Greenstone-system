@@ -1757,40 +1757,115 @@ Implement:
 - Drivers.
 - Broken products where remaining functions are needed.
 
-## Work
+## Approved delivery lifecycle (final, 2026-08-03)
 
-Implement:
+Four statuses: `PLANNED`, `DISPATCHED`, `DELIVERED`, `CANCELLED`. `DISPATCHED`
+is **not** delivery completion — it is a separate, earlier step from
+`DELIVERED`.
 
-- Opening finished stock.
-- Physical stock.
-- Reserved stock.
-- Available stock.
-- Stock movement ledger.
-- Stock reservation.
-- Delivery numbering.
-- Partial delivery.
-- Several trips for one order.
-- One location per delivery.
-- Vehicle assignment.
-- Driver assignment.
-- Single-product truck-trip calculation (2026-08-02):
-  `requiredTrips = ceiling(deliveryQuantity / maxPiecesPerTruck)`, using the
-  product's `maxPiecesPerTruck` (Phase 6D), snapshotted onto the delivery so
-  a later product update never changes an already-recorded delivery's trip
-  count. Mixed-product truck loads are not confirmed — do not implement.
-- Transport payment (2026-08-02): snapshot driver, vehicle, vehicle owner,
-  transport rate, number of trips, total transport cost, and payee (the
-  Vehicle Owner — the Driver, if they own the vehicle) on every delivery.
-  `totalTransportCost = numberOfTrips × transportRate` (current rate KES
-  8,500/trip). Never count this cost a second time as a general expense.
-- Dispatch.
-- Permanent stock reduction at dispatch.
-- Pre-dispatch cancellation.
-- Reservation release.
-- Post-dispatch correction.
-- Written correction reason.
-- Audit log.
-- Stock adjustments.
+- **PLANNED** — the delivery is created; finished stock is reserved
+  atomically in the same transaction (`FinishedStockBalance.reservedQuantity`
+  increments, no ledger row — only physical-stock-affecting changes get a
+  `FinishedStockMovement`).
+- **DISPATCHED** — the truck has left the yard. Reduce
+  `reservedQuantity` and `physicalQuantity` together, write the
+  `DELIVERY_DISPATCH` movement. Do **not** touch
+  `OrderItem.deliveredQuantity`/`remainingQuantity` yet, and do not advance
+  `Order.status` yet.
+- **DELIVERED** — the customer has received the goods. Record the actual
+  quantity received and the quantity broken during delivery. Increase
+  `OrderItem.deliveredQuantity` by the actually-received amount only,
+  recalculate `remainingQuantity`, and recalculate `Order.status` using the
+  existing approved statuses — completing the Order only once every item's
+  `remainingQuantity` reaches 0.
+- **CANCELLED** — allowed only from `PLANNED`. Releases the reservation
+  (`reservedQuantity` decrement, no ledger row). Requires a written reason
+  and an audit log.
+
+### Broken products during delivery (2026-08-03)
+
+Recorded only at the `DELIVERED` step, alongside the actual quantity
+received — for example: dispatched 1,000, broken during delivery 20,
+actually delivered 980.
+
+- Finished stock stays reduced by the full 1,000 — all of it left the yard at
+  dispatch.
+- `OrderItem.deliveredQuantity` increases by 980 only.
+- A `BrokenProductRecord` (`stage: DELIVERY`) is created for the 20.
+- The 20 broken pieces are never returned to finished stock.
+- This is never combined with an administrative correction. A true
+  correction of an incorrectly *recorded* dispatch/delivery quantity is a
+  separate action (Phase 8F), with its own written reason, audit log, and
+  `CORRECTION` stock movement.
+
+### PREPAID payment rule (2026-08-03)
+
+The Customer Payments module does not exist until Phase 9, so `PREPAID` is
+never treated as already paid.
+
+- `CREDIT` deliveries use the existing customer-credit rules and override
+  workflow (the same current-status check already used for `CREDIT` orders,
+  not the projected-exposure calculation — the order was already checked at
+  its own creation).
+- A `PREPAID` delivery may be `PLANNED` and reserved.
+- A `PREPAID` delivery must not reach `DISPATCHED` until an approved Customer
+  Payment confirms full payment. Until Phase 9 ships, block `PREPAID`
+  dispatch outright with a clear error message.
+- Do not add a temporary "paid" checkbox and do not create placeholder
+  payment records to work around this.
+- Browser testing for Phase 8 must use `CREDIT` orders until Phase 9 exists.
+
+### Driver, Vehicle, Vehicle Owner, and payee (confirms Phase 6F design — no change)
+
+- Driver and Vehicle are selected separately on every delivery; never
+  permanently paired.
+- The payee is the Vehicle Owner linked to the selected Vehicle at
+  delivery-creation time.
+- Snapshot the owner/payee name and phone on the Delivery so a later change
+  to that Vehicle Owner record never rewrites delivery history.
+- If the Driver owns the vehicle, that person is also registered as a
+  separate Vehicle Owner record (never auto-merged with the Driver record).
+
+## Sub-phases (final breakdown, 2026-08-03)
+
+### Phase 8A — Delivery planning and stock reservation (NOT_STARTED)
+
+`Delivery`/`DeliveryItem` schema, `DEL-YYYY-0001` numbering, one order + one
+customer address (snapshotted) + one driver + one vehicle per delivery,
+credit-block check and override wiring (`CustomerCreditOverride` gains a
+nullable `relatedDeliveryId` alongside the now-nullable `relatedOrderId`),
+create/list/detail endpoints and pages, permissions, audit log.
+
+### Phase 8B — Trip and transport-cost calculation (NOT_STARTED)
+
+Single-product `requiredTrips = ceiling(deliveryQuantity / maxPiecesPerTruck)`
+with a capacity snapshot; manual trip-count entry when a delivery has more
+than one product (mixed-product capacity math stays unconfirmed — do not
+implement it). Transport rate entered per delivery (never hard-coded),
+`totalTransportCost = numberOfTrips × transportRate`, payee snapshot.
+
+### Phase 8C — Dispatch (NOT_STARTED)
+
+Physical stock reduction, `DELIVERY_DISPATCH` ledger write, the `PREPAID`
+dispatch block, row-locked transaction. Does not touch `OrderItem` or
+`Order.status`.
+
+### Phase 8D — Delivery completion and broken-product recording (NOT_STARTED)
+
+Record actual quantity received and quantity broken, advance
+`OrderItem.deliveredQuantity`/`remainingQuantity`, recompute `Order.status`,
+write the `BrokenProductRecord` (`stage: DELIVERY`).
+
+### Phase 8E — Pre-dispatch cancellation (NOT_STARTED)
+
+Release the reservation, written reason, audit log. Allowed only from
+`PLANNED`.
+
+### Phase 8F — Administrative correction (NOT_STARTED)
+
+Separate action for fixing an incorrectly recorded dispatch/delivery
+quantity after the fact — written reason, audit log, `CORRECTION` stock
+movement. Never used for ordinary delivery breakage (that is Phase 8D).
 
 ## Do not add
 
@@ -1798,15 +1873,23 @@ Implement:
 - Customer signatures.
 - Delivery photographs.
 - Delivery-proof uploads.
+- Mixed-product truck-load capacity calculation.
+- A temporary "paid" checkbox or placeholder payment records for PREPAID
+  deliveries.
 
 ## Completion gate
 
 - Planned delivery does not reduce physical stock.
 - Reservation reduces available stock only.
-- Dispatch reduces physical stock.
-- Cancellation releases reservation.
-- Post-dispatch corrections are traceable.
-- Credit block prevents new deliveries unless properly overridden.
+- Dispatch reduces physical stock but does not complete the Order.
+- Delivery completion records actual/broken quantity and only then advances
+  `OrderItem`/`Order` status.
+- Cancellation (PLANNED only) releases the reservation.
+- Administrative corrections are separate from delivery-breakage recording,
+  always with a written reason and audit log.
+- PREPAID deliveries cannot dispatch without an approved Customer Payment
+  (blocked outright until Phase 9).
+- Credit block prevents new CREDIT deliveries unless properly overridden.
 - Tests and builds pass.
 
 ---

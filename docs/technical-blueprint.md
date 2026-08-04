@@ -1162,6 +1162,32 @@ snapshotted onto the delivery record so a later change to the product's
 capacity never recalculates an already-recorded delivery. Mixed-product
 truck-load calculation is **not yet confirmed** — do not implement it.
 
+**Resolved (2026-08-03): four-status lifecycle.** `DeliveryStatus` is
+`PLANNED` / `DISPATCHED` / `DELIVERED` / `CANCELLED`. `DISPATCHED` is a
+distinct, earlier step from `DELIVERED` — dispatch reduces
+`FinishedStockBalance.reservedQuantity` and `physicalQuantity` together and
+writes `DELIVERY_DISPATCH`, but does not touch `OrderItem.deliveredQuantity`
+or `Order.status`; only reaching `DELIVERED` does that (see section 4.7's
+finished-stock notes and section 2.19 of the business blueprint for the full
+lifecycle and the delivery-breakage example). `CANCELLED` is reachable only
+from `PLANNED`. There is no `REVERSED`/un-dispatch status — a dispatched
+delivery is fixed via the separate administrative-correction action, never
+rolled back.
+
+**Resolved (2026-08-03): credit check reuse.** The delivery-creation
+credit-block check reuses `computeCreditStatus` (the same current-balance
+check already used for CREDIT orders), not `computeProjectedExposure` — the
+order was already checked for projected exposure at its own creation.
+`CustomerCreditOverride.relatedOrderId` becomes nullable and a nullable
+`relatedDeliveryId` is added, so an override can attach to either.
+
+**Resolved (2026-08-03): PREPAID dispatch gate.** Since the Customer Payment
+module (section 4.12) does not exist until Phase 9, a `PREPAID` order's
+delivery may be `PLANNED` and reserved but must be rejected at the
+`DISPATCHED` transition with a clear business-rule error until Phase 9 ships
+an approved-payment check to replace that block. No interim "paid" flag or
+placeholder payment record is added to work around this.
+
 ### Delivery Item
 
 Belongs to:
@@ -1172,10 +1198,20 @@ Belongs to:
 
 Stores:
 
-- Planned quantity.
-- Reserved quantity.
-- Dispatched quantity.
-- Delivered quantity.
+- Planned quantity (the quantity this delivery commits to for this line).
+- Reserved quantity (mirrors the planned quantity while the delivery is
+  `PLANNED`; zeroed when the delivery reaches `DISPATCHED` or `CANCELLED`,
+  matching the product-level `FinishedStockBalance.reservedQuantity` it
+  contributes to).
+- Dispatched quantity (set at the `DISPATCHED` transition; normally equals
+  the planned quantity).
+- Delivered quantity (set at the `DELIVERED` transition — the actual
+  quantity received, which may be less than dispatched).
+- Broken quantity (2026-08-03 — set at the `DELIVERED` transition alongside
+  delivered quantity; `dispatched = delivered + broken`. Feeds a
+  `BrokenProductRecord` with `stage: DELIVERY`; these pieces are never
+  returned to finished stock, since physical stock was already reduced in
+  full at dispatch).
 
 ## 4.12 Customer payments and receipts
 

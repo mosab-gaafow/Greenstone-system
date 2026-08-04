@@ -661,19 +661,41 @@ number any more, since the `quotations` module itself is gone. See the
   `calculatedLoadTonnes`) are **not** touched by this migration — whether to
   remove them is unconfirmed (see the impact report).
 
-### 5. Future Delivery snapshot columns (Phase 8)
+### 5. Future Delivery schema (Phase 8, planned 2026-08-03)
 
 Phase 7 is now fully complete (7A–7D — see `docs/implementation-plan.md`):
 `supplier_opening_balances`, the confirmed Cement/Dust/Pumice raw materials
 and Sack/Cubic Metre/Tonne measurement units, `purchases`/`purchase_items`,
 and `purchase_payments`/`purchase_payment_allocations` all already exist —
-see their own sections above. Only the Phase 8 Delivery snapshot columns
-remain not yet implemented; expected shape below.
+see their own sections above. Phase 8's `deliveries`/`delivery_items` do not
+exist yet; the plan below is approved-but-unimplemented, so a fresh
+`prisma migrate dev` for Phase 8 does not surprise whoever builds it.
 
-- `deliveries`: transport snapshot columns (transport rate, number of trips,
-  total transport cost, payee, and the vehicle-owner reference used at
-  dispatch time) and the truck-capacity value used for `requiredTrips` at
-  that delivery's creation time.
+- `deliveries`: `DEL-YYYY-0001` numbering; one order, one customer address
+  (snapshotted — `addressLabel`/`addressLine`/`addressDirections`, same
+  pattern as `orders`), one driver, one vehicle; `status`
+  (`PLANNED`/`DISPATCHED`/`DELIVERED`/`CANCELLED` — DISPATCHED is not
+  completion, see `docs/business-blueprint.md` section 2.19); transport
+  snapshot columns (transport rate, number of trips, total transport cost,
+  payee vehicle-owner reference + name/phone snapshot) and the truck-capacity
+  value used for `requiredTrips` at creation time; `cancelledReason`/
+  `cancelledByUserId`/`cancelledAt`; `correctionReason`; `dispatchedByUserId`/
+  `dispatchedAt`.
+- `delivery_items`: planned quantity, reserved quantity (mirrors planned
+  while `PLANNED`, zeroed at dispatch/cancel), dispatched quantity, delivered
+  quantity, broken quantity (`dispatched = delivered + broken`, feeds a
+  `broken_product_records` row with `stage: DELIVERY`).
+- `customer_credit_overrides`: `relatedOrderId` becomes nullable, a nullable
+  `relatedDeliveryId` is added — an override attaches to exactly one of the
+  two. Additive change to an existing, already-populated table.
+- No new `FinishedStockMovementType`, `BrokenProductStage`, or `DocumentType`
+  values needed — `DELIVERY_DISPATCH`, `DELIVERY` (broken-product stage), and
+  `DEL` were all pre-declared in earlier phases specifically for this.
+- Dispatch reduces `physicalQuantity`/`reservedQuantity` and writes
+  `DELIVERY_DISPATCH`; reaching `DELIVERED` never touches
+  `FinishedStockBalance` again — only `OrderItem`/`Order` status. A PREPAID
+  order's delivery is blocked at the dispatch transition until Phase 9's
+  Customer Payment approval exists (see business-blueprint section 2.19).
 
 ## Document numbering and concurrency
 

@@ -733,6 +733,54 @@ The MVP does not require:
 - Delivery-note upload.
 - Proof-of-delivery file.
 
+### Resolved delivery lifecycle (2026-08-03)
+
+Four statuses: PLANNED, DISPATCHED, DELIVERED, CANCELLED. Dispatch is **not**
+delivery completion — they are two separate steps.
+
+- **PLANNED**: the delivery is created and finished stock is reserved
+  atomically.
+- **DISPATCHED**: the truck has left the yard. Reserved and physical finished
+  stock both reduce. The Order is not completed yet, and
+  `OrderItem.deliveredQuantity` does not increase yet.
+- **DELIVERED**: the customer has received the products. The actual quantity
+  received is recorded, `OrderItem.deliveredQuantity` increases by that
+  amount, `remainingQuantity` is recalculated, and the Order status is
+  recalculated using the existing approved Order statuses. The Order is
+  completed only once every item's required quantity has been delivered.
+- **CANCELLED**: allowed only from PLANNED. Releases the reserved stock.
+  Requires a written reason and an audit log.
+
+### Broken products during delivery (2026-08-03)
+
+At delivery completion, the actual quantity delivered and the quantity
+broken during delivery are both recorded. Example: 1,000 dispatched, 20
+broken during delivery, 980 actually delivered.
+
+- Finished stock remains reduced by the full 1,000 — all of it left the yard
+  at dispatch.
+- `OrderItem.deliveredQuantity` increases by 980 only.
+- A broken-product record is created for the 20, with stage DELIVERY.
+- The 20 broken pieces are not returned to finished stock.
+- The remaining order quantity stays accurate.
+
+This is never combined with an administrative correction. A true correction
+of an incorrectly recorded dispatch quantity is a separate action, with its
+own written reason and audit log.
+
+### PREPAID deliveries and the Phase 9 dependency (2026-08-03)
+
+PREPAID must never be interpreted as already paid. The Customer Payment
+module does not exist until Phase 9.
+
+- CREDIT deliveries use the existing customer credit rules and override
+  workflow.
+- A PREPAID delivery may be planned and reserved.
+- A PREPAID delivery must not be dispatched until an approved customer
+  payment confirms full payment. Until Phase 9 exists, PREPAID dispatch is
+  blocked outright with a clear message — no temporary "paid" checkbox and no
+  placeholder payment records.
+
 ### Truck capacity and trip count (2026-08-02)
 
 For a delivery of a single product:

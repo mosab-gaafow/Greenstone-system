@@ -109,17 +109,26 @@ figures.
 
 ### Purchasing and delivery
 
-| Resource           | Actions                                 | super_admin | admin | accountant                     |
-| ------------------ | --------------------------------------- | ----------- | ----- | ------------------------------ |
-| `purchase`         | create, read                            | ✅          | ✅    | ✅                             |
-| `purchase-payment` | create, read, approve, reverse          | ✅          | ✅    | create, read                   |
-| `delivery`         | create, read, dispatch, cancel, correct | ✅          | ✅    | create, read, dispatch, cancel |
+| Resource           | Actions                                            | super_admin | admin | accountant                               |
+| ------------------ | --------------------------------------------------- | ----------- | ----- | ----------------------------------------- |
+| `purchase`         | create, read                                        | ✅          | ✅    | ✅                                         |
+| `purchase-payment` | create, read, approve, reverse                      | ✅          | ✅    | create, read                              |
+| `delivery`         | create, read, dispatch, complete, cancel, correct   | ✅          | ✅    | create, read, dispatch, complete, cancel  |
 
 **`purchase` and `purchase-payment` implemented (2026-08-03, Phase 7C/7D):**
 both resources were pre-declared ahead of their modules, the same way
 `raw-material` and `customer-credit` were. `purchase` has no `update`
 action, matching the approved design — a Purchase is immutable once
 created. `delivery` remains pre-declared, unimplemented — Phase 8.
+
+**`delivery:complete` added (2026-08-03, Phase 8 planning):** the four-status
+delivery lifecycle (`PLANNED`/`DISPATCHED`/`DELIVERED`/`CANCELLED`) treats
+reaching `DELIVERED` — recording the actual quantity received and any
+quantity broken during delivery — as a distinct action from `dispatch`, so it
+needs its own permission action. Accountant may record it (same as
+`dispatch`/`cancel`); only `correct` (the separate administrative-correction
+action) stays Admin/Super-Admin-only, matching the existing judgment-call
+asymmetry.
 
 ### Finance
 
