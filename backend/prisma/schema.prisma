@@ -234,6 +234,9 @@ model User {
   curingRecordsCreated           CuringRecord[]           @relation("CuringCreatedBy")
   curingRecordsChanged           CuringRecord[]           @relation("CuringDurationChangedBy")
   curingRecordsReleased          CuringRecord[]           @relation("CuringReleasedBy")
+  deliveriesCreated              Delivery[]               @relation("DeliveryCreatedBy")
+  deliveriesDispatched           Delivery[]               @relation("DeliveryDispatchedBy")
+  deliveriesCancelled            Delivery[]               @relation("DeliveryCancelledBy")
 
   @@unique([email])
   @@map("user")
@@ -320,6 +323,7 @@ model Product {
   finishedStockMovements FinishedStockMovement[]
   brokenProductRecords   BrokenProductRecord[]
   productionItems        ProductionItem[]
+  deliveryItems          DeliveryItem[]
 
   @@index([isActive])
   @@index([category])
@@ -356,6 +360,7 @@ model Customer {
   orders          Order[]
   openingBalance  CustomerOpeningBalance?
   creditOverrides CustomerCreditOverride[]
+  deliveries      Delivery[]
 
   @@index([isActive])
   @@index([name])
@@ -391,7 +396,8 @@ model CustomerAddress {
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 
-  orders Order[]
+  orders     Order[]
+  deliveries Delivery[]
 
   @@unique([customerId, labelNormalized])
   @@index([customerId, isActive])
@@ -458,6 +464,8 @@ model Driver {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
+  deliveries Delivery[]
+
   @@index([isActive])
   @@index([name])
   @@map("drivers")
@@ -485,7 +493,8 @@ model VehicleOwner {
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
-  vehicles Vehicle[]
+  vehicles   Vehicle[]
+  deliveries Delivery[]
 
   @@index([isActive])
   @@index([name])
@@ -533,6 +542,8 @@ model Vehicle {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  deliveries Delivery[]
 
   @@index([isActive])
   @@index([vehicleOwnerId])
@@ -798,6 +809,20 @@ enum OrderStatus {
   CANCELLED
 }
 
+/// Delivery status (Phase 8, 2026-08-04). See business-blueprint section
+/// 2.19 and docs/implementation-plan.md §12.
+///
+/// PLANNED: created, stock reserved atomically, nothing else.
+/// DISPATCHED: truck left the yard — physical stock reduced (Phase 8C).
+/// DELIVERED: customer received the goods — OrderItem/Order updated (Phase 8D).
+/// CANCELLED: only from PLANNED — reservation released (Phase 8E).
+enum DeliveryStatus {
+  PLANNED
+  DISPATCHED
+  DELIVERED
+  CANCELLED
+}
+
 /// Customer credit status. See business-blueprint section 2.24. Persisted
 /// only as a snapshot on `CustomerCreditOverride.previousCreditStatus` — the
 /// live status is always computed, never cached or stored on `Customer`
@@ -847,6 +872,7 @@ model Order {
   items             OrderItem[]
   creditOverrides   CustomerCreditOverride[]
   productionBatches ProductionBatch[]
+  deliveries        Delivery[]
 
   @@index([customerId])
   @@index([customerAddressId])
@@ -886,6 +912,7 @@ model OrderItem {
   updatedAt         DateTime @updatedAt
 
   productionAllocations ProductionOrderAllocation[]
+  deliveryItems         DeliveryItem[]
 
   @@index([orderId])
   @@map("order_items")
@@ -922,12 +949,21 @@ model CustomerOpeningBalance {
 /// docs/technical-blueprint.md section 4.3.
 ///
 /// Append-only: an override is never edited or deleted once written.
+///
+/// Phase 8A (2026-08-04): `relatedOrderId` became nullable and a nullable
+/// `relatedDeliveryId` was added — an override now attaches to exactly one of
+/// an Order or a Delivery, never both.
 model CustomerCreditOverride {
   id                   String       @id @default(uuid())
   customerId           String
   customer             Customer     @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  relatedOrderId       String
-  relatedOrder         Order        @relation(fields: [relatedOrderId], references: [id], onDelete: Restrict)
+  /// Nullable since Phase 8A — an override may now attach to a Delivery instead.
+  relatedOrderId       String?
+  relatedOrder         Order?       @relation(fields: [relatedOrderId], references: [id], onDelete: Restrict)
+  /// Added Phase 8A: the Delivery this override was created for, when it was
+  /// not for an Order.
+  relatedDeliveryId    String?
+  relatedDelivery      Delivery?    @relation(fields: [relatedDeliveryId], references: [id], onDelete: Restrict)
   /// Snapshot of the customer's credit status at the moment of the override.
   previousCreditStatus CreditStatus
   reason               String       @db.Text
@@ -937,6 +973,7 @@ model CustomerCreditOverride {
 
   @@index([customerId])
   @@index([relatedOrderId])
+  @@index([relatedDeliveryId])
   @@map("customer_credit_overrides")
 }
 
@@ -1297,6 +1334,124 @@ model CuringRecord {
   @@index([productionItemId])
   @@index([productionBatchId])
   @@map("curing_records")
+}
+
+/// Delivery trip (Phase 8, 2026-08-04). See business-blueprint section 2.19
+/// and docs/implementation-plan.md §12.
+///
+/// One order + one customer address (snapshotted) + one driver + one vehicle
+/// per delivery. The payee is the Vehicle Owner linked to the selected Vehicle
+/// at creation time, snapshotted so a later edit never rewrites history.
+///
+/// Transport snapshot columns exist now for safe database design but are only
+/// written starting in Phase 8B (trip count) / 8C (dispatch).
+model Delivery {
+  id             String   @id @default(uuid())
+  deliveryNumber String   @unique
+  orderId        String
+  order          Order    @relation(fields: [orderId], references: [id], onDelete: Restrict)
+  customerId     String
+  customer       Customer @relation(fields: [customerId], references: [id], onDelete: Restrict)
+
+  // Address snapshot (same pattern as Order)
+  customerAddressId String
+  customerAddress   CustomerAddress @relation(fields: [customerAddressId], references: [id], onDelete: Restrict)
+  addressLabel      String
+  addressLine       String
+  addressDirections String?         @db.Text
+
+  // Driver and Vehicle selected separately — no permanent pairing
+  driverId  String
+  driver    Driver  @relation(fields: [driverId], references: [id], onDelete: Restrict)
+  vehicleId String
+  vehicle   Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+
+  // Payee snapshot (resolved from Vehicle → VehicleOwner at creation)
+  vehicleOwnerId String
+  vehicleOwner   VehicleOwner @relation(fields: [vehicleOwnerId], references: [id], onDelete: Restrict)
+  payeeName      String
+  payeePhone     String
+
+  deliveryDate DateTime
+
+  status DeliveryStatus @default(PLANNED)
+
+  // Transport snapshot columns (written starting in Phase 8B/8C; NULL until then)
+  transportRate             Decimal? @db.Decimal(12, 2)
+  numberOfTrips             Int?
+  totalTransportCost        Decimal? @db.Decimal(14, 2)
+  maxPiecesPerTruckSnapshot Int?
+
+  // Cancellation (Phase 8E)
+  cancelledReason   String?   @db.Text
+  cancelledByUserId String?
+  cancelledByUser   User?     @relation("DeliveryCancelledBy", fields: [cancelledByUserId], references: [id], onDelete: SetNull)
+  cancelledAt       DateTime?
+
+  // Dispatch (Phase 8C)
+  dispatchedByUserId String?
+  dispatchedByUser   User?     @relation("DeliveryDispatchedBy", fields: [dispatchedByUserId], references: [id], onDelete: SetNull)
+  dispatchedAt       DateTime?
+
+  // Completion (Phase 8D)
+  completedAt DateTime?
+
+  // Correction (Phase 8F)
+  correctionReason String? @db.Text
+
+  createdByUserId String?
+  createdByUser   User?    @relation("DeliveryCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  items           DeliveryItem[]
+  creditOverrides CustomerCreditOverride[]
+
+  @@index([orderId])
+  @@index([customerId])
+  @@index([driverId])
+  @@index([vehicleId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("deliveries")
+}
+
+/// One line of a delivery: an order item, the quantity this delivery commits
+/// to for it, and the product (denormalised from the order item for fast
+/// stock queries). See docs/technical-blueprint.md section 4.11 and
+/// docs/implementation-plan.md §12.
+///
+/// @@unique([deliveryId, orderItemId]) prevents the same OrderItem from
+/// appearing twice in one delivery.
+model DeliveryItem {
+  id          String    @id @default(uuid())
+  deliveryId  String
+  delivery    Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  orderItemId String
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  /// What this delivery commits to for this line.
+  plannedQuantity  Int
+  /// Mirrors plannedQuantity while PLANNED; zeroed at DISPATCHED or CANCELLED.
+  reservedQuantity Int
+
+  /// Set at DISPATCHED (Phase 8C) — normally equals plannedQuantity.
+  dispatchedQuantity Int @default(0)
+  /// Set at DELIVERED (Phase 8D) — actual quantity received.
+  deliveredQuantity  Int @default(0)
+  /// Set at DELIVERED (Phase 8D) — broken during transit.
+  brokenQuantity     Int @default(0)
+
+  sortOrder Int
+  createdAt DateTime @default(now())
+
+  @@unique([deliveryId, orderItemId])
+  @@index([deliveryId])
+  @@index([orderItemId])
+  @@index([productId])
+  @@map("delivery_items")
 }
 
 model Session {
