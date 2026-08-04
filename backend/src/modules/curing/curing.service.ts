@@ -241,6 +241,16 @@ async function requireCuringRecord(id: string): Promise<CuringRecordRow> {
 }
 
 function toSummary(row: CuringRecordRow): CuringRecordSummary {
+  const now = new Date();
+  let status: CuringRecordSummary['status'];
+  if (row.actualRelease) {
+    status = 'RELEASED';
+  } else if (now >= row.plannedCompletion) {
+    status = 'READY_FOR_RELEASE';
+  } else {
+    status = 'IN_PROGRESS';
+  }
+
   return {
     id: row.id,
     productionItemId: row.productionItemId,
@@ -262,5 +272,6 @@ function toSummary(row: CuringRecordRow): CuringRecordSummary {
     releasedByUserId: row.releasedByUserId,
     createdByUserId: row.createdByUserId,
     createdAt: row.createdAt.toISOString(),
+    status,
   };
 }

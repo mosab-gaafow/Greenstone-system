@@ -18,6 +18,7 @@ import {
   type CustomerWithAddresses,
 } from './customers.repository.js';
 import { recordAudit } from '../../shared/audit/audit.service.js';
+import * as deliveriesService from '../deliveries/deliveries.service.js';
 import { runInTransaction, type TransactionClient } from '../../shared/database/transaction.js';
 import { cache } from '../../shared/cache/cache.service.js';
 import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-keys.js';
@@ -421,24 +422,18 @@ async function assertLabelAvailable(customerId: string, label: string): Promise<
 }
 
 /**
- * Normal-deactivation safeguards (Phase 6E addendum,
- * docs/decisions/business-workflow-update-2026-08-02.md section 16).
- * Never silent: every failing condition is reported together, not one at a
- * time, so an authorised user sees the full picture before trying again.
+ * Normal-deactivation safeguards (Phase 6E addendum, extended Phase 8A).
  *
- * Checkable today: every Order must be `COMPLETED`/`CANCELLED`, and the
- * accounting outstanding balance must be exactly KES 0. Unfinished Delivery
- * records, reserved stock for this customer, and pending/unapproved
- * Customer payments cannot be checked yet — Delivery, Stock Reservation,
- * and Customer Payment do not exist in the schema (Phases 8 and 9) — so
- * those three conditions are vacuously satisfied until then. This is a
- * deliberate, documented gap, not an oversight; revisit when those phases
- * ship.
+ * Checkable today: every Order must be COMPLETED/CANCELLED, accounting
+ * outstanding balance must be exactly 0, no PLANNED/DISPATCHED deliveries,
+ * and no reserved stock for this customer. Pending/unapproved Customer
+ * payments cannot be checked yet (Phase 9).
  */
 async function assertCustomerDeactivatable(customerId: string): Promise<void> {
-  const [activeOrders, openingBalance] = await Promise.all([
+  const [activeOrders, openingBalance, hasActiveDeliveries] = await Promise.all([
     findActiveOrdersByCustomerId(customerId),
     findOpeningBalanceAmount(customerId),
+    deliveriesService.hasActiveDeliveriesForCustomer(customerId),
   ]);
 
   const problems: string[] = [];
@@ -452,6 +447,10 @@ async function assertCustomerDeactivatable(customerId: string): Promise<void> {
 
   if (!openingBalance.isZero()) {
     problems.push(`an outstanding balance of KES ${openingBalance.toFixed(2)}`);
+  }
+
+  if (hasActiveDeliveries) {
+    problems.push('this customer has unfinished (PLANNED or DISPATCHED) deliveries');
   }
 
   if (problems.length > 0) {

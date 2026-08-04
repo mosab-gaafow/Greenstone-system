@@ -4,6 +4,7 @@ import {
   findMovements,
   insertMovement,
   lockBalance,
+  reserveStock,
   setBalanceQuantities,
   type BalanceRow,
   type MovementRow,
@@ -230,6 +231,24 @@ export async function recordCuringRelease(
     relatedEntityId,
     createdByUserId: context.user.id,
   });
+}
+
+/**
+ * Reserves finished stock inside the caller's existing transaction. Used by
+ * `deliveries.service.ts` when a PLANNED delivery is created. Does NOT write
+ * a `FinishedStockMovement` — only physical-stock-affecting changes do.
+ *
+ * The caller must already hold a lock on the balance row via `lockBalance`.
+ */
+export async function reserveStockForDelivery(
+  tx: TransactionClient,
+  productId: string,
+  quantity: number,
+): Promise<void> {
+  if (quantity <= 0) {
+    return;
+  }
+  await reserveStock(tx, productId, quantity);
 }
 
 // --- Helpers ----------------------------------------------------------------

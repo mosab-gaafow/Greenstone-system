@@ -6,6 +6,9 @@ import type { CuringDuration } from '@/features/production/types/production.type
  * See business-blueprint section 2.8.
  */
 
+/** Server-derived — see backend curing.types.ts. */
+export type CuringStatus = 'IN_PROGRESS' | 'READY_FOR_RELEASE' | 'RELEASED';
+
 export interface CuringRecord {
   id: string;
   productionItemId: string;
@@ -27,6 +30,8 @@ export interface CuringRecord {
   releasedByUserId: string | null;
   createdByUserId: string | null;
   createdAt: string;
+  /** Server-derived curing status. */
+  status: CuringStatus;
 }
 
 export type CuringStatusFilter = 'PENDING' | 'RELEASED';
@@ -39,9 +44,9 @@ export interface CuringFilters {
 }
 
 export function isCuringReleased(record: CuringRecord): boolean {
-  return record.actualRelease !== null;
+  return record.status === 'RELEASED';
 }
 
 export function isCuringReleasable(record: CuringRecord): boolean {
-  return !isCuringReleased(record) && new Date(record.plannedCompletion).getTime() <= Date.now();
+  return record.status === 'READY_FOR_RELEASE';
 }

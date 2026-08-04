@@ -407,4 +407,71 @@ describe('curing module', () => {
       expect(response.status).toBe(422);
     });
   });
+
+  describe('status derivation (server time)', () => {
+    it('reports IN_PROGRESS before planned completion', async () => {
+      const { cookie: adminCookie } = await createSignedInUser('admin');
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const product = await getTestPrisma().product.create({
+        data: { name: 'Curing Status Block', nameNormalized: 'curing status block', category: 'HOLLOW_BLOCK', size: 'Test', piecesPerPallet: 12 },
+      });
+      await getTestPrisma().finishedStockBalance.create({ data: { productId: product.id } });
+      const { curingRecordId } = await seedCuring(adminHeaders, { productId: product.id, pallets: 1 });
+
+      const res = await request(app).get(`${CURING}/${curingRecordId}`).set('Cookie', adminCookie);
+      expect(res.body.data.status).toBe('IN_PROGRESS');
+    });
+
+    it('reports READY_FOR_RELEASE exactly at planned completion', async () => {
+      const { cookie: adminCookie } = await createSignedInUser('admin');
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const product = await getTestPrisma().product.create({
+        data: { name: 'Curing Ready Block', nameNormalized: 'curing ready block', category: 'HOLLOW_BLOCK', size: 'Test', piecesPerPallet: 12 },
+      });
+      await getTestPrisma().finishedStockBalance.create({ data: { productId: product.id } });
+      const { curingRecordId } = await seedCuring(adminHeaders, { productId: product.id, pallets: 1 });
+
+      await getTestPrisma().curingRecord.update({
+        where: { id: curingRecordId },
+        data: { plannedCompletion: new Date() },
+      });
+
+      const res = await request(app).get(`${CURING}/${curingRecordId}`).set('Cookie', adminCookie);
+      expect(res.body.data.status).toBe('READY_FOR_RELEASE');
+    });
+
+    it('reports READY_FOR_RELEASE after planned completion', async () => {
+      const { cookie: adminCookie } = await createSignedInUser('admin');
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const product = await getTestPrisma().product.create({
+        data: { name: 'Curing After Block', nameNormalized: 'curing after block', category: 'HOLLOW_BLOCK', size: 'Test', piecesPerPallet: 12 },
+      });
+      await getTestPrisma().finishedStockBalance.create({ data: { productId: product.id } });
+      const { curingRecordId } = await seedCuring(adminHeaders, { productId: product.id, pallets: 1 });
+
+      await makeReleasable(curingRecordId);
+
+      const res = await request(app).get(`${CURING}/${curingRecordId}`).set('Cookie', adminCookie);
+      expect(res.body.data.status).toBe('READY_FOR_RELEASE');
+    });
+
+    it('reports RELEASED after release', async () => {
+      const { cookie: adminCookie } = await createSignedInUser('admin');
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const product = await getTestPrisma().product.create({
+        data: { name: 'Curing Released Block', nameNormalized: 'curing released block', category: 'HOLLOW_BLOCK', size: 'Test', piecesPerPallet: 12 },
+      });
+      await getTestPrisma().finishedStockBalance.create({ data: { productId: product.id } });
+      const { curingRecordId } = await seedCuring(adminHeaders, { productId: product.id, pallets: 1 });
+
+      await makeReleasable(curingRecordId);
+      await request(app)
+        .post(`${CURING}/${curingRecordId}/release`)
+        .set(adminHeaders)
+        .send({ brokenQuantity: 0 });
+
+      const res = await request(app).get(`${CURING}/${curingRecordId}`).set('Cookie', adminCookie);
+      expect(res.body.data.status).toBe('RELEASED');
+    });
+  });
 });

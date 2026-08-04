@@ -74,7 +74,10 @@ export interface OpeningBalanceDetail {
 
 export interface CreateCreditOverrideInput {
   customerId: string;
-  relatedOrderId: string;
+  /** Nullable since Phase 8A — override may attach to a Delivery instead. */
+  relatedOrderId?: string | null | undefined;
+  /** Added Phase 8A — the Delivery this override was created for. */
+  relatedDeliveryId?: string | null | undefined;
   previousCreditStatus: CreditStatus;
   reason: string;
   approvedByUserId: string;

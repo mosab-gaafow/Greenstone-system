@@ -38,3 +38,22 @@ const isoDateFormatter = new Intl.DateTimeFormat('en-CA', {
 export function todayInNairobi(): string {
   return isoDateFormatter.format(new Date());
 }
+
+const dateTimeFormatter = new Intl.DateTimeFormat('en-KE', {
+  timeZone: 'Africa/Nairobi',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+  second: '2-digit',
+  hour12: true,
+});
+
+/**
+ * Full date and time in Africa/Nairobi, 12-hour format with AM/PM.
+ * Example: Aug 4, 2026, 6:06:35 PM.
+ */
+export function formatDateTime(iso: string): string {
+  return dateTimeFormatter.format(new Date(iso));
+}

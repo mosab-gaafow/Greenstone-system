@@ -19,9 +19,9 @@ import {
 } from '@/features/curing/hooks/use-curing';
 import { ChangeDurationDialog } from '@/features/curing/components/change-duration-dialog';
 import { ReleaseCuringDialog } from '@/features/curing/components/release-curing-dialog';
-import { isCuringReleasable, isCuringReleased } from '@/features/curing/types/curing.types';
+import { Countdown } from '@/features/curing/components/countdown';
 import { curingDurationLabel } from '@/features/production/types/production.types';
-import { formatDate } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 
 export default function CuringDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -62,8 +62,9 @@ export default function CuringDetailPage({ params }: { params: Promise<{ id: str
   }
 
   const record = query.data;
-  const released = isCuringReleased(record);
-  const releasable = isCuringReleasable(record);
+  const released = record.status === 'RELEASED';
+  const releasable = record.status === 'READY_FOR_RELEASE';
+  const inProgress = record.status === 'IN_PROGRESS';
   const statusTone: StatusTone = released ? 'success' : releasable ? 'warning' : 'neutral';
   const statusLabel = released ? 'Released' : releasable ? 'Ready to release' : 'Curing';
 
@@ -85,6 +86,15 @@ export default function CuringDetailPage({ params }: { params: Promise<{ id: str
         badge={<StatusBadge tone={statusTone} label={statusLabel} />}
         description={record.productionNumber}
       />
+
+      {/* Countdown while in progress */}
+      {inProgress && (
+        <div className="flex items-center gap-2 text-sm">
+          <Clock className="size-4 text-muted-foreground" aria-hidden />
+          <span className="text-muted-foreground">Time remaining:</span>
+          <Countdown plannedCompletion={record.plannedCompletion} />
+        </div>
+      )}
 
       {!released && (
         <div className="flex flex-wrap gap-2">
@@ -119,14 +129,14 @@ export default function CuringDetailPage({ params }: { params: Promise<{ id: str
             <DetailRow label="Quantity entering curing">{record.quantityEntering}</DetailRow>
             <DetailRow label="Original duration">{curingDurationLabel(record.originalDuration)}</DetailRow>
             <DetailRow label="Current duration">{curingDurationLabel(record.currentDuration)}</DetailRow>
-            <DetailRow label="Started">{formatDate(record.startedAt)}</DetailRow>
-            <DetailRow label="Planned completion">{formatDate(record.plannedCompletion)}</DetailRow>
+            <DetailRow label="Started">{formatDateTime(record.startedAt)}</DetailRow>
+            <DetailRow label="Planned completion">{formatDateTime(record.plannedCompletion)}</DetailRow>
             {record.durationChangeReason && (
               <DetailRow label="Duration change reason">{record.durationChangeReason}</DetailRow>
             )}
             {released && (
               <>
-                <DetailRow label="Released">{formatDate(record.actualRelease as string)}</DetailRow>
+                <DetailRow label="Released">{formatDateTime(record.actualRelease as string)}</DetailRow>
                 <DetailRow label="Broken during curing">{record.brokenQuantity}</DetailRow>
                 <DetailRow label="Released quantity">{record.releasedQuantity}</DetailRow>
               </>

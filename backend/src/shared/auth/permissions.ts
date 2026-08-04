@@ -57,7 +57,7 @@ export const statement = {
   // Purchasing and delivery
   purchase: ['create', 'read'],
   'purchase-payment': ['create', 'read', 'approve', 'reverse'],
-  delivery: ['create', 'read', 'dispatch', 'cancel', 'correct'],
+  delivery: ['create', 'read', 'dispatch', 'complete', 'cancel', 'correct'],
 
   // Finance
   invoice: ['create', 'read', 'void'],
@@ -150,7 +150,7 @@ const fullBusinessAccess = {
 
   purchase: ['create', 'read'],
   'purchase-payment': ['create', 'read', 'approve', 'reverse'],
-  delivery: ['create', 'read', 'dispatch', 'cancel', 'correct'],
+  delivery: ['create', 'read', 'dispatch', 'complete', 'cancel', 'correct'],
 
   invoice: ['create', 'read', 'void'],
   'customer-payment': ['create', 'read', 'approve', 'reverse'],

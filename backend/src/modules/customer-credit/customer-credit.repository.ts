@@ -87,7 +87,8 @@ export async function insertCreditOverride(
   await client.customerCreditOverride.create({
     data: {
       customerId: input.customerId,
-      relatedOrderId: input.relatedOrderId,
+      relatedOrderId: input.relatedOrderId ?? null,
+      relatedDeliveryId: input.relatedDeliveryId ?? null,
       previousCreditStatus: input.previousCreditStatus,
       reason: input.reason,
       approvedByUserId: input.approvedByUserId,

@@ -7,6 +7,9 @@ import type { CuringDuration } from '../../generated/prisma/client.js';
  * Phase 6B.
  */
 
+/** Derived server-side — never computed in the browser. */
+export type CuringStatus = 'IN_PROGRESS' | 'READY_FOR_RELEASE' | 'RELEASED';
+
 export interface CuringRecordSummary {
   id: string;
   productionItemId: string;
@@ -28,6 +31,12 @@ export interface CuringRecordSummary {
   releasedByUserId: string | null;
   createdByUserId: string | null;
   createdAt: string;
+  /**
+   * Server-derived status. IN_PROGRESS: not yet releasable.
+   * READY_FOR_RELEASE: plannedCompletion reached but not released.
+   * RELEASED: actualRelease is set.
+   */
+  status: CuringStatus;
 }
 
 export interface ChangeCuringDurationInput {

@@ -96,6 +96,27 @@ export async function insertMovement(
   });
 }
 
+/**
+ * Increments `reservedQuantity` and decrements `availableQuantity` inside the
+ * caller's existing transaction. Does NOT touch `physicalQuantity` and does
+ * NOT write a `FinishedStockMovement` — reservation is not a physical-stock
+ * change. Added in Phase 8A.
+ */
+export async function reserveStock(
+  tx: TransactionClient,
+  productId: string,
+  quantity: number,
+): Promise<BalanceRow> {
+  return tx.finishedStockBalance.update({
+    where: { productId },
+    data: {
+      reservedQuantity: { increment: quantity },
+      availableQuantity: { decrement: quantity },
+      version: { increment: 1 },
+    },
+  });
+}
+
 export async function findMovements(
   productId: string,
   filters: ListFinishedStockMovementsFilters,

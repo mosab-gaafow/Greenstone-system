@@ -16,10 +16,11 @@ import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { Pagination } from '@/components/data-display/pagination';
 import { StatusTabs } from '@/components/shared/status-tabs';
 import { useUrlFilters } from '@/hooks/use-url-filters';
-import { formatDate } from '@/lib/format';
+import { formatDateTime } from '@/lib/format';
 import { useCuringRecords } from '../hooks/use-curing';
 import { curingDurationLabel } from '@/features/production/types/production.types';
-import { isCuringReleasable, isCuringReleased, type CuringRecord } from '../types/curing.types';
+import { type CuringRecord } from '../types/curing.types';
+import { Countdown } from './countdown';
 
 const DEFAULTS = { page: '1', status: 'PENDING' };
 
@@ -69,19 +70,36 @@ export function CuringList() {
       key: 'plannedCompletion',
       header: 'Planned completion',
       card: 'meta',
-      render: (record) => formatDate(record.plannedCompletion),
+      render: (record) => formatDateTime(record.plannedCompletion),
+    },
+    {
+      key: 'countdown',
+      header: 'Remaining',
+      card: 'meta',
+      render: (record) =>
+        record.status === 'IN_PROGRESS' ? (
+          <Countdown plannedCompletion={record.plannedCompletion} />
+        ) : record.status === 'READY_FOR_RELEASE' ? (
+          <span className="text-warning font-semibold">Ready for release</span>
+        ) : null,
     },
     {
       key: 'status',
       header: 'Status',
       card: 'badge',
       render: (record) => {
-        const tone: StatusTone = isCuringReleased(record)
-          ? 'success'
-          : isCuringReleasable(record)
-            ? 'warning'
-            : 'neutral';
-        const label = isCuringReleased(record) ? 'Released' : isCuringReleasable(record) ? 'Ready' : 'Curing';
+        const tone: StatusTone =
+          record.status === 'RELEASED'
+            ? 'success'
+            : record.status === 'READY_FOR_RELEASE'
+              ? 'warning'
+              : 'neutral';
+        const label =
+          record.status === 'RELEASED'
+            ? 'Released'
+            : record.status === 'READY_FOR_RELEASE'
+              ? 'Ready'
+              : 'Curing';
         return <StatusBadge tone={tone} label={label} />;
       },
     },

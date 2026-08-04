@@ -110,6 +110,15 @@ export function canViewAuditLogs(user: Pick<CurrentUser, 'role'> | null | undefi
   return isAdministrator(user);
 }
 
+/**
+ * May correct a dispatched delivery (Phase 8F). Admin/Super Admin only —
+ * Accountant cannot. `delivery:correct` is not granted to the Accountant
+ * (docs/permissions-matrix.md).
+ */
+export function canCorrectDelivery(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
+  return isAdministrator(user);
+}
+
 /** May change system settings. */
 export function canChangeSettings(user: Pick<CurrentUser, 'role'> | null | undefined): boolean {
   return isAdministrator(user);
