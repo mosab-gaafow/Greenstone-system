@@ -306,6 +306,18 @@ export async function readLockedOrderItems(
   return result;
 }
 
+/** Checks whether a customer is active — plain read to avoid circular dependency. */
+export async function isCustomerActive(
+  customerId: string,
+  client: DbClient = getPrisma(),
+): Promise<boolean> {
+  const row = await client.customer.findUnique({
+    where: { id: customerId },
+    select: { isActive: true },
+  });
+  return row?.isActive ?? false;
+}
+
 /**
  * Sets transport fields on a PLANNED delivery. Phase 8B.
  * Called inside the setTransport transaction.

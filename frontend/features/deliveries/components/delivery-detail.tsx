@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { DetailRow } from '@/components/data-display/detail-row';
 import { EmptyState } from '@/components/data-display/empty-state';
-import { useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
+import { useCompleteDelivery, useDelivery, useDispatchDelivery } from '../hooks/use-deliveries';
 import { DeliveryStatusBadge } from './delivery-status-badge';
 import { TransportDialog } from './transport-dialog';
 import { formatDate } from '@/lib/format';
@@ -20,6 +20,7 @@ export function DeliveryDetailView({ id }: { id: string }) {
   const [transportOpen, setTransportOpen] = useState(false);
   const [dispatchOpen, setDispatchOpen] = useState(false);
   const dispatchMutation = useDispatchDelivery(id);
+  const completeMutation = useCompleteDelivery(id);
 
   if (query.isPending) {
     return (
@@ -89,6 +90,28 @@ export function DeliveryDetailView({ id }: { id: string }) {
           >
             <Send className="size-4" aria-hidden />
             Dispatch
+          </Button>
+        </div>
+      )}
+
+      {delivery.status === 'DISPATCHED' && (
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => {
+              // Build completion input: each item gets dispatched = delivered, broken = 0 by default
+              const input = {
+                items: delivery.items.map((item) => ({
+                  orderItemId: item.orderItemId,
+                  deliveredQuantity: item.dispatchedQuantity,
+                  brokenQuantity: 0,
+                })),
+              };
+              completeMutation.mutate(input);
+            }}
+            disabled={completeMutation.isPending}
+          >
+            <Send className="size-4" aria-hidden />
+            {completeMutation.isPending ? 'Completing…' : 'Complete delivery'}
           </Button>
         </div>
       )}

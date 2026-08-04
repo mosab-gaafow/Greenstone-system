@@ -6,6 +6,7 @@ import {
   getReservedStockProductIdsForCustomer,
   dispatchDelivery,
   insertDelivery,
+  isCustomerActive,
   lockOrderItems,
   lockStockBalances,
   readLockedOrderItems,
@@ -36,9 +37,12 @@ import * as vehiclesService from '../vehicles/vehicles.service.js';
 import * as vehicleOwnersService from '../vehicle-owners/vehicle-owners.service.js';
 import * as finishedStockService from '../finished-stock/finished-stock.service.js';
 import * as customerCreditService from '../customer-credit/customer-credit.service.js';
+import * as brokenProductsService from '../broken-products/broken-products.service.js';
 import { ensureBalance, insertMovement, lockBalance, setBalanceQuantities } from '../finished-stock/finished-stock.repository.js';
 import { validateAddressForDelivery } from './deliveries.repository.js';
 import type {
+  CompleteDeliveryInput,
+  CompleteDeliveryResult,
   CreateDeliveryInput,
   DeliveryDetail,
   DeliverySummary,
@@ -101,6 +105,14 @@ export async function createDelivery(
   const order = await ordersService.getOrder(input.orderId);
   if (order.status === 'CANCELLED') {
     throw new BusinessRuleViolationError('Cannot create a delivery for a cancelled order.');
+  }
+
+  // 1b. Validate the customer is active
+  const customerActive = await isCustomerActive(order.customerId);
+  if (!customerActive) {
+    throw new BusinessRuleViolationError(
+      `Customer "${order.customerName}" is inactive and cannot receive deliveries.`,
+    );
   }
 
   // 2. Validate the customer address belongs to the order's customer and is active
@@ -170,10 +182,20 @@ export async function createDelivery(
     }
 
     if (item.plannedQuantity > available) {
+      const reasons: string[] = [];
+      if (oi.allocatedQuantity === 0) {
+        reasons.push('no finished stock has been allocated to this order item yet');
+      }
+      if (oi.deliveredQuantity > 0) {
+        reasons.push(`${oi.deliveredQuantity} already delivered`);
+      }
+      if (committed > 0) {
+        reasons.push(`${committed} already committed to other active deliveries`);
+      }
+      const reasonText = reasons.length > 0 ? ` (${reasons.join('; ')})` : '';
       throw new BusinessRuleViolationError(
         `Requested quantity ${item.plannedQuantity} exceeds available quantity ` +
-          `${available} for "${oi.productName}".` +
-          `${committed > 0 ? ` ${committed} already committed to other active deliveries.` : ''}`,
+          `${available} for "${oi.productName}".` + reasonText,
       );
     }
   }
@@ -486,10 +508,15 @@ export async function dispatch(
 
       await setBalanceQuantities(tx, item.productId, newPhysical, newAvailable);
 
-      // Also decrement reservedQuantity directly since setBalanceQuantities doesn't touch it
       await tx.finishedStockBalance.update({
         where: { productId: item.productId },
         data: { reservedQuantity: newReserved, version: { increment: 1 } },
+      });
+
+      // Set dispatchedQuantity on the delivery item for Phase 8D validation
+      await tx.deliveryItem.update({
+        where: { id: item.id },
+        data: { dispatchedQuantity: item.plannedQuantity },
       });
 
       await insertMovement(tx, {
@@ -539,6 +566,142 @@ export async function dispatch(
     deliveryNumber: updated.deliveryNumber,
     status: 'DISPATCHED',
     dispatchedAt: now.toISOString(),
+  };
+}
+
+/**
+ * Completes a DISPATCHED delivery (Phase 8D).
+ *
+ * Records actual delivered and broken quantities per item. Broken quantity
+ * feeds a BrokenProductRecord (stage: DELIVERY). Updates OrderItem
+ * deliveredQuantity/remainingQuantity and recalculates Order status.
+ *
+ * Finished stock is unchanged — it was already reduced at dispatch.
+ * Single transaction for all changes.
+ */
+export async function complete(
+  id: string,
+  input: CompleteDeliveryInput,
+  context: RequestContext,
+): Promise<CompleteDeliveryResult> {
+  const delivery = await requireDelivery(id);
+
+  if (delivery.status !== 'DISPATCHED') {
+    throw new InvalidDocumentStatusError(
+      `Only DISPATCHED deliveries can be completed. This delivery is ${delivery.status}.`,
+    );
+  }
+
+  // Build a map of delivery items by orderItemId for validation
+  const itemMap = new Map(delivery.items.map((di) => [di.orderItemId, di]));
+
+  // Validate every input item belongs to this delivery
+  for (const inputItem of input.items) {
+    const deliveryItem = itemMap.get(inputItem.orderItemId);
+    if (!deliveryItem) {
+      throw new BusinessRuleViolationError(
+        `Order item ${inputItem.orderItemId} is not part of this delivery.`,
+      );
+    }
+
+    const total = inputItem.deliveredQuantity + inputItem.brokenQuantity;
+    if (total !== deliveryItem.dispatchedQuantity) {
+      throw new BusinessRuleViolationError(
+        `Delivered (${inputItem.deliveredQuantity}) + broken (${inputItem.brokenQuantity}) ` +
+          `must equal dispatched quantity (${deliveryItem.dispatchedQuantity}).`,
+      );
+    }
+  }
+
+  const now = new Date();
+
+  const result = await runInTransaction(async (tx: TransactionClient) => {
+    // Update each delivery item
+    for (const inputItem of input.items) {
+      const deliveryItem = itemMap.get(inputItem.orderItemId)!;
+
+      await tx.deliveryItem.update({
+        where: { id: deliveryItem.id },
+        data: {
+          deliveredQuantity: inputItem.deliveredQuantity,
+          brokenQuantity: inputItem.brokenQuantity,
+        },
+      });
+
+      // Credit the actually-delivered quantity to the order item
+      if (inputItem.deliveredQuantity > 0) {
+        await ordersService.incrementDeliveredQuantity(
+          tx,
+          inputItem.orderItemId,
+          inputItem.deliveredQuantity,
+        );
+      }
+
+      // Record broken products (stage: DELIVERY)
+      if (inputItem.brokenQuantity > 0) {
+        await brokenProductsService.recordBrokenProductInTransaction(
+          tx,
+          {
+            productId: deliveryItem.productId,
+            quantity: inputItem.brokenQuantity,
+            stage: 'DELIVERY',
+            relatedEntityId: id,
+          },
+          context.user.id,
+        );
+      }
+    }
+
+    // Mark delivery as DELIVERED
+    const updated = await tx.delivery.update({
+      where: { id, status: 'DISPATCHED' },
+      data: { status: 'DELIVERED', completedAt: now },
+    });
+
+    if (!updated) {
+      throw new InvalidDocumentStatusError(
+        'Delivery could not be completed — it may no longer be DISPATCHED.',
+      );
+    }
+
+    // Recalculate Order status
+    await ordersService.recalculateOrderStatus(tx, delivery.orderId);
+
+    // Read the new order status for the response
+    const order = await tx.order.findUnique({
+      where: { id: delivery.orderId },
+      select: { status: true },
+    });
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: 'COMPLETE_DELIVERY',
+      module: AUDIT_MODULE,
+      entityType: 'Delivery',
+      entityId: id,
+      documentNumber: delivery.deliveryNumber,
+      updatedData: {
+        status: 'DELIVERED',
+        completedAt: now.toISOString(),
+        items: input.items.map((i) => ({
+          orderItemId: i.orderItemId,
+          deliveredQuantity: i.deliveredQuantity,
+          brokenQuantity: i.brokenQuantity,
+        })),
+      },
+    });
+
+    return { updated, orderStatus: order!.status };
+  });
+
+  await invalidateCache();
+
+  return {
+    id: result.updated.id,
+    deliveryNumber: result.updated.deliveryNumber,
+    status: 'DELIVERED',
+    completedAt: now.toISOString(),
+    orderStatus: result.orderStatus,
   };
 }
 

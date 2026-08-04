@@ -68,6 +68,26 @@ export async function dispatchDelivery(id: string): Promise<DispatchResult> {
   return data;
 }
 
+export interface CompleteDeliveryInput {
+  items: { orderItemId: string; deliveredQuantity: number; brokenQuantity: number }[];
+}
+
+export interface CompleteDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DELIVERED';
+  completedAt: string;
+  orderStatus: string;
+}
+
+export async function completeDelivery(
+  id: string,
+  input: CompleteDeliveryInput,
+): Promise<CompleteDeliveryResult> {
+  const { data } = await api.post<CompleteDeliveryResult>(`/deliveries/${id}/complete`, input);
+  return data;
+}
+
 export async function setTransport(
   id: string,
   values: TransportFormValues,

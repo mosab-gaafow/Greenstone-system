@@ -553,6 +553,184 @@ describe('deliveries module', () => {
       expect(res.body.success).toBe(true);
     });
 
+    it('rejects inactive customer', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('InactiveCust Block', 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await getTestPrisma().customer.create({
+        data: {
+          name: 'Inactive Customer',
+          phone: '0711111111',
+          phoneNormalized: '254711111111',
+          isActive: false,
+        },
+      });
+      const address = await getTestPrisma().customerAddress.create({
+        data: {
+          customerId: customer.id,
+          label: 'Site',
+          labelNormalized: 'site',
+          addressLine: 'Road',
+          isActive: true,
+        },
+      });
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-8010',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT',
+          totalAmount: '5000.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 200,
+              agreedUnitPrice: '25.00',
+              lineTotal: '5000.00',
+              remainingQuantity: 200,
+              allocatedQuantity: 200,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('Test Driver');
+      const vehicleOwner = await seedVehicleOwner('Test Owner');
+      const vehicle = await seedVehicle('KZZ 990Z', vehicleOwner.id);
+
+      await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 10 },
+          ],
+        })
+        .expect(422);
+    });
+
+    it('rejects when allocatedQuantity is 0 despite having stock', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('AllocZero Block', 100);
+      await seedFinishedStock(product.id, 50); // physical stock exists
+      const customer = await seedCustomer('AllocZero Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-8011',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT',
+          totalAmount: '2500.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 1000,
+              agreedUnitPrice: '2.50',
+              lineTotal: '2500.00',
+              remainingQuantity: 1000,
+              allocatedQuantity: 0, // nothing allocated yet
+              producedQuantity: 804,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('AllocZero Driver');
+      const vehicleOwner = await seedVehicleOwner('AllocZero Owner');
+      const vehicle = await seedVehicle('KZZ 880Z', vehicleOwner.id);
+
+      const res = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 8 },
+          ],
+        })
+        .expect(422);
+
+      expect(res.body.error.message).toContain('allocated');
+    });
+
+    it('succeeds when allocated > 0 and stock covers the quantity', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('AllocOK Block', 100);
+      await seedFinishedStock(product.id, 50);
+      const customer = await seedCustomer('AllocOK Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-8012',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'PREPAID',
+          totalAmount: '200.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 100,
+              agreedUnitPrice: '2.00',
+              lineTotal: '200.00',
+              remainingQuantity: 100,
+              allocatedQuantity: 50, // 50 allocated
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('AllocOK Driver');
+      const vehicleOwner = await seedVehicleOwner('AllocOK Owner');
+      const vehicle = await seedVehicle('KZZ 770Z', vehicleOwner.id);
+
+      // 8 <= min(100, 50-0, 50) = 50 → should succeed
+      await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 8 },
+          ],
+        })
+        .expect(201);
+    });
+
     it('PREPAID order delivery succeeds without credit check', async () => {
       const { cookie: adminCookie } = await seedAdmin();
       const headers = await csrfHeaders(adminCookie);
@@ -1191,6 +1369,178 @@ describe('deliveries module', () => {
       await request(app)
         .post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`)
         .set(headers)
+        .expect(409);
+    });
+  });
+
+  // =========================================================================
+  // Phase 8D — Completion
+  // =========================================================================
+
+  describe('POST /deliveries/:id/complete', () => {
+    async function seedDispatchedDelivery() {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+
+      const product = await seedProduct('Complete Block', 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('Complete Customer');
+      const address = await seedAddress(customer.id, 'Main Site');
+
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: 'ORD-2026-9201',
+          customerId: customer.id,
+          customerAddressId: address.id,
+          addressLabel: address.label,
+          addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT',
+          totalAmount: '5000.00',
+          items: {
+            create: {
+              productId: product.id,
+              quantity: 200,
+              agreedUnitPrice: '25.00',
+              lineTotal: '5000.00',
+              remainingQuantity: 200,
+              allocatedQuantity: 200,
+              sortOrder: 1,
+            },
+          },
+        },
+        include: { items: true },
+      });
+
+      const driver = await seedDriver('Complete Driver');
+      const vehicleOwner = await seedVehicleOwner('Complete Owner');
+      const vehicle = await seedVehicle('KZZ 050Z', vehicleOwner.id);
+
+      const delivery = await request(app)
+        .post(DELIVERIES)
+        .set(headers)
+        .send({
+          orderId: order.id,
+          customerAddressId: address.id,
+          driverId: driver.id,
+          vehicleId: vehicle.id,
+          deliveryDate: new Date().toISOString(),
+          items: [
+            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 100 },
+          ],
+        })
+        .expect(201);
+
+      await request(app)
+        .post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`)
+        .set(headers)
+        .expect(200);
+
+      return {
+        deliveryId: delivery.body.data.id as string,
+        orderItemId: order.items[0]!.id,
+        productId: product.id,
+        orderId: order.id,
+        headers,
+        adminCookie,
+      };
+    }
+
+    it('completes a delivery with no breakage', async () => {
+      const { deliveryId, orderItemId, headers, adminCookie } =
+        await seedDispatchedDelivery();
+
+      const res = await request(app)
+        .post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(headers)
+        .send({
+          items: [
+            { orderItemId, deliveredQuantity: 100, brokenQuantity: 0 },
+          ],
+        })
+        .expect(200);
+
+      expect(res.body.data.status).toBe('DELIVERED');
+
+      // Verify OrderItem was updated
+      const orderItem = await getTestPrisma().orderItem.findUnique({
+        where: { id: orderItemId },
+      });
+      expect(orderItem!.deliveredQuantity).toBe(100);
+      expect(orderItem!.remainingQuantity).toBe(100); // 200 - 100
+
+      // Verify delivery status
+      const updated = await request(app)
+        .get(`${DELIVERIES}/${deliveryId}`)
+        .set('Cookie', adminCookie)
+        .expect(200);
+      expect(updated.body.data.status).toBe('DELIVERED');
+    });
+
+    it('completes with broken products recorded', async () => {
+      const { deliveryId, orderItemId, headers } =
+        await seedDispatchedDelivery();
+
+      const res = await request(app)
+        .post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(headers)
+        .send({
+          items: [
+            { orderItemId, deliveredQuantity: 90, brokenQuantity: 10 },
+          ],
+        })
+        .expect(200);
+
+      expect(res.body.data.status).toBe('DELIVERED');
+
+      // Verify broken product was recorded
+      const broken = await getTestPrisma().brokenProductRecord.findFirst({
+        where: { stage: 'DELIVERY', relatedEntityId: deliveryId },
+      });
+      expect(broken).not.toBeNull();
+      expect(broken!.quantity).toBe(10);
+
+      // Verify OrderItem: only 90 delivered (not 100)
+      const orderItem = await getTestPrisma().orderItem.findUnique({
+        where: { id: orderItemId },
+      });
+      expect(orderItem!.deliveredQuantity).toBe(90);
+    });
+
+    it('rejects delivered + broken != dispatched', async () => {
+      const { deliveryId, orderItemId, headers } = await seedDispatchedDelivery();
+
+      await request(app)
+        .post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(headers)
+        .send({
+          items: [
+            { orderItemId, deliveredQuantity: 80, brokenQuantity: 10 },
+          ],
+        })
+        .expect(422); // 80 + 10 = 90 ≠ 100 dispatched
+    });
+
+    it('prevents double completion', async () => {
+      const { deliveryId, orderItemId, headers } = await seedDispatchedDelivery();
+
+      await request(app)
+        .post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(headers)
+        .send({
+          items: [
+            { orderItemId, deliveredQuantity: 100, brokenQuantity: 0 },
+          ],
+        })
+        .expect(200);
+
+      await request(app)
+        .post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(headers)
+        .send({
+          items: [
+            { orderItemId, deliveredQuantity: 100, brokenQuantity: 0 },
+          ],
+        })
         .expect(409);
     });
   });

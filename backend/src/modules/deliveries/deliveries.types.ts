@@ -140,3 +140,23 @@ export interface DispatchResult {
   status: 'DISPATCHED';
   dispatchedAt: string;
 }
+
+// --- Phase 8D: Completion --------------------------------------------------
+
+export interface DeliveryCompletionItem {
+  orderItemId: string;
+  deliveredQuantity: number;
+  brokenQuantity: number;
+}
+
+export interface CompleteDeliveryInput {
+  items: DeliveryCompletionItem[];
+}
+
+export interface CompleteDeliveryResult {
+  id: string;
+  deliveryNumber: string;
+  status: 'DELIVERED';
+  completedAt: string;
+  orderStatus: string;
+}

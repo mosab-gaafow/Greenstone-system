@@ -151,3 +151,41 @@ export async function setOrderCancelled(
     data: { status: 'CANCELLED' satisfies OrderStatus, statusReason: reason },
   });
 }
+
+/** Increments deliveredQuantity and decrements remainingQuantity on an order item. Phase 8D. */
+export async function incrementOrderItemDeliveredQuantity(
+  tx: TransactionClient,
+  orderItemId: string,
+  quantity: number,
+): Promise<void> {
+  await tx.orderItem.update({
+    where: { id: orderItemId },
+    data: {
+      deliveredQuantity: { increment: quantity },
+      remainingQuantity: { decrement: quantity },
+    },
+  });
+}
+
+/** Sets the Order status based on its items. Phase 8D. */
+export async function updateOrderStatus(
+  tx: TransactionClient,
+  orderId: string,
+  status: OrderStatus,
+): Promise<void> {
+  await tx.order.update({
+    where: { id: orderId },
+    data: { status },
+  });
+}
+
+/** Checks whether every item on an order has remainingQuantity = 0. */
+export async function isOrderFullyDelivered(
+  tx: TransactionClient,
+  orderId: string,
+): Promise<boolean> {
+  const pending = await tx.orderItem.count({
+    where: { orderId, remainingQuantity: { gt: 0 } },
+  });
+  return pending === 0;
+}

@@ -52,6 +52,27 @@ const moneySchema = z
   .trim()
   .regex(/^\d+(\.\d{1,2})?$/, 'Enter an amount with up to two decimal places.');
 
+const completionItemSchema = z
+  .object({
+    orderItemId: z.string().min(1),
+    deliveredQuantity: z.coerce
+      .number()
+      .int()
+      .min(0, 'Delivered quantity cannot be negative.'),
+    brokenQuantity: z.coerce
+      .number()
+      .int()
+      .min(0, 'Broken quantity cannot be negative.')
+      .default(0),
+  })
+  .strict();
+
+export const completeDeliveryBodySchema = z
+  .object({
+    items: z.array(completionItemSchema).min(1, 'Add at least one item.'),
+  })
+  .strict();
+
 export const setTransportBodySchema = z
   .object({
     transportRate: moneySchema.refine((v) => Number(v) > 0, {

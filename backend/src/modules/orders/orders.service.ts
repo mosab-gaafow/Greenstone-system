@@ -8,9 +8,12 @@ import {
   findOrderById,
   findOrders,
   incrementOrderItemAllocatedQuantity,
+  incrementOrderItemDeliveredQuantity,
   incrementOrderItemProducedQuantity,
   insertOrder,
+  isOrderFullyDelivered,
   setOrderCancelled,
+  updateOrderStatus,
   type OrderDetailRow,
   type OrderRow,
 } from './orders.repository.js';
@@ -440,4 +443,25 @@ function toAuditSnapshot(row: {
     status: row.status,
     totalAmount: row.totalAmount.toFixed(2),
   };
+}
+
+// --- Phase 8D: Delivery completion helpers ---------------------------------
+
+/** Credits deliveredQuantity and recalculates remainingQuantity. */
+export async function incrementDeliveredQuantity(
+  tx: TransactionClient,
+  orderItemId: string,
+  quantity: number,
+): Promise<void> {
+  if (quantity <= 0) return;
+  await incrementOrderItemDeliveredQuantity(tx, orderItemId, quantity);
+}
+
+/** Recalculates the Order status after delivery. COMPLETED when every item has remainingQuantity = 0; otherwise PARTIALLY_DELIVERED. */
+export async function recalculateOrderStatus(
+  tx: TransactionClient,
+  orderId: string,
+): Promise<void> {
+  const fullyDelivered = await isOrderFullyDelivered(tx, orderId);
+  await updateOrderStatus(tx, orderId, fullyDelivered ? 'COMPLETED' : 'PARTIALLY_DELIVERED');
 }

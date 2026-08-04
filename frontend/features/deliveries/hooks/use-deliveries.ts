@@ -51,6 +51,24 @@ export function useCreateDelivery() {
   });
 }
 
+export function useCompleteDelivery(id: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (input: deliveriesApi.CompleteDeliveryInput) =>
+      deliveriesApi.completeDelivery(id, input),
+    onSuccess: async (result) => {
+      await queryClient.invalidateQueries({ queryKey: deliveryKeys.all });
+      await queryClient.invalidateQueries({ queryKey: ['orders'] });
+      await queryClient.invalidateQueries({ queryKey: ['customers'] });
+      toast.success(`${result.deliveryNumber} completed. Order is now ${result.orderStatus}.`);
+    },
+    onError: (error) => {
+      toast.error(errorMessage(error, 'The delivery could not be completed.'));
+    },
+  });
+}
+
 export function useDispatchDelivery(id: string) {
   const queryClient = useQueryClient();
 

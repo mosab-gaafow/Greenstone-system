@@ -146,23 +146,41 @@ export function DeliveryForm() {
   // Max plannable
   function maxPlannable(item: { orderItemId: string }): {
     orderRemaining: number;
+    orderAllocated: number;
     stockAvailable: number;
     maxPlannable: number;
+    reason: string | null;
   } | null {
     if (!selectedOrder) return null;
     const oi = selectedOrder.items.find((i) => i.id === item.orderItemId);
     if (!oi) return null;
     const stockAvail = stockByProductId[oi.productId] ?? 0;
+    const allocAvail = oi.allocatedQuantity - oi.deliveredQuantity;
+    const max = Math.max(0, Math.min(oi.remainingQuantity, allocAvail, stockAvail));
+
+    let reason: string | null = null;
+    if (max === 0) {
+      if (oi.allocatedQuantity === 0) reason = 'No stock allocated to this order item';
+      else if (stockAvail === 0) reason = 'No finished stock available';
+      else if (oi.remainingQuantity === 0) reason = 'Order item fully delivered';
+    }
+
     return {
       orderRemaining: oi.remainingQuantity,
+      orderAllocated: allocAvail,
       stockAvailable: stockAvail,
-      maxPlannable: Math.max(0, Math.min(oi.remainingQuantity, stockAvail)),
+      maxPlannable: max,
+      reason,
     };
   }
 
-  const anyStockAvailable = useMemo(() => {
+  const canPlanAny = useMemo(() => {
     if (!selectedOrder?.items?.length) return false;
-    return selectedOrder.items.some((oi) => (stockByProductId[oi.productId] ?? 0) > 0);
+    return selectedOrder.items.some((oi) => {
+      const stockAvail = stockByProductId[oi.productId] ?? 0;
+      const allocAvail = oi.allocatedQuantity - oi.deliveredQuantity;
+      return Math.min(oi.remainingQuantity, allocAvail, stockAvail) > 0;
+    });
   }, [selectedOrder, stockByProductId]);
 
   const stockIsLoading = selectedOrder && !Object.keys(stockByProductId).length;
@@ -363,10 +381,18 @@ export function DeliveryForm() {
                     </div>
 
                     {info && (
-                      <div className="flex gap-4 text-xs text-muted-foreground">
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
                         <span>
                           Remaining:{' '}
                           <span className="font-medium tabular-nums">{info.orderRemaining}</span>
+                        </span>
+                        <span>
+                          Allocated:{' '}
+                          <span
+                            className={`font-medium tabular-nums ${info.orderAllocated === 0 ? 'text-destructive' : ''}`}
+                          >
+                            {info.orderAllocated}
+                          </span>
                         </span>
                         <span>
                           Stock:{' '}
@@ -378,8 +404,15 @@ export function DeliveryForm() {
                         </span>
                         <span>
                           Max:{' '}
-                          <span className="font-semibold tabular-nums">{info.maxPlannable}</span>
+                          <span
+                            className={`font-semibold tabular-nums ${info.maxPlannable === 0 ? 'text-destructive' : ''}`}
+                          >
+                            {info.maxPlannable}
+                          </span>
                         </span>
+                        {info.reason && (
+                          <span className="text-destructive w-full">{info.reason}</span>
+                        )}
                       </div>
                     )}
                   </div>
@@ -462,7 +495,7 @@ export function DeliveryForm() {
             createDelivery.isPending ||
             !selectedOrder ||
             stockIsLoading ||
-            (selectedOrder && !anyStockAvailable)
+            (selectedOrder && !canPlanAny)
           }
           className="h-11"
         >
@@ -472,8 +505,8 @@ export function DeliveryForm() {
               ? 'Select an order'
               : stockIsLoading
                 ? 'Loading stock…'
-                : !anyStockAvailable
-                  ? 'No finished stock available — release cured products first'
+                : !canPlanAny
+                  ? 'No plannable quantity — check allocated stock'
                   : 'Plan delivery'}
         </Button>
         <Button
