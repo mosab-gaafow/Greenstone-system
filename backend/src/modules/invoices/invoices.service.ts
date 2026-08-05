@@ -212,6 +212,12 @@ function esc(text: string | null | undefined): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+/** Format a decimal string with thousands separators, e.g. "20,000.00". */
+function fmtMoney(amount: string): string {
+  const [whole, frac] = amount.split('.');
+  return whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac ? '.' + frac : '');
+}
+
 function buildInvoiceHtml(
   invoice: InvoicePdfRow,
   settings: { companyName: string | null; address: string | null; phone: string | null; email: string | null; paymentDetails: string | null; footerNotes: string | null },
@@ -254,7 +260,7 @@ function buildInvoiceHtml(
   } else {
     paymentSection = `<table class="payment-table">
       <tr><td class="pay-label">M-Pesa Paybill / Till:</td><td class="pay-value">To be configured in Company Settings</td></tr>
-      <tr><td class="pay-label">Account Reference:</td><td class="pay-value">${esc(invoice.invoiceNumber)}</td></tr>
+      <tr><td class="pay-label">Account Number:</td><td class="pay-value">${esc(invoice.invoiceNumber)}</td></tr>
     </table>`;
   }
 
@@ -263,8 +269,8 @@ function buildInvoiceHtml(
     `<tr>
       <td class="item-name">${esc(item.productName)}</td>
       <td class="num">${item.quantity}</td>
-      <td class="num">${esc(item.unitPrice.toFixed(2))}</td>
-      <td class="num">${esc(item.lineTotal.toFixed(2))}</td>
+      <td class="num">${fmtMoney(item.unitPrice.toFixed(2))}</td>
+      <td class="num">${fmtMoney(item.lineTotal.toFixed(2))}</td>
     </tr>`,
   ).join('');
 
@@ -287,7 +293,6 @@ function buildInvoiceHtml(
   .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 28px; }
   .logo-placeholder { font-size: 22pt; font-weight: 700; color: #2563eb; letter-spacing: -0.5px; }
   .company-details { text-align: right; font-size: 9pt; color: #555; line-height: 1.6; }
-  .company-details .name { font-size: 13pt; font-weight: 700; color: #1a1a1a; margin-bottom: 2px; }
   .doc-title { font-size: 20pt; font-weight: 700; color: #2563eb; margin-bottom: 20px; letter-spacing: -0.5px; }
   .info-grid { display: flex; gap: 40px; margin-bottom: 28px; }
   .info-col { flex: 1; }
@@ -328,7 +333,6 @@ function buildInvoiceHtml(
   <div class="header">
     <div>${logoHtml}</div>
     <div class="company-details">
-      <div class="name">${companyName}</div>
       ${contactLines.join('\n      ')}
     </div>
   </div>
@@ -372,7 +376,7 @@ function buildInvoiceHtml(
   <!-- Totals -->
   <div class="totals">
     <table>
-      <tr class="total-row"><td>Total</td><td class="num">KES ${esc(invoice.totalAmount.toFixed(2))}</td></tr>
+      <tr class="total-row"><td>Total</td><td class="num">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</td></tr>
     </table>
   </div>
 
@@ -381,9 +385,9 @@ function buildInvoiceHtml(
   <div class="pay-summary">
     <table>
       <tr><td>Payment Status</td><td class="num"><span class="status-badge ${paymentStatusClass}">${paymentStatusLabel}</span></td></tr>
-      <tr><td>Invoice Total</td><td class="num">KES ${esc(invoice.totalAmount.toFixed(2))}</td></tr>
-      <tr><td>Approved</td><td class="num">KES ${esc(approved.toFixed(2))}</td></tr>
-      <tr class="total-row"><td>Outstanding</td><td class="num">KES ${esc(outstanding.toFixed(2))}</td></tr>
+      <tr><td>Invoice Total</td><td class="num">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</td></tr>
+      <tr><td>Approved</td><td class="num">KES ${fmtMoney(approved.toFixed(2))}</td></tr>
+      <tr class="total-row"><td>Outstanding</td><td class="num">KES ${fmtMoney(outstanding.toFixed(2))}</td></tr>
     </table>
   </div>
 
