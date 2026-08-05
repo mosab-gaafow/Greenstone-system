@@ -1,7 +1,7 @@
 import { api, type PaginationMeta } from '@/lib/api-client';
 import type { Invoice, InvoiceDetail } from '../types/invoice.types';
 
-export async function fetchInvoices(filters: { page: number; pageSize: number; search?: string; status?: string; customerId?: string; orderId?: string }) {
+export async function fetchInvoices(filters: { page: number; pageSize: number; search?: string; status?: string; customerId?: string; orderId?: string; paymentStatus?: string }) {
   const { data, meta } = await api.get<Invoice[]>('/invoices', { query: filters });
   return { invoices: data, meta: meta as unknown as PaginationMeta };
 }

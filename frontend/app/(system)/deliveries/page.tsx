@@ -1,12 +1,10 @@
 'use client';
 
-import { Suspense } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { Truck, Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
-import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { DeliverySummaryCards } from '@/features/deliveries/components/delivery-summary-cards';
 import { DeliveryList } from '@/features/deliveries/components/delivery-list';
 import { deliveryKeys } from '@/features/deliveries/hooks/use-deliveries';
@@ -42,9 +40,7 @@ export default function DeliveriesPage() {
 
       <DeliverySummaryCards />
 
-      <Suspense fallback={<ListSkeleton />}>
-        <DeliveryList />
-      </Suspense>
+      <DeliveryList />
     </div>
   );
 }

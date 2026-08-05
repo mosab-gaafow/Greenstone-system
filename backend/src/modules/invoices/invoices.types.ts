@@ -30,6 +30,7 @@ export interface InvoiceSummary {
   totalAmount: string;
   dueDate: string;
   itemCount: number;
+  paymentStatus: InvoicePaymentStatus | null;
   createdByUserId: string | null;
   createdAt: string;
   updatedAt: string;
@@ -51,7 +52,8 @@ export interface ListInvoicesFilters {
   search?: string;
   status?: InvoiceStatus;
   customerId?: string;
-  orderId?: string;
+  orderId?: string | undefined;
+  paymentStatus?: InvoicePaymentStatus | undefined;
   sortBy: InvoiceSortField;
   sortDirection: SortDirection;
 }

@@ -18,6 +18,7 @@ export function useDeliveries(filters: DeliveryFilters) {
   return useQuery({
     queryKey: deliveryKeys.list(filters),
     queryFn: () => deliveriesApi.fetchDeliveries(filters),
+    placeholderData: (prev) => prev,
   });
 }
 

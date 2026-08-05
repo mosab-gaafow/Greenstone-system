@@ -100,7 +100,7 @@ function PaymentForm() {
     if (validAllocs.length === 0) { setAllocError('Add at least one invoice allocation.'); return; }
     const total = validAllocs.reduce((s, a) => s + Number(a.amount), 0);
     createPayment.mutate(
-      { customerId, amount: total.toFixed(2), paymentMethod: method, paymentReference: undefined, paymentDate: new Date() },
+      { customerId, amount: total.toFixed(2), paymentMethod: method, paymentReference: undefined, paymentDate: new Date(), allocations: validAllocs },
       { onSuccess: (p) => router.push(`/payments/${p.id}`) },
     );
   }, [allocations, createPayment, router, customerId, method]);

@@ -9,6 +9,7 @@ import { disconnectTestPrisma, getTestPrisma, truncateAll } from '../setup/test-
 
 const app = createApp();
 const DELIVERIES = `${API_BASE_PATH}/deliveries`;
+const TOMORROW = new Date(Date.now() + 86400000).toISOString();
 
 async function csrfHeaders(cookie: string): Promise<Record<string, string>> {
   const response = await request(app).get(`${API_BASE_PATH}/csrf-token`).set('Cookie', cookie);
@@ -1250,62 +1251,42 @@ describe('deliveries module', () => {
       expect(updated.body.data.status).toBe('DISPATCHED');
     });
 
-    it('blocks PREPAID delivery dispatch', async () => {
+    it('blocks PREPAID dispatch without invoice', async () => {
       const { cookie: adminCookie } = await seedAdmin();
       const headers = await csrfHeaders(adminCookie);
-
-      const product = await seedProduct('Prepaid Block', 100);
+      const product = await seedProduct('PrepaidNoInv', 100);
       await seedFinishedStock(product.id, 500);
-      const customer = await seedCustomer('Prepaid Customer');
+      const customer = await seedCustomer('PrepaidNoInv');
       const address = await seedAddress(customer.id, 'Main Site');
-
       const order = await getTestPrisma().order.create({
-        data: {
-          orderNumber: 'ORD-2026-9102',
-          customerId: customer.id,
-          customerAddressId: address.id,
-          addressLabel: address.label,
-          addressLine: address.addressLine,
-          paymentArrangement: 'PREPAID',
-          totalAmount: '5000.00',
-          items: {
-            create: {
-              productId: product.id,
-              quantity: 200,
-              agreedUnitPrice: '25.00',
-              lineTotal: '5000.00',
-              remainingQuantity: 200,
-              allocatedQuantity: 200,
-              sortOrder: 1,
-            },
-          },
-        },
+        data: { orderNumber: 'ORD-2026-9102', customerId: customer.id, customerAddressId: address.id, addressLabel: address.label, addressLine: address.addressLine, paymentArrangement: 'PREPAID', totalAmount: '5000.00', items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } } },
         include: { items: true },
       });
+      const driver = await seedDriver('PNI Drv');
+      const vo = await seedVehicleOwner('PNI VO');
+      const vehicle = await seedVehicle('KZZ 100Z', vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(headers).send({ orderId: order.id, customerAddressId: address.id, driverId: driver.id, vehicleId: vehicle.id, deliveryDate: new Date().toISOString(), items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 }] }).expect(201);
+      await request(app).post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`).set(headers).expect(422);
+    });
 
-      const driver = await seedDriver('Prepaid Driver');
-      const vehicleOwner = await seedVehicleOwner('Prepaid Owner');
-      const vehicle = await seedVehicle('KZZ 200Z', vehicleOwner.id);
-
-      const delivery = await request(app)
-        .post(DELIVERIES)
-        .set(headers)
-        .send({
-          orderId: order.id,
-          customerAddressId: address.id,
-          driverId: driver.id,
-          vehicleId: vehicle.id,
-          deliveryDate: new Date().toISOString(),
-          items: [
-            { orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 },
-          ],
-        })
-        .expect(201);
-
-      await request(app)
-        .post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`)
-        .set(headers)
-        .expect(422);
+    it('blocks PREPAID dispatch when unpaid', async () => {
+      const { cookie: adminCookie } = await seedAdmin();
+      const headers = await csrfHeaders(adminCookie);
+      const product = await seedProduct('PrepaidUnpaid', 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('PrepaidUnpaid');
+      const address = await seedAddress(customer.id, 'Main Site');
+      const order = await getTestPrisma().order.create({
+        data: { orderNumber: 'ORD-2026-9105', customerId: customer.id, customerAddressId: address.id, addressLabel: address.label, addressLine: address.addressLine, paymentArrangement: 'PREPAID', totalAmount: '5000.00', items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } } },
+        include: { items: true },
+      });
+      // Create invoice but no payment
+      await request(app).post(`${API_BASE_PATH}/invoices`).set(headers).send({ orderId: order.id, dueDate: TOMORROW }).expect(201);
+      const driver = await seedDriver('PU Drv');
+      const vo = await seedVehicleOwner('PU VO');
+      const vehicle = await seedVehicle('KZZ 090Z', vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(headers).send({ orderId: order.id, customerAddressId: address.id, driverId: driver.id, vehicleId: vehicle.id, deliveryDate: new Date().toISOString(), items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 }] }).expect(201);
+      await request(app).post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`).set(headers).expect(422);
     });
 
     it('prevents double dispatch', async () => {

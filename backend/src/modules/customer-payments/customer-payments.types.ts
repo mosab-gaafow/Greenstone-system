@@ -6,6 +6,7 @@ export interface CreatePaymentInput {
   paymentMethod: PaymentMethod;
   paymentReference?: string;
   paymentDate: Date;
+  allocations: PaymentAllocationInput[];
 }
 
 export interface PaymentAllocationInput {
@@ -14,7 +15,7 @@ export interface PaymentAllocationInput {
 }
 
 export interface ApprovePaymentInput {
-  allocations: PaymentAllocationInput[];
+  allocations?: PaymentAllocationInput[] | undefined;
 }
 
 export interface ReversePaymentInput {
@@ -29,5 +30,5 @@ export interface ReversePaymentResult { id: string; paymentNumber: string; statu
 
 export type PaymentSortField = 'paymentNumber' | 'createdAt' | 'paymentDate';
 export type SortDirection = 'asc' | 'desc';
-export interface ListPaymentsFilters { page: number; pageSize: number; search?: string; status?: PurchasePaymentStatus; customerId?: string; sortBy: PaymentSortField; sortDirection: SortDirection; }
+export interface ListPaymentsFilters { page: number; pageSize: number; search?: string; status?: PurchasePaymentStatus; customerId?: string; paymentMethod?: PaymentMethod; sortBy: PaymentSortField; sortDirection: SortDirection; }
 export interface ListPaymentsResult { payments: PaymentSummary[]; totalRecords: number; }

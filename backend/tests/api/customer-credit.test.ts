@@ -392,4 +392,7 @@ describe('customer credit module', () => {
       expect(response.status).toBe(422);
     });
   });
+
+  // --- Phase 9D: Credit balance includes invoices and payments -----------------
+
 });

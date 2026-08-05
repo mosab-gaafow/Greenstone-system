@@ -3,6 +3,8 @@ import {
   findOpeningBalance,
   insertCreditOverride,
   sumActiveCreditOrderTotals,
+  sumApprovedPaymentAllocations,
+  sumIssuedInvoiceTotals,
   upsertOpeningBalance,
   type OpeningBalanceRow,
 } from './customer-credit.repository.js';
@@ -51,20 +53,29 @@ export async function getCreditStatus(customerId: string): Promise<CreditStatusR
 }
 
 /**
- * Computes the accounting outstanding balance without confirming the
- * customer exists — for callers (such as order creation) that have already
- * loaded the customer and want to read within their own transaction.
+ * Computes the accounting outstanding balance (Phase 9D).
+ *
+ * Formula:
+ *   openingBalance + Σ(ISSUED invoices) − Σ(APPROVED payment allocations)
+ *
+ * PENDING and REVERSED payments are never counted.
  */
 export async function computeCreditStatus(
   customerId: string,
   client?: TransactionClient,
 ): Promise<CreditStatusResult> {
-  const openingBalanceRow = await findOpeningBalance(customerId, client);
-  const outstandingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
+  const [openingBalanceRow, issuedInvoices, approvedPayments] = await Promise.all([
+    findOpeningBalance(customerId, client),
+    sumIssuedInvoiceTotals(customerId, client),
+    sumApprovedPaymentAllocations(customerId, client),
+  ]);
+
+  const openingBalance = openingBalanceRow?.amount ?? new Prisma.Decimal(0);
+  const outstandingBalance = openingBalance.add(issuedInvoices).sub(approvedPayments);
 
   return {
     customerId,
-    openingBalance: outstandingBalance.toFixed(2),
+    openingBalance: openingBalance.toFixed(2),
     outstandingBalance: outstandingBalance.toFixed(2),
     creditStatus: classify(outstandingBalance),
   };

@@ -13,8 +13,12 @@ export const paymentKeys = {
 
 function em(e: unknown, fb: string): string { return e instanceof ApiError ? e.message : fb; }
 
-export function usePayments(f: { page: number; pageSize: number; search?: string }) {
-  return useQuery({ queryKey: paymentKeys.list(f), queryFn: () => api.fetchPayments(f) });
+export function usePayments(f: { page: number; pageSize: number; search?: string; status?: string; paymentMethod?: string }) {
+  return useQuery({
+    queryKey: paymentKeys.list(f),
+    queryFn: () => api.fetchPayments(f),
+    placeholderData: (prev) => prev,
+  });
 }
 
 export function usePayment(id: string) {
@@ -24,7 +28,7 @@ export function usePayment(id: string) {
 export function useCreatePayment() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (v: { customerId: string; amount: string; paymentMethod: string; paymentReference?: string; paymentDate: Date }) => api.createPayment(v),
+    mutationFn: (v: { customerId: string; amount: string; paymentMethod: string; paymentReference?: string; paymentDate: Date; allocations: { invoiceId: string; amount: string }[] }) => api.createPayment(v),
     onSuccess: async (p) => { await qc.invalidateQueries({ queryKey: paymentKeys.all }); toast.success(`${p.paymentNumber} saved.`); },
     onError: (e) => toast.error(em(e, 'Could not create payment.')),
   });
@@ -33,7 +37,7 @@ export function useCreatePayment() {
 export function useApprovePayment(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (a: { invoiceId: string; amount: string }[]) => api.approvePayment(id, a),
+    mutationFn: () => api.approvePayment(id),
     onSuccess: async (r) => {
       await qc.invalidateQueries({ queryKey: paymentKeys.all });
       await qc.invalidateQueries({ queryKey: ['invoices'] });

@@ -14,6 +14,7 @@ function buildWhere(f: ListPaymentsFilters): Prisma.CustomerPaymentWhereInput {
   if (f.search) w.OR = [{ paymentNumber: { contains: f.search } }, { customer: { name: { contains: f.search } } }];
   if (f.status) w.status = f.status;
   if (f.customerId) w.customerId = f.customerId;
+  if (f.paymentMethod) w.paymentMethod = f.paymentMethod;
   return w;
 }
 

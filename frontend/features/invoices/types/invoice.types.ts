@@ -10,8 +10,10 @@ export interface Invoice {
   id: string; invoiceNumber: string; orderId: string; orderNumber: string;
   customerId: string; customerName: string; status: InvoiceStatus;
   totalAmount: string; dueDate: string; itemCount: number;
+  paymentStatus: PaymentStatus | null;
   voidedAt: string | null; voidReason: string | null;
   createdAt: string; updatedAt: string;
+  finance?: InvoiceFinanceSummary;
 }
 
 export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';

@@ -24,6 +24,7 @@ export const listInvoicesQuerySchema = z.object({
   status: z.enum(['ISSUED', 'VOIDED']).optional(),
   customerId: z.string().min(1).optional(),
   orderId: z.string().min(1).optional(),
+  paymentStatus: z.enum(['UNPAID', 'PARTIALLY_PAID', 'FULLY_PAID']).optional(),
   sortBy: z.enum(['invoiceNumber', 'createdAt', 'dueDate']).default('createdAt'),
   sortDirection: z.enum(['asc', 'desc']).default('desc'),
 });

@@ -473,17 +473,44 @@ export async function dispatch(
     );
   }
 
-  // PREPAID block — deliberate, temporary (handoff §7)
-  if (delivery.order.paymentArrangement === 'PREPAID') {
-    throw new BusinessRuleViolationError(
-      'PREPAID deliveries cannot be dispatched until an approved Customer Payment confirms full payment. ' +
-        'This restriction will be lifted in Phase 9. Use a CREDIT order for testing.',
-    );
-  }
-
   const now = new Date();
 
   const updated = await runInTransaction(async (tx: TransactionClient) => {
+    // PREPAID payment gate (Phase 9E): require fully-paid invoice
+    if (delivery.order.paymentArrangement === 'PREPAID') {
+      const invoice = await tx.invoice.findUnique({
+        where: { orderId: delivery.orderId },
+        select: { id: true, invoiceNumber: true, totalAmount: true, status: true },
+      });
+
+      if (!invoice) {
+        throw new BusinessRuleViolationError(
+          'This PREPAID order has no invoice. Create an invoice before dispatching.',
+        );
+      }
+
+      if (invoice.status !== 'ISSUED') {
+        throw new BusinessRuleViolationError(
+          `Invoice ${invoice.invoiceNumber} is ${invoice.status} and cannot be used for PREPAID dispatch.`,
+        );
+      }
+
+      const approvedAgg = await tx.customerPaymentAllocation.aggregate({
+        where: { invoiceId: invoice.id, payment: { status: 'APPROVED' } },
+        _sum: { amount: true },
+      });
+
+      const approvedAmount = approvedAgg._sum.amount ?? new Prisma.Decimal(0);
+
+      if (approvedAmount.lessThan(invoice.totalAmount)) {
+        const shortfall = invoice.totalAmount.sub(approvedAmount).toFixed(2);
+        throw new BusinessRuleViolationError(
+          `PREPAID dispatch requires full payment. ` +
+          `Invoice ${invoice.invoiceNumber}: KES ${invoice.totalAmount.toFixed(2)} total, ` +
+          `only KES ${approvedAmount.toFixed(2)} approved. Shortfall: KES ${shortfall}.`,
+        );
+      }
+    }
     // Lock all affected stock balances
     const productIds = [...new Set(delivery.items.map((item) => item.productId))];
     for (const productId of productIds.sort()) {

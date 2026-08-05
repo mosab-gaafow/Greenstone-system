@@ -32,7 +32,11 @@ export async function createPayment(input: CreatePaymentInput, context: RequestC
   const created = await runInTransaction(async (tx: TransactionClient) => {
     const { documentNumber } = await allocateNumberInTransaction(tx, { documentType: 'CUSTOMER_PAYMENT' });
     const payment = await insertPayment(tx, { paymentNumber: documentNumber, customerId: input.customerId, amount, paymentMethod: input.paymentMethod, paymentReference: input.paymentReference?.trim() || null, paymentDate: input.paymentDate, recordedByUserId: context.user.id });
-    await recordAudit(tx, { ...toAuditContext(context), action: 'CREATE_CUSTOMER_PAYMENT', module: AUDIT_MODULE, entityType: 'CustomerPayment', entityId: payment.id, documentNumber, updatedData: { amount: amount.toFixed(2), paymentMethod: input.paymentMethod } });
+    // Persist allocations immediately so they appear in finance summaries while PENDING
+    if (input.allocations.length > 0) {
+      await insertAllocations(tx, payment.id, (input.allocations ?? []).map(a => ({ invoiceId: a.invoiceId, amount: new Prisma.Decimal(a.amount).toFixed(2) })));
+    }
+    await recordAudit(tx, { ...toAuditContext(context), action: 'CREATE_CUSTOMER_PAYMENT', module: AUDIT_MODULE, entityType: 'CustomerPayment', entityId: payment.id, documentNumber, updatedData: { amount: amount.toFixed(2), paymentMethod: input.paymentMethod, allocations: (input.allocations ?? []).map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) } });
     return payment;
   });
   await cache.delByPrefix(buildCacheKeyPrefix(CACHE_MODULE));
@@ -42,16 +46,27 @@ export async function createPayment(input: CreatePaymentInput, context: RequestC
 export async function approve(id: string, input: ApprovePaymentInput, context: RequestContext): Promise<ApprovePaymentResult> {
   const payment = await requirePayment(id);
   if (payment.status !== 'PENDING') throw new InvalidDocumentStatusError('Only PENDING payments can be approved.');
-  const totalAllocated = input.allocations.reduce((s, a) => s.add(new Prisma.Decimal(a.amount)), new Prisma.Decimal(0));
-  if (!totalAllocated.equals(payment.amount)) throw new BusinessRuleViolationError('Allocations must equal the full payment amount.');
 
   const result = await runInTransaction(async (tx: TransactionClient) => {
-    // Lock payment row
     const locked = await tx.customerPayment.findUnique({ where: { id } });
     if (!locked || locked.status !== 'PENDING') throw new InvalidDocumentStatusError('Payment is no longer PENDING.');
 
+    // Load existing allocations (persisted at creation time)
+    let allocs = await tx.customerPaymentAllocation.findMany({ where: { paymentId: id } });
+    if (allocs.length === 0) {
+      // Backward-compatible: create if none exist yet
+      const totalAllocated = (input.allocations ?? []).reduce((s, a) => s.add(new Prisma.Decimal(a.amount)), new Prisma.Decimal(0));
+      if (!totalAllocated.equals(payment.amount)) throw new BusinessRuleViolationError('Allocations must equal the full payment amount.');
+      await insertAllocations(tx, id, (input.allocations ?? []).map(a => ({ invoiceId: a.invoiceId, amount: new Prisma.Decimal(a.amount).toFixed(2) })));
+      allocs = await tx.customerPaymentAllocation.findMany({ where: { paymentId: id } });
+    }
+
+    // Verify allocations sum matches payment amount
+    const sumAllocs = allocs.reduce((s, a) => s.add(a.amount), new Prisma.Decimal(0));
+    if (!sumAllocs.equals(payment.amount)) throw new BusinessRuleViolationError('Allocations must equal the full payment amount.');
+
     // Lock and validate each invoice; check outstanding balances
-    const invoiceIds = [...new Set(input.allocations.map(a => a.invoiceId))].sort();
+    const invoiceIds = [...new Set(allocs.map(a => a.invoiceId))].sort();
     for (const invoiceId of invoiceIds) {
       await lockRowsForUpdate(tx, 'invoices', 'id', invoiceId);
     }
@@ -62,31 +77,26 @@ export async function approve(id: string, input: ApprovePaymentInput, context: R
       if (inv.customerId !== payment.customerId) throw new BusinessRuleViolationError('Allocations must belong to the same customer.');
       if (inv.status !== 'ISSUED') throw new BusinessRuleViolationError(`Invoice ${inv.invoiceNumber} is not ISSUED.`);
 
-      // Sum existing APPROVED allocations for this invoice (excluding this payment)
       const alreadyApproved = await tx.customerPaymentAllocation.aggregate({
         where: { invoiceId, payment: { status: 'APPROVED', id: { not: id } } },
         _sum: { amount: true },
       });
       const alreadyPaid = alreadyApproved._sum.amount ?? new Prisma.Decimal(0);
 
-      // Sum allocations in this request for this invoice
-      const thisRequest = input.allocations
-        .filter(a => a.invoiceId === invoiceId)
-        .reduce((s, a) => s.add(new Prisma.Decimal(a.amount)), new Prisma.Decimal(0));
+      const thisPayment = allocs.filter(a => a.invoiceId === invoiceId)
+        .reduce((s, a) => s.add(a.amount), new Prisma.Decimal(0));
 
       const outstanding = inv.totalAmount.sub(alreadyPaid);
-      const remaining = outstanding.sub(thisRequest);
+      const remaining = outstanding.sub(thisPayment);
 
       if (remaining.isNegative()) {
         throw new BusinessRuleViolationError(
-          `Allocation of KES ${thisRequest.toFixed(2)} to invoice ${inv.invoiceNumber} ` +
+          `Allocation of KES ${thisPayment.toFixed(2)} to invoice ${inv.invoiceNumber} ` +
           `exceeds the outstanding balance of KES ${outstanding.toFixed(2)}. ` +
           `(Already approved: KES ${alreadyPaid.toFixed(2)} of KES ${inv.totalAmount.toFixed(2)})`,
         );
       }
     }
-
-    await insertAllocations(tx, id, input.allocations.map(a => ({ invoiceId: a.invoiceId, amount: new Prisma.Decimal(a.amount).toFixed(2) })));
 
     const approved = await approvePayment(tx, id, { approvedByUserId: context.user.id, approvedAt: new Date() });
     if (!approved) throw new InvalidDocumentStatusError('Payment could not be approved.');
@@ -95,7 +105,7 @@ export async function approve(id: string, input: ApprovePaymentInput, context: R
     const { documentNumber: rcpNum } = await allocateNumberInTransaction(tx, { documentType: 'RECEIPT' });
     const rcp = await insertReceipt(tx, { receiptNumber: rcpNum, paymentId: id, customerId: payment.customerId, amount: payment.amount, customerBalanceAfterPayment: new Prisma.Decimal(0), issuedByUserId: context.user.id, issuedAt: new Date() });
 
-    await recordAudit(tx, { ...toAuditContext(context), action: 'APPROVE_CUSTOMER_PAYMENT', module: AUDIT_MODULE, entityType: 'CustomerPayment', entityId: id, documentNumber: payment.paymentNumber, updatedData: { status: 'APPROVED', allocations: input.allocations.map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) } });
+    await recordAudit(tx, { ...toAuditContext(context), action: 'APPROVE_CUSTOMER_PAYMENT', module: AUDIT_MODULE, entityType: 'CustomerPayment', entityId: id, documentNumber: payment.paymentNumber, updatedData: { status: 'APPROVED', allocations: (input.allocations ?? []).map(a => ({ invoiceId: a.invoiceId, amount: a.amount })) } });
     await recordAudit(tx, { ...toAuditContext(context), action: 'ISSUE_RECEIPT', module: 'receipts', entityType: 'Receipt', entityId: rcp.id, documentNumber: rcpNum, updatedData: { paymentId: id, amount: payment.amount.toFixed(2) } });
 
     return { id, paymentNumber: payment.paymentNumber, receiptId: rcp.id, receiptNumber: rcpNum };

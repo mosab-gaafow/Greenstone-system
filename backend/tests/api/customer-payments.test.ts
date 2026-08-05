@@ -38,18 +38,20 @@ describe('customer-payments module', () => {
   afterAll(async () => { await disconnectPrisma(); await disconnectTestPrisma(); });
 
   // ---- Creation ----
-  it('creates CASH payment without reference', async () => {
+  it('creates CASH payment with allocation', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
-    const c = await sc('Payer1');
-    const res = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '1000.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const p = await sp('P0'); const c = await sc('Payer1');
+    const invId = await seedInvoice(c.id, p.id);
+    const res = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(201);
     expect(res.body.data.status).toBe('PENDING');
     expect(res.body.data.paymentNumber).toMatch(/^PAY-2026-\d{4}$/);
   });
 
   it('rejects non-cash payment without reference', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
-    const c = await sc('Payer2');
-    await request(app).post(CP).set(h).send({ customerId: c.id, amount: '1000.00', paymentMethod: 'MPESA', paymentDate: new Date().toISOString(), paymentReference: '' }).expect(422);
+    const pp = await sp('P02'); const c = await sc('Payer2');
+    const invId = await seedInvoice(c.id, pp.id);
+    await request(app).post(CP).set(h).send({ customerId: c.id, amount: '1000.00', paymentMethod: 'MPESA', paymentDate: new Date().toISOString(), paymentReference: '', allocations: [{ invoiceId: invId, amount: '1000.00' }] }).expect(422);
   });
 
   // ---- Approval ----
@@ -57,14 +59,14 @@ describe('customer-payments module', () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     const p = await sp('PA');
     const c = await sc('PA'); const invId = await seedInvoice(c.id, p.id);
-    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '1000.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '1000.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: "500.00" }] }).expect(201);
     await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(422);
   });
 
   it('approves payment, creates receipt', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     const p = await sp('PB'); const c = await sc('PB'); const invId = await seedInvoice(c.id, p.id);
-    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: "500.00" }] }).expect(201);
     const res = await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(200);
     expect(res.body.data.status).toBe('APPROVED');
     expect(res.body.data.receiptNumber).toMatch(/^RCP-2026-\d{4}$/);
@@ -79,7 +81,7 @@ describe('customer-payments module', () => {
     const { cookie: adminCookie } = await sadmin(); const adminH = await csrfH(adminCookie);
     const p = await sp('PC'); const c = await sc('PC');
     const invId = await seedInvoice(c.id, p.id);
-    const pmt = await request(app).post(CP).set(adminH).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt = await request(app).post(CP).set(adminH).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: "500.00" }] }).expect(201);
     const { cookie } = await createSignedInUser('accountant');
     const acctH = await csrfH(cookie);
     await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(acctH).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(403);
@@ -88,7 +90,7 @@ describe('customer-payments module', () => {
   it('prevents double approval', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     const p = await sp('PD'); const c = await sc('PD'); const invId = await seedInvoice(c.id, p.id);
-    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: "500.00" }] }).expect(201);
     await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(200);
     await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(409);
   });
@@ -97,7 +99,7 @@ describe('customer-payments module', () => {
   it('reverses payment and voids receipt', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     const p = await sp('PE'); const c = await sc('PE'); const invId = await seedInvoice(c.id, p.id);
-    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: "500.00" }] }).expect(201);
     await request(app).post(`${CP}/${pmt.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(200);
 
     const res = await request(app).post(`${CP}/${pmt.body.data.id}/reverse`).set(h).send({ reason: 'Wrong amount' }).expect(200);
@@ -109,10 +111,10 @@ describe('customer-payments module', () => {
     const p = await sp('PF'); const c = await sc('PF');
     const invId = await seedInvoice(c.id, p.id); // KES 500 invoice
     // First: approve KES 480 → outstanding KES 20
-    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '480.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
-    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '480.00' }] }).expect(200);
+    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '480.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '480.00' }] }).expect(201);
+    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({}).expect(200);
     // Second: try KES 100 → should exceed outstanding (KES 20)
-    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '100.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '100.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '100.00' }] }).expect(201);
     await request(app).post(`${CP}/${pmt2.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '100.00' }] }).expect(422);
   });
 
@@ -120,11 +122,11 @@ describe('customer-payments module', () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     const p = await sp('PG'); const c = await sc('PG');
     const invId = await seedInvoice(c.id, p.id);
-    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '480.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
-    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '480.00' }] }).expect(200);
+    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '480.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '480.00' }] }).expect(201);
+    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({}).expect(200);
     // Second: exactly KES 20 (outstanding) → should succeed
-    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '20.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
-    await request(app).post(`${CP}/${pmt2.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '20.00' }] }).expect(200);
+    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '20.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '20.00' }] }).expect(201);
+    await request(app).post(`${CP}/${pmt2.body.data.id}/approve`).set(h).send({}).expect(200);
   });
 
   it('reversed payments do not count as approved', async () => {
@@ -132,11 +134,11 @@ describe('customer-payments module', () => {
     const p = await sp('PH'); const c = await sc('PH');
     const invId = await seedInvoice(c.id, p.id);
     // Approve 400, then reverse it — outstanding should go back to 500
-    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '400.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
-    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '400.00' }] }).expect(200);
+    const pmt1 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '400.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '400.00' }] }).expect(201);
+    await request(app).post(`${CP}/${pmt1.body.data.id}/approve`).set(h).send({}).expect(200);
     await request(app).post(`${CP}/${pmt1.body.data.id}/reverse`).set(h).send({ reason: 'Wrong' }).expect(200);
     // Now approve another 500 — should succeed because reversed doesn't count
-    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString() }).expect(201);
+    const pmt2 = await request(app).post(CP).set(h).send({ customerId: c.id, amount: '500.00', paymentMethod: 'CASH', paymentDate: new Date().toISOString(), allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(201);
     await request(app).post(`${CP}/${pmt2.body.data.id}/approve`).set(h).send({ allocations: [{ invoiceId: invId, amount: '500.00' }] }).expect(200);
   });
 

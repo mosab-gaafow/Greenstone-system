@@ -80,6 +80,37 @@ export async function sumActiveCreditOrderTotals(
   return result._sum.totalAmount ?? new Prisma.Decimal(0);
 }
 
+/**
+ * Sum of ISSUED invoice totals for a customer. Phase 9D.
+ */
+export async function sumIssuedInvoiceTotals(
+  customerId: string,
+  client: DbClient = getPrisma(),
+): Promise<Prisma.Decimal> {
+  const result = await client.invoice.aggregate({
+    where: { customerId, status: 'ISSUED' },
+    _sum: { totalAmount: true },
+  });
+  return result._sum.totalAmount ?? new Prisma.Decimal(0);
+}
+
+/**
+ * Sum of APPROVED payment allocations for a customer. Phase 9D.
+ * Only allocations whose payment status is APPROVED count.
+ */
+export async function sumApprovedPaymentAllocations(
+  customerId: string,
+  client: DbClient = getPrisma(),
+): Promise<Prisma.Decimal> {
+  const result = await client.customerPaymentAllocation.aggregate({
+    where: {
+      payment: { customerId, status: 'APPROVED' },
+    },
+    _sum: { amount: true },
+  });
+  return result._sum.amount ?? new Prisma.Decimal(0);
+}
+
 export async function insertCreditOverride(
   input: CreateCreditOverrideInput,
   client: DbClient = getPrisma(),

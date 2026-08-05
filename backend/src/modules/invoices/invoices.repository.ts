@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Prisma, type Invoice, type InvoiceItem, type Product } from '../../generated/prisma/client.js';
 import { getPrisma } from '../../shared/database/prisma.js';
 import type { DbClient, TransactionClient } from '../../shared/database/transaction.js';
@@ -42,7 +43,7 @@ export async function findInvoices(
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
       orderBy: { [filters.sortBy]: filters.sortDirection },
-      include: { order: { select: { orderNumber: true } }, customer: { select: { name: true } }, _count: { select: { items: true } } },
+      include: { order: { select: { orderNumber: true } }, customer: { select: { name: true } }, _count: { select: { items: true } }, allocations: { include: { payment: { select: { status: true } } } } },
     }),
     client.invoice.count({ where }),
   ]);

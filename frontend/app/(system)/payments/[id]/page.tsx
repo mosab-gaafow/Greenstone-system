@@ -41,10 +41,7 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   const canReverse = p.status === 'APPROVED';
 
   function doApprove() {
-    // Simple: allocate full payment to first eligible invoice
-    const inv = eligibleInvoices[0];
-    if (!inv) return; // no eligible invoice
-    approveMut.mutate([{ invoiceId: inv.id, amount: p.amount }], { onSuccess: () => setApproving(false) });
+    approveMut.mutate(undefined, { onSuccess: () => setApproving(false) });
   }
 
   function doReverse() {

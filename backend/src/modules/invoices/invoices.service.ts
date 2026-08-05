@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Prisma } from '../../generated/prisma/client.js';
 import { getNairobiToday } from '../../shared/utils/nairobi.js';
 import { findInvoices, findInvoiceById, insertInvoice, voidInvoice, type InvoiceDetailRow, type InvoiceRow } from './invoices.repository.js';
@@ -19,7 +20,14 @@ export async function listInvoices(filters: ListInvoicesFilters): Promise<ListIn
   const key = buildCacheKey({ module: CACHE_MODULE, resource: 'list', identifier: buildListIdentifier(filters) });
   return cache.getOrSet(key, LIST_TTL_SECONDS, async () => {
     const { rows, total } = await findInvoices(filters);
-    return { invoices: rows.map(toSummary), totalRecords: total };
+    const invoices = rows.map(toSummary);
+    // Payment status filter (computed — filter post-query for correctness)
+    if (filters.paymentStatus) {
+      const withFinance = rows.map(r => computeInvoiceFinanceFast(r));
+      const filtered = rows.filter((_, i) => withFinance[i]!.paymentStatus === filters.paymentStatus);
+      return { invoices: filtered.map(toSummary), totalRecords: filtered.length };
+    }
+    return { invoices, totalRecords: total };
   });
 }
 
@@ -31,6 +39,18 @@ export async function getInvoiceWithFinance(id: string): Promise<InvoiceDetailWi
   const invoice = await requireInvoice(id);
   const finance = await computeInvoiceFinance(invoice);
   return { ...toDetail(invoice), finance };
+}
+
+/** Quick payment status from list rows (has allocations with payment.status). */
+function computeInvoiceFinanceFast(row: InvoiceRow): { paymentStatus: InvoiceFinanceSummary['paymentStatus'] } {
+  let approved = new Prisma.Decimal(0);
+  for (const alloc of (row as any).allocations ?? []) {
+    if ((alloc as any).payment?.status === 'APPROVED') approved = approved.add((alloc as any).amount);
+  }
+  const outstanding = row.totalAmount.sub(approved);
+  if (approved.isZero()) return { paymentStatus: 'UNPAID' };
+  if (outstanding.isZero() || outstanding.isNegative()) return { paymentStatus: 'FULLY_PAID' };
+  return { paymentStatus: 'PARTIALLY_PAID' };
 }
 
 async function computeInvoiceFinance(row: InvoiceDetailRow): Promise<InvoiceFinanceSummary> {
@@ -127,12 +147,14 @@ function buildListIdentifier(f: ListInvoicesFilters): string {
 }
 
 function toSummary(row: InvoiceRow): InvoiceSummary {
-  return { id: row.id, invoiceNumber: row.invoiceNumber, orderId: row.orderId, orderNumber: row.order.orderNumber, customerId: row.customerId, customerName: row.customer.name, status: row.status, totalAmount: row.totalAmount.toFixed(2), dueDate: row.dueDate.toISOString(), itemCount: row._count.items, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
+  const ps = computeInvoiceFinanceFast(row);
+  return { id: row.id, invoiceNumber: row.invoiceNumber, orderId: row.orderId, orderNumber: row.order.orderNumber, customerId: row.customerId, customerName: row.customer.name, status: row.status, totalAmount: row.totalAmount.toFixed(2), dueDate: row.dueDate.toISOString(), itemCount: row._count.items, paymentStatus: ps.paymentStatus, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString() };
 }
 
 function toDetail(row: InvoiceDetailRow): InvoiceDetail {
+  const ps = computeInvoiceFinanceFast(row as unknown as InvoiceRow);
   return {
-    id: row.id, invoiceNumber: row.invoiceNumber, orderId: row.orderId, orderNumber: row.order.orderNumber, customerId: row.customerId, customerName: row.customer.name, status: row.status, totalAmount: row.totalAmount.toFixed(2), dueDate: row.dueDate.toISOString(), itemCount: row.items.length, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
+    id: row.id, invoiceNumber: row.invoiceNumber, orderId: row.orderId, orderNumber: row.order.orderNumber, customerId: row.customerId, customerName: row.customer.name, status: row.status, totalAmount: row.totalAmount.toFixed(2), dueDate: row.dueDate.toISOString(), itemCount: row.items.length, paymentStatus: ps.paymentStatus, createdByUserId: row.createdByUserId, createdAt: row.createdAt.toISOString(), updatedAt: row.updatedAt.toISOString(),
     voidedAt: row.voidedAt?.toISOString() ?? null, voidedByUserId: row.voidedByUserId, voidReason: row.voidReason,
     items: row.items.map((i) => ({ id: i.id, orderItemId: i.orderItemId, productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice.toFixed(2), lineTotal: i.lineTotal.toFixed(2) })),
   };
