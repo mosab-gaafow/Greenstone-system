@@ -119,19 +119,24 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): Env {
   return result.data;
 }
 
-let cachedEnv: Env | undefined;
-
 /**
- * Returns the validated environment, parsing it on first use.
+ * Returns the validated environment.
+ *
+ * Re-reads from `process.env` on every call. The validation is cheap enough
+ * (microseconds) that caching adds complexity and risk — a stale cache has
+ * caused the test suite to write to the development database when the
+ * environment was changed between calls (e.g. `test-env.ts` setting
+ * DATABASE_URL).
  */
 export function getEnv(): Env {
-  cachedEnv ??= parseEnv();
-  return cachedEnv;
+  return parseEnv();
 }
 
 /**
- * Clears the cached environment. Test-only.
+ * Deprecated no-op. The environment cache was removed because staleness
+ * caused the test suite to write to the development database. Kept for
+ * backwards compatibility with existing test files.
  */
 export function resetEnvCache(): void {
-  cachedEnv = undefined;
+  // No cache to reset — getEnv() reads fresh every time.
 }

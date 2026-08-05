@@ -11,13 +11,29 @@ import type { PrismaClient } from '../../src/generated/prisma/client.js';
 
 let client: PrismaClient | undefined;
 
-export function getTestPrisma(): PrismaClient {
-  const url = process.env['TEST_DATABASE_URL'];
+const REQUIRED_TEST_DB = 'greenstone_test';
 
+function requireTestDatabase(url: string | undefined): string {
   if (!url) {
-    throw new Error('TEST_DATABASE_URL is not set.');
+    throw new Error(
+      'TEST_DATABASE_URL is not set. Add it to backend/.env before running the tests.',
+    );
   }
 
+  const name = new URL(url).pathname.replace(/^\//, '');
+  if (name !== REQUIRED_TEST_DB) {
+    throw new Error(
+      `Tests require the database to be exactly "${REQUIRED_TEST_DB}". ` +
+      `TEST_DATABASE_URL points to "${name}". ` +
+      'Update TEST_DATABASE_URL in your .env file.',
+    );
+  }
+
+  return url;
+}
+
+export function getTestPrisma(): PrismaClient {
+  const url = requireTestDatabase(process.env['TEST_DATABASE_URL']);
   client ??= createPrismaClient(url);
   return client;
 }
@@ -37,6 +53,8 @@ export async function disconnectTestPrisma(): Promise<void> {
 const TABLES = [
   'document_sequences',
   'audit_logs',
+  'invoice_items',
+  'invoices',
   'delivery_items',
   'deliveries',
   'customer_credit_overrides',
@@ -95,6 +113,8 @@ const TABLES = [
  * an intermittent constraint-violation failure.
  */
 export async function truncateAll(): Promise<void> {
+  // Double-check: refuse to truncate if TEST_DATABASE_URL doesn't end with _test.
+  requireTestDatabase(process.env['TEST_DATABASE_URL']);
   const prisma = getTestPrisma();
 
   await prisma.$transaction(async (tx) => {

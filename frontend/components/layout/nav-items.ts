@@ -106,7 +106,7 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Finance',
     items: [
-      { label: 'Invoices', href: '/invoices', icon: Receipt, available: false },
+      { label: 'Invoices', href: '/invoices', icon: Receipt, available: true },
       { label: 'Payments', href: '/payments', icon: Wallet, available: false },
       { label: 'Expenses', href: '/expenses', icon: BadgeDollarSign, available: false },
     ],

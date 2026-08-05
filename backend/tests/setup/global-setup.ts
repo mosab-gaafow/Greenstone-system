@@ -47,12 +47,16 @@ export default function globalSetup(): void {
  * inequality check above it makes an accidental wipe of a real database very
  * unlikely.
  */
+const REQUIRED_TEST_DB = 'greenstone_test';
+
 function assertTestDatabaseName(url: string): void {
   const databaseName = new URL(url).pathname.replace(/^\//, '');
 
-  if (!databaseName.endsWith('_test')) {
+  if (databaseName !== REQUIRED_TEST_DB) {
     throw new Error(
-      `Refusing to run tests against "${databaseName}": the test database name must end with "_test".`,
+      `The test database must be exactly "${REQUIRED_TEST_DB}". ` +
+      `Refusing to run tests against "${databaseName}". ` +
+      'Check TEST_DATABASE_URL in your .env file.',
     );
   }
 }

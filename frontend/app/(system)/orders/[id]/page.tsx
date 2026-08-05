@@ -2,9 +2,12 @@
 
 import { use, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Ban, ShoppingCart } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Ban, Receipt, ShoppingCart } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
 import { PageHeader } from '@/components/layout/page-header';
@@ -13,6 +16,7 @@ import { StatusBadge, type StatusTone } from '@/components/data-display/status-b
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useCancelOrder, useOrder } from '@/features/orders/hooks/use-orders';
+import { useCreateInvoice, useInvoices } from '@/features/invoices/hooks/use-invoices';
 import {
   isOrderCancellable,
   orderPaymentArrangementLabel,
@@ -38,11 +42,19 @@ const STATUS_TONE: Record<OrderStatus, StatusTone> = {
 
 export default function OrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   const query = useOrder(id);
   const cancelOrder = useCancelOrder(id);
+  const createInvoice = useCreateInvoice();
   const [cancelling, setCancelling] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [dueDate, setDueDate] = useState(() => new Date().toISOString().split('T')[0] as unknown as Date);
+  const [dueDateError, setDueDateError] = useState<string | null>(null);
+
+  // Check if this order already has an invoice
+  const invoicesQuery = useInvoices({ page: 1, pageSize: 1, orderId: id });
 
   if (query.isPending) {
     return (
@@ -107,6 +119,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         }
         description={order.customerName}
       />
+
+      {/* Invoice action */}
+      {order.status !== 'CANCELLED' && (
+        <div className="flex flex-wrap gap-2">
+          {invoicesQuery.data && invoicesQuery.data.invoices.length > 0 ? (
+            <Button
+              variant="outline"
+              render={<Link href={`/invoices/${invoicesQuery.data.invoices[0]!.id}`} />}
+            >
+              <Receipt className="size-4" aria-hidden />
+              View invoice
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDueDate(new Date().toISOString().split('T')[0] as unknown as Date);
+                setDueDateError(null);
+                setInvoiceOpen(true);
+              }}
+              disabled={invoicesQuery.isPending}
+            >
+              <Receipt className="size-4" aria-hidden />
+              Create invoice
+            </Button>
+          )}
+        </div>
+      )}
 
       {isOrderCancellable(order.status) && (
         <div className="flex flex-wrap gap-2">
@@ -178,6 +218,36 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
           </CardContent>
         </Card>
       </div>
+
+      <ConfirmDialog
+        open={invoiceOpen}
+        onOpenChange={(open) => {
+          if (!open) { setInvoiceOpen(false); setDueDateError(null); }
+        }}
+        title={`Create invoice for ${order.orderNumber}?`}
+        description="One invoice per order. The invoice will snapshot prices from this order."
+        confirmLabel="Create invoice"
+        pending={createInvoice.isPending}
+        onConfirm={() => {
+          if (!dueDate) { setDueDateError('Select a due date.'); return; }
+          createInvoice.mutate(
+            { orderId: order.id, dueDate: dueDate as Date },
+            { onSuccess: (inv) => { setInvoiceOpen(false); router.push(`/invoices/${inv.id}`); } },
+          );
+        }}
+      >
+        <div className="space-y-2">
+          <Label htmlFor="dueDate">Due date (today or later)</Label>
+          <Input
+            id="dueDate"
+            type="date"
+            value={dueDate as unknown as string}
+            min={new Date().toISOString().split('T')[0]}
+            onChange={(e) => { setDueDate(e.target.value as unknown as Date); if (dueDateError) setDueDateError(null); }}
+          />
+          {dueDateError && <p className="text-destructive text-sm">{dueDateError}</p>}
+        </div>
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={cancelling}
