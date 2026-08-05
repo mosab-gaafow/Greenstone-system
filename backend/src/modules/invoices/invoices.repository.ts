@@ -13,6 +13,7 @@ export type InvoiceDetailRow = Invoice & {
   order: { orderNumber: string };
   customer: { name: string };
   items: (InvoiceItem & { product: Product })[];
+  allocations?: any[];
 };
 
 function buildWhere(filters: ListInvoicesFilters): Prisma.InvoiceWhereInput {
@@ -58,6 +59,7 @@ export async function findInvoiceById(
       order: { select: { orderNumber: true } },
       customer: { select: { name: true } },
       items: { include: { product: true }, orderBy: { sortOrder: 'asc' } },
+      allocations: { include: { payment: { select: { id: true, paymentNumber: true, status: true, paymentDate: true } } } },
     },
   });
 }

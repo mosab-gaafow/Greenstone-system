@@ -60,3 +60,25 @@ export interface ListInvoicesResult {
   invoices: InvoiceSummary[];
   totalRecords: number;
 }
+
+// --- Phase 9B: Finance summary ---------------------------------------------
+
+export type InvoicePaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+
+export interface InvoiceFinanceItem {
+  paymentId: string; paymentNumber: string; amount: string; status: string; paymentDate: string;
+}
+
+export interface InvoiceFinanceSummary {
+  invoiceTotal: string;
+  approvedAmount: string;
+  outstandingAmount: string;
+  pendingAmount: string;
+  reversedAmount: string;
+  paymentStatus: InvoicePaymentStatus;
+  payments: InvoiceFinanceItem[];
+}
+
+export interface InvoiceDetailWithFinance extends InvoiceDetail {
+  finance: InvoiceFinanceSummary;
+}

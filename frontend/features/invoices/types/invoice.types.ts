@@ -14,9 +14,25 @@ export interface Invoice {
   createdAt: string; updatedAt: string;
 }
 
+export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+
+export interface InvoiceFinanceItem {
+  paymentId: string; paymentNumber: string; amount: string; status: string; paymentDate: string;
+}
+
+export interface InvoiceFinanceSummary {
+  invoiceTotal: string; approvedAmount: string; outstandingAmount: string;
+  pendingAmount: string; reversedAmount: string; paymentStatus: PaymentStatus;
+  payments: InvoiceFinanceItem[];
+}
+
 export interface InvoiceDetail extends Invoice {
   items: InvoiceItem[];
+  finance?: InvoiceFinanceSummary;
 }
 
 const STATUS_LABELS: Record<InvoiceStatus, string> = { ISSUED: 'Issued', VOIDED: 'Voided' };
 export function invoiceStatusLabel(s: InvoiceStatus) { return STATUS_LABELS[s]; }
+
+const PSTATUS_LABELS: Record<PaymentStatus, string> = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially paid', FULLY_PAID: 'Fully paid' };
+export function paymentStatusLabel(s: PaymentStatus) { return PSTATUS_LABELS[s]; }

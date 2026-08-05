@@ -14,7 +14,7 @@ export async function list(_req: Request, res: Response, next: NextFunction): Pr
 }
 
 export async function getById(req: Request, res: Response, next: NextFunction): Promise<void> {
-  try { sendSuccess(res, await invoicesService.getInvoice(req.params['id'] as string)); } catch (e) { next(e); }
+  try { sendSuccess(res, await invoicesService.getInvoiceWithFinance(req.params['id'] as string)); } catch (e) { next(e); }
 }
 
 export async function create(req: Request, res: Response, next: NextFunction): Promise<void> {

@@ -9,7 +9,7 @@ import { allocateNumberInTransaction } from '../../shared/numbering/numbering.se
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
 import { BusinessRuleViolationError, InvalidDocumentStatusError, ResourceNotFoundError } from '../../shared/errors/app-error.js';
 import * as ordersService from '../orders/orders.service.js';
-import type { CreateInvoiceInput, InvoiceDetail, InvoiceSummary, ListInvoicesFilters, ListInvoicesResult, VoidInvoiceInput } from './invoices.types.js';
+import type { CreateInvoiceInput, InvoiceDetail, InvoiceDetailWithFinance, InvoiceFinanceSummary, InvoiceSummary, ListInvoicesFilters, ListInvoicesResult, VoidInvoiceInput } from './invoices.types.js';
 
 const AUDIT_MODULE = 'invoices';
 const CACHE_MODULE = 'invoices';
@@ -25,6 +25,40 @@ export async function listInvoices(filters: ListInvoicesFilters): Promise<ListIn
 
 export async function getInvoice(id: string): Promise<InvoiceDetail> {
   return toDetail(await requireInvoice(id));
+}
+
+export async function getInvoiceWithFinance(id: string): Promise<InvoiceDetailWithFinance> {
+  const invoice = await requireInvoice(id);
+  const finance = await computeInvoiceFinance(invoice);
+  return { ...toDetail(invoice), finance };
+}
+
+async function computeInvoiceFinance(row: InvoiceDetailRow): Promise<InvoiceFinanceSummary> {
+  const allocations = row.allocations ?? [];
+  let approved = new Prisma.Decimal(0);
+  let pending = new Prisma.Decimal(0);
+  let reversed = new Prisma.Decimal(0);
+  const payments: InvoiceFinanceSummary['payments'] = [];
+
+  for (const alloc of allocations) {
+    const p = (alloc as any).payment as any;
+    if (!p) continue;
+    const amt = (alloc as any).amount as Prisma.Decimal;
+    const status = p.status as string;
+    if (status === 'APPROVED') approved = approved.add(amt);
+    else if (status === 'PENDING') pending = pending.add(amt);
+    else if (status === 'REVERSED') reversed = reversed.add(amt);
+    payments.push({ paymentId: p.id, paymentNumber: p.paymentNumber, amount: amt.toFixed(2), status, paymentDate: (p.paymentDate as Date).toISOString() });
+  }
+
+  const total = row.totalAmount;
+  const outstanding = total.sub(approved);
+  let paymentStatus: InvoiceFinanceSummary['paymentStatus'];
+  if (approved.isZero()) paymentStatus = 'UNPAID';
+  else if (outstanding.isZero() || outstanding.isNegative()) paymentStatus = 'FULLY_PAID';
+  else paymentStatus = 'PARTIALLY_PAID';
+
+  return { invoiceTotal: total.toFixed(2), approvedAmount: approved.toFixed(2), outstandingAmount: outstanding.toFixed(2), pendingAmount: pending.toFixed(2), reversedAmount: reversed.toFixed(2), paymentStatus, payments };
 }
 
 export async function createInvoice(input: CreateInvoiceInput, context: RequestContext): Promise<InvoiceDetail> {

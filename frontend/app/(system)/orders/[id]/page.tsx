@@ -16,7 +16,8 @@ import { StatusBadge, type StatusTone } from '@/components/data-display/status-b
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useCancelOrder, useOrder } from '@/features/orders/hooks/use-orders';
-import { useCreateInvoice, useInvoices } from '@/features/invoices/hooks/use-invoices';
+import { useCreateInvoice, useInvoice, useInvoices } from '@/features/invoices/hooks/use-invoices';
+import { paymentStatusLabel } from '@/features/invoices/types/invoice.types';
 import {
   isOrderCancellable,
   orderPaymentArrangementLabel,
@@ -55,6 +56,8 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
 
   // Check if this order already has an invoice
   const invoicesQuery = useInvoices({ page: 1, pageSize: 1, orderId: id });
+  const invoiceId = invoicesQuery.data?.invoices[0]?.id;
+  const invoiceDetailQuery = useInvoice(invoiceId ?? '');
 
   if (query.isPending) {
     return (
@@ -120,31 +123,34 @@ export default function OrderDetailPage({ params }: { params: Promise<{ id: stri
         description={order.customerName}
       />
 
-      {/* Invoice action */}
-      {order.status !== 'CANCELLED' && (
+      {/* Finance card */}
+      {invoiceDetailQuery.data?.finance && (
+        <Card><CardContent className="space-y-2">
+          <DetailRow label="Invoice">{invoiceId && <Link href={`/invoices/${invoiceId}`} className="text-primary hover:underline">{invoiceDetailQuery.data.invoiceNumber}</Link>}</DetailRow>
+          <DetailRow label="Total">KES {invoiceDetailQuery.data.finance.invoiceTotal}</DetailRow>
+          <DetailRow label="Approved">KES {invoiceDetailQuery.data.finance.approvedAmount}</DetailRow>
+          <DetailRow label="Outstanding"><span className={Number(invoiceDetailQuery.data.finance.outstandingAmount) > 0 ? 'text-destructive font-semibold' : ''}>KES {invoiceDetailQuery.data.finance.outstandingAmount}</span></DetailRow>
+          <DetailRow label="Payment status"><StatusBadge tone={invoiceDetailQuery.data.finance.paymentStatus === 'FULLY_PAID' ? 'success' : invoiceDetailQuery.data.finance.paymentStatus === 'PARTIALLY_PAID' ? 'warning' : 'neutral'} label={paymentStatusLabel(invoiceDetailQuery.data.finance.paymentStatus)} /></DetailRow>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" render={<Link href={`/invoices/${invoiceId}`} />}>View invoice</Button>
+            {Number(invoiceDetailQuery.data.finance.outstandingAmount) > 0 && (
+              <Button variant="outline" size="sm" render={<Link href={`/payments/new?invoiceId=${invoiceId}&customerId=${order.customerId}`} />}>Record payment</Button>
+            )}
+          </div>
+        </CardContent></Card>
+      )}
+
+      {/* Invoice action — only show Create when no invoice exists */}
+      {order.status !== 'CANCELLED' && !(invoicesQuery.data && invoicesQuery.data.invoices.length > 0) && (
         <div className="flex flex-wrap gap-2">
-          {invoicesQuery.data && invoicesQuery.data.invoices.length > 0 ? (
-            <Button
-              variant="outline"
-              render={<Link href={`/invoices/${invoicesQuery.data.invoices[0]!.id}`} />}
-            >
-              <Receipt className="size-4" aria-hidden />
-              View invoice
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDueDate(new Date().toISOString().split('T')[0] as unknown as Date);
-                setDueDateError(null);
-                setInvoiceOpen(true);
-              }}
-              disabled={invoicesQuery.isPending}
-            >
-              <Receipt className="size-4" aria-hidden />
-              Create invoice
-            </Button>
-          )}
+          <Button
+            variant="outline"
+            onClick={() => { setDueDate(new Date().toISOString().split('T')[0] as unknown as Date); setDueDateError(null); setInvoiceOpen(true); }}
+            disabled={invoicesQuery.isPending}
+          >
+            <Receipt className="size-4" aria-hidden />
+            Create invoice
+          </Button>
         </div>
       )}
 

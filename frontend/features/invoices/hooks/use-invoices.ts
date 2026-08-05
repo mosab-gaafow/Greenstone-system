@@ -13,7 +13,7 @@ export const invoiceKeys = {
 
 function em(e: unknown, fb: string): string { return e instanceof ApiError ? e.message : fb; }
 
-export function useInvoices(f: { page: number; pageSize: number; search?: string; orderId?: string }) {
+export function useInvoices(f: { page: number; pageSize: number; search?: string; orderId?: string; customerId?: string }) {
   return useQuery({ queryKey: invoiceKeys.list(f), queryFn: () => api.fetchInvoices(f) });
 }
 

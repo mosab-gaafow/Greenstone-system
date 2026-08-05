@@ -24,6 +24,7 @@ import { productionRoutes } from './modules/production/production.routes.js';
 import { curingRoutes } from './modules/curing/curing.routes.js';
 import { deliveriesRoutes } from './modules/deliveries/deliveries.routes.js';
 import { invoicesRoutes } from './modules/invoices/invoices.routes.js';
+import { customerPaymentsRoutes } from './modules/customer-payments/customer-payments.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -97,6 +98,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/curing`, curingRoutes());
   app.use(`${API_BASE_PATH}/deliveries`, deliveriesRoutes());
   app.use(`${API_BASE_PATH}/invoices`, invoicesRoutes());
+  app.use(`${API_BASE_PATH}/customer-payments`, customerPaymentsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

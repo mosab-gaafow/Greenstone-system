@@ -239,6 +239,10 @@ model User {
   deliveriesCancelled            Delivery[]               @relation("DeliveryCancelledBy")
   invoicesCreated                Invoice[]                @relation("InvoiceCreatedBy")
   invoicesVoided                 Invoice[]                @relation("InvoiceVoidedBy")
+  paymentsRecorded               CustomerPayment[]        @relation("PaymentRecordedBy")
+  paymentsApproved               CustomerPayment[]        @relation("PaymentApprovedBy")
+  paymentsReversed               CustomerPayment[]        @relation("PaymentReversedBy")
+  receiptsIssued                 Receipt[]                @relation("ReceiptIssuedBy")
 
   @@unique([email])
   @@map("user")
@@ -365,6 +369,8 @@ model Customer {
   creditOverrides CustomerCreditOverride[]
   deliveries      Delivery[]
   invoices        Invoice[]
+  payments        CustomerPayment[]
+  receipts        Receipt[]
 
   @@index([isActive])
   @@index([name])
@@ -737,7 +743,6 @@ model PurchasePayment {
   allocations PurchasePaymentAllocation[]
 
   @@index([supplierId])
-  @@index([status])
   @@map("purchase_payments")
 }
 
@@ -1217,7 +1222,6 @@ model ProductionBatch {
   rawMaterialUsages RawMaterialUsage[]
 
   @@index([orderId])
-  @@index([status])
   @@map("production_batches")
 }
 
@@ -1417,7 +1421,6 @@ model Delivery {
   @@index([customerId])
   @@index([driverId])
   @@index([vehicleId])
-  @@index([status])
   @@index([createdAt])
   @@map("deliveries")
 }
@@ -1486,11 +1489,11 @@ model Invoice {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  items InvoiceItem[]
+  items       InvoiceItem[]
+  allocations CustomerPaymentAllocation[]
 
   @@index([orderId])
   @@index([customerId])
-  @@index([status])
   @@index([createdAt])
   @@map("invoices")
 }
@@ -1512,6 +1515,84 @@ model InvoiceItem {
 
   @@index([invoiceId])
   @@map("invoice_items")
+}
+
+// --- Phase 9B: Customer Payments -------------------------------------------
+
+/// Receipt status. ACTIVE until the payment is reversed.
+enum ReceiptStatus {
+  ACTIVE
+  VOIDED
+}
+
+/// Customer payment. PENDING → APPROVED → REVERSED (PaymentStatus already
+/// exists from Phase 7D purchase payments). See docs/implementation-plan.md §9B.
+model CustomerPayment {
+  id                   String                @id @default(uuid())
+  paymentNumber        String                @unique
+  customerId           String
+  customer             Customer              @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount               Decimal               @db.Decimal(14, 2)
+  paymentMethod        PaymentMethod
+  /// Required for M_PESA, BANK_TRANSFER, CHEQUE; optional for CASH.
+  paymentReference     String?
+  /// Optional permanent evidence file.
+  evidenceStoredFileId String?
+  status               PurchasePaymentStatus @default(PENDING)
+  recordedByUserId     String?
+  recordedByUser       User?                 @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  approvedByUserId     String?
+  approvedByUser       User?                 @relation("PaymentApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  reversedByUserId     String?
+  reversedByUser       User?                 @relation("PaymentReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+  reversedAt           DateTime?
+  reversalReason       String?               @db.Text
+  paymentDate          DateTime
+
+  receipt     Receipt?
+  allocations CustomerPaymentAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([customerId])
+  @@index([createdAt])
+  @@map("customer_payments")
+}
+
+/// Connects a payment to one or more invoices. Traceability only — the
+/// customer balance is computed from the payment's own amount and status.
+model CustomerPaymentAllocation {
+  id        String          @id @default(uuid())
+  paymentId String
+  payment   CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoiceId String
+  invoice   Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+  amount    Decimal         @db.Decimal(14, 2)
+
+  @@unique([paymentId, invoiceId])
+  @@map("customer_payment_allocations")
+}
+
+/// Receipt issued when a payment is approved. ACTIVE until payment reversal.
+model Receipt {
+  id                          String          @id @default(uuid())
+  receiptNumber               String          @unique
+  paymentId                   String          @unique
+  payment                     CustomerPayment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  customerId                  String
+  customer                    Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  amount                      Decimal         @db.Decimal(14, 2)
+  customerBalanceAfterPayment Decimal         @db.Decimal(14, 2)
+  status                      ReceiptStatus   @default(ACTIVE)
+  issuedByUserId              String?
+  issuedByUser                User?           @relation("ReceiptIssuedBy", fields: [issuedByUserId], references: [id], onDelete: SetNull)
+  issuedAt                    DateTime
+  createdAt                   DateTime        @default(now())
+  updatedAt                   DateTime        @updatedAt
+
+  @@map("receipts")
 }
 
 model Session {
