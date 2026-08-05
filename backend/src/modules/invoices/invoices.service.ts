@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Prisma } from '../../generated/prisma/client.js';
 import { getNairobiToday } from '../../shared/utils/nairobi.js';
-import { findInvoices, findInvoiceById, insertInvoice, voidInvoice, type InvoiceDetailRow, type InvoiceRow } from './invoices.repository.js';
+import { findInvoices, findInvoiceById, findInvoiceForPdf, insertInvoice, voidInvoice, type InvoiceDetailRow, type InvoicePdfRow, type InvoiceRow } from './invoices.repository.js';
 import { recordAudit } from '../../shared/audit/audit.service.js';
 import { runInTransaction, type TransactionClient } from '../../shared/database/transaction.js';
 import { cache } from '../../shared/cache/cache.service.js';
@@ -9,7 +9,9 @@ import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-key
 import { allocateNumberInTransaction } from '../../shared/numbering/numbering.service.js';
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
 import { BusinessRuleViolationError, InvalidDocumentStatusError, ResourceNotFoundError } from '../../shared/errors/app-error.js';
+import { generateOfficialDocument } from '../../shared/documents/documents.service.js';
 import * as ordersService from '../orders/orders.service.js';
+import * as settingsService from '../settings/settings.service.js';
 import type { CreateInvoiceInput, InvoiceDetail, InvoiceDetailWithFinance, InvoiceFinanceSummary, InvoiceSummary, ListInvoicesFilters, ListInvoicesResult, VoidInvoiceInput } from './invoices.types.js';
 
 const AUDIT_MODULE = 'invoices';
@@ -133,6 +135,49 @@ export async function voidInvoiceAction(id: string, input: VoidInvoiceInput, con
   return getInvoice(id);
 }
 
+const NAIROBI_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+
+/** Format a UTC date as DD-MMM-YYYY in Africa/Nairobi. */
+function nairobiDateFilename(d: Date): string {
+  const n = new Date(d.getTime() + 3 * 60 * 60 * 1000); // UTC+3
+  return `${String(n.getUTCDate()).padStart(2, '0')}-${NAIROBI_MONTHS[n.getUTCMonth()]}-${n.getUTCFullYear()}`;
+}
+
+/** Format a UTC date as "DD Month YYYY" in Africa/Nairobi. */
+function nairobiDateLong(d: Date): string {
+  const full = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const n = new Date(d.getTime() + 3 * 60 * 60 * 1000);
+  return `${n.getUTCDate()} ${full[n.getUTCMonth()]} ${n.getUTCFullYear()}`;
+}
+
+export async function downloadInvoicePdf(id: string, context: RequestContext): Promise<{ content: Buffer; fileName: string; mimeType: string }> {
+  const invoice = await findInvoiceForPdf(id);
+  if (!invoice) throw new ResourceNotFoundError('That invoice was not found.');
+  const settings = await settingsService.getSettings();
+
+  const fileName = `Invoice_${nairobiDateFilename(invoice.createdAt)}_${invoice.invoiceNumber}.pdf`;
+  const html = buildInvoiceHtml(invoice, settings);
+
+  const generated = await generateOfficialDocument(
+    {
+      documentType: 'INVOICE',
+      relatedEntityId: invoice.id,
+      documentNumber: invoice.invoiceNumber,
+      documentTitle: `Invoice ${invoice.invoiceNumber}`,
+      html,
+      uploadedByUserId: context.user.id,
+      sourceUpdatedAt: invoice.updatedAt,
+    },
+    context,
+  );
+
+  return {
+    content: generated.content,
+    fileName,
+    mimeType: generated.mimeType,
+  };
+}
+
 // --- Helpers ---
 
 async function requireInvoice(id: string): Promise<InvoiceDetailRow> {
@@ -158,5 +203,200 @@ function toDetail(row: InvoiceDetailRow): InvoiceDetail {
     voidedAt: row.voidedAt?.toISOString() ?? null, voidedByUserId: row.voidedByUserId, voidReason: row.voidReason,
     items: row.items.map((i) => ({ id: i.id, orderItemId: i.orderItemId, productId: i.productId, productName: i.productName, quantity: i.quantity, unitPrice: i.unitPrice.toFixed(2), lineTotal: i.lineTotal.toFixed(2) })),
   };
+}
+
+// --- Invoice PDF HTML template -------------------------------------------------
+
+function esc(text: string | null | undefined): string {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function buildInvoiceHtml(
+  invoice: InvoicePdfRow,
+  settings: { companyName: string | null; address: string | null; phone: string | null; email: string | null; paymentDetails: string | null; footerNotes: string | null },
+): string {
+  const c = invoice.customer;
+  const o = invoice.order;
+
+  // --- Company info ---
+  const companyName = esc(settings.companyName) || 'Greenstone';
+  const hasAddress = !!(settings.address);
+  const hasPhone = !!(settings.phone);
+  const hasEmail = !!(settings.email);
+  const paymentDetails = settings.paymentDetails || '';
+  const footerNotes = settings.footerNotes || '';
+
+  // --- Dates ---
+  const issueDate = nairobiDateLong(invoice.createdAt);
+  const dueDate = nairobiDateLong(invoice.dueDate);
+  const generatedOn = nairobiDateLong(new Date());
+
+  // --- Logo (no logo field yet in Company Settings; safe fallback) ---
+  const logoHtml = `<div class="logo-placeholder">${companyName}</div>`;
+
+  // --- Payment status (only APPROVED allocations count) ---
+  let approved = new Prisma.Decimal(0);
+  for (const alloc of invoice.allocations ?? []) {
+    if (alloc.payment.status === 'APPROVED') approved = approved.add(alloc.amount);
+  }
+  const outstanding = invoice.totalAmount.sub(approved);
+  let paymentStatusLabel: string;
+  let paymentStatusClass: string;
+  if (approved.isZero()) { paymentStatusLabel = 'Unpaid'; paymentStatusClass = 'pay-unpaid'; }
+  else if (outstanding.isZero() || outstanding.isNegative()) { paymentStatusLabel = 'Fully paid'; paymentStatusClass = 'pay-paid'; }
+  else { paymentStatusLabel = 'Partially paid'; paymentStatusClass = 'pay-partial'; }
+
+  // --- Payment instructions ---
+  let paymentSection: string;
+  if (paymentDetails) {
+    paymentSection = `<pre class="payment-text">${esc(paymentDetails)}</pre>`;
+  } else {
+    paymentSection = `<table class="payment-table">
+      <tr><td class="pay-label">M-Pesa Paybill / Till:</td><td class="pay-value">To be configured in Company Settings</td></tr>
+      <tr><td class="pay-label">Account Reference:</td><td class="pay-value">${esc(invoice.invoiceNumber)}</td></tr>
+    </table>`;
+  }
+
+  // --- Items ---
+  const itemsRows = invoice.items.map((item) =>
+    `<tr>
+      <td class="item-name">${esc(item.productName)}</td>
+      <td class="num">${item.quantity}</td>
+      <td class="num">${esc(item.unitPrice.toFixed(2))}</td>
+      <td class="num">${esc(item.lineTotal.toFixed(2))}</td>
+    </tr>`,
+  ).join('');
+
+  // --- Company contact lines (only show configured fields) ---
+  const contactLines: string[] = [];
+  if (hasAddress) contactLines.push(`<div>${esc(settings.address)}</div>`);
+  const phoneEmailParts: string[] = [];
+  if (hasPhone) phoneEmailParts.push(esc(settings.phone));
+  if (hasEmail) phoneEmailParts.push(esc(settings.email));
+  if (phoneEmailParts.length > 0) contactLines.push(`<div>${phoneEmailParts.join(' &ensp;|&ensp; ')}</div>`);
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Invoice ${esc(invoice.invoiceNumber)}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.5; padding: 48px 56px; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 28px; }
+  .logo-placeholder { font-size: 22pt; font-weight: 700; color: #2563eb; letter-spacing: -0.5px; }
+  .company-details { text-align: right; font-size: 9pt; color: #555; line-height: 1.6; }
+  .company-details .name { font-size: 13pt; font-weight: 700; color: #1a1a1a; margin-bottom: 2px; }
+  .doc-title { font-size: 20pt; font-weight: 700; color: #2563eb; margin-bottom: 20px; letter-spacing: -0.5px; }
+  .info-grid { display: flex; gap: 40px; margin-bottom: 28px; }
+  .info-col { flex: 1; }
+  .info-col h3 { font-size: 9pt; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+  .info-col p { font-size: 10pt; margin-bottom: 2px; }
+  .info-col .label { color: #888; }
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
+  table.items thead th { background: #f1f5f9; text-align: left; padding: 10px 12px; font-size: 9pt; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #d1d5db; }
+  table.items tbody td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 10pt; }
+  table.items .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .totals { margin-left: auto; width: 280px; margin-bottom: 24px; }
+  .totals table { width: 100%; border-collapse: collapse; }
+  .totals td { padding: 6px 12px; font-size: 10pt; }
+  .totals .total-row { border-top: 2px solid #1a1a1a; font-size: 13pt; font-weight: 700; }
+  .section-title { font-size: 11pt; font-weight: 700; color: #2563eb; margin-bottom: 10px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
+  .payment-table { width: 100%; max-width: 420px; border-collapse: collapse; margin-bottom: 24px; }
+  .payment-table td { padding: 3px 8px; font-size: 10pt; }
+  .pay-label { color: #555; width: 180px; }
+  .pay-value { font-weight: 500; }
+  .payment-text { font-size: 10pt; color: #333; white-space: pre-wrap; margin-bottom: 24px; }
+  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 9pt; font-weight: 600; }
+  .status-ISSUED { background: #dbeafe; color: #1e40af; }
+  .status-VOIDED { background: #fee2e2; color: #991b1b; }
+  .pay-unpaid { background: #f1f5f9; color: #475569; }
+  .pay-paid { background: #dcfce7; color: #166534; }
+  .pay-partial { background: #fef9c3; color: #854d0e; }
+  .pay-summary { margin-bottom: 24px; }
+  .pay-summary table { width: 100%; max-width: 380px; border-collapse: collapse; margin-left: auto; }
+  .pay-summary td { padding: 4px 12px; font-size: 10pt; }
+  .pay-summary .total-row { border-top: 2px solid #1a1a1a; font-size: 12pt; font-weight: 700; }
+  .generated-on { font-size: 8pt; color: #999; text-align: right; margin-top: 20px; }
+  .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; font-size: 8.5pt; color: #888; text-align: center; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+  <!-- Company header -->
+  <div class="header">
+    <div>${logoHtml}</div>
+    <div class="company-details">
+      <div class="name">${companyName}</div>
+      ${contactLines.join('\n      ')}
+    </div>
+  </div>
+
+  <!-- Document title -->
+  <div class="doc-title">INVOICE</div>
+
+  <!-- Invoice + Customer info -->
+  <div class="info-grid">
+    <div class="info-col">
+      <h3>Invoice Details</h3>
+      <p><span class="label">Invoice:</span> ${esc(invoice.invoiceNumber)}</p>
+      <p><span class="label">Status:</span> <span class="status-badge status-${esc(invoice.status)}">${esc(invoice.status)}</span></p>
+      <p><span class="label">Issue Date:</span> ${issueDate}</p>
+      <p><span class="label">Due Date:</span> ${dueDate}</p>
+      <p><span class="label">Order:</span> ${esc(o.orderNumber)}</p>
+    </div>
+    <div class="info-col">
+      <h3>Bill To</h3>
+      <p>${esc(c.name)}</p>
+      ${c.phone ? `<p>${esc(c.phone)}</p>` : ''}
+    </div>
+    <div class="info-col">
+      <h3>Deliver To</h3>
+      ${o.addressLabel ? `<p>${esc(o.addressLabel)}</p>` : ''}
+      ${o.addressLine ? `<p>${esc(o.addressLine)}</p>` : ''}
+      ${o.addressDirections ? `<p>${esc(o.addressDirections)}</p>` : ''}
+    </div>
+  </div>
+
+  <!-- Items -->
+  <table class="items">
+    <thead>
+      <tr><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (KES)</th><th class="num">Line Total (KES)</th></tr>
+    </thead>
+    <tbody>
+      ${itemsRows}
+    </tbody>
+  </table>
+
+  <!-- Totals -->
+  <div class="totals">
+    <table>
+      <tr class="total-row"><td>Total</td><td class="num">KES ${esc(invoice.totalAmount.toFixed(2))}</td></tr>
+    </table>
+  </div>
+
+  <!-- Payment summary -->
+  <div class="section-title">Payment Summary</div>
+  <div class="pay-summary">
+    <table>
+      <tr><td>Payment Status</td><td class="num"><span class="status-badge ${paymentStatusClass}">${paymentStatusLabel}</span></td></tr>
+      <tr><td>Invoice Total</td><td class="num">KES ${esc(invoice.totalAmount.toFixed(2))}</td></tr>
+      <tr><td>Approved</td><td class="num">KES ${esc(approved.toFixed(2))}</td></tr>
+      <tr class="total-row"><td>Outstanding</td><td class="num">KES ${esc(outstanding.toFixed(2))}</td></tr>
+    </table>
+  </div>
+
+  <!-- Payment instructions -->
+  <div class="section-title">Payment Information</div>
+  ${paymentSection}
+
+  <!-- Generated on -->
+  <div class="generated-on">PDF generated on ${generatedOn}</div>
+
+  <!-- Footer -->
+  ${footerNotes ? `<div class="footer">${esc(footerNotes)}</div>` : ''}
+</body>
+</html>`;
 }
 

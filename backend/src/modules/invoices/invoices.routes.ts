@@ -14,6 +14,7 @@ export function invoicesRoutes(): Router {
   router.get('/:id', requirePermission('invoice', 'read'), validate({ params: invoiceIdParamsSchema }), invoicesController.getById);
   router.post('/', csrfProtection(), requirePermission('invoice', 'create'), validate({ body: createInvoiceBodySchema }), invoicesController.create);
   router.post('/:id/void', csrfProtection(), requirePermission('invoice', 'void'), validate({ params: invoiceIdParamsSchema, body: voidInvoiceBodySchema }), invoicesController.voidInvoice);
+  router.get('/:id/pdf', requirePermission('invoice', 'read'), validate({ params: invoiceIdParamsSchema }), invoicesController.downloadPdf);
 
   return router;
 }

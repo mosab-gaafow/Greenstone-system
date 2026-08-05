@@ -24,3 +24,13 @@ export async function create(req: Request, res: Response, next: NextFunction): P
 export async function voidInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
   try { sendSuccess(res, await invoicesService.voidInvoiceAction(req.params['id'] as string, req.body as VoidInvoiceInput, getRequestContext(res))); } catch (e) { next(e); }
 }
+
+export async function downloadPdf(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const pdf = await invoicesService.downloadInvoicePdf(req.params['id'] as string, getRequestContext(res));
+    res.setHeader('Content-Type', pdf.mimeType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(pdf.fileName)}"`);
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(pdf.content);
+  } catch (e) { next(e); }
+}

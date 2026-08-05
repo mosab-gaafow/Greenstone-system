@@ -17,6 +17,14 @@ export type InvoiceDetailRow = Invoice & {
   allocations?: any[];
 };
 
+/** Row with PDF-required fields: customer phone, order delivery address, and allocations. */
+export type InvoicePdfRow = Invoice & {
+  order: { orderNumber: string; addressLabel: string | null; addressLine: string | null; addressDirections: string | null };
+  customer: { name: string; phone: string | null };
+  items: (InvoiceItem & { product: Product })[];
+  allocations?: { amount: Prisma.Decimal; payment: { status: string } }[];
+};
+
 function buildWhere(filters: ListInvoicesFilters): Prisma.InvoiceWhereInput {
   const where: Prisma.InvoiceWhereInput = {};
   if (filters.search) {
@@ -61,6 +69,21 @@ export async function findInvoiceById(
       customer: { select: { name: true } },
       items: { include: { product: true }, orderBy: { sortOrder: 'asc' } },
       allocations: { include: { payment: { select: { id: true, paymentNumber: true, status: true, paymentDate: true } } } },
+    },
+  });
+}
+
+export async function findInvoiceForPdf(
+  id: string,
+  client: DbClient = getPrisma(),
+): Promise<InvoicePdfRow | null> {
+  return client.invoice.findUnique({
+    where: { id },
+    include: {
+      order: { select: { orderNumber: true, addressLabel: true, addressLine: true, addressDirections: true } },
+      customer: { select: { name: true, phone: true } },
+      items: { include: { product: true }, orderBy: { sortOrder: 'asc' } },
+      allocations: { select: { amount: true, payment: { select: { status: true } } } },
     },
   });
 }

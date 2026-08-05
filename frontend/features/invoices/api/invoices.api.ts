@@ -1,5 +1,8 @@
+import { API_BASE_URL } from '@/lib/config';
 import { api, type PaginationMeta } from '@/lib/api-client';
 import type { Invoice, InvoiceDetail } from '../types/invoice.types';
+
+export function invoicePdfUrl(id: string): string { return `${API_BASE_URL}/invoices/${id}/pdf`; }
 
 export async function fetchInvoices(filters: { page: number; pageSize: number; search?: string; status?: string; customerId?: string; orderId?: string; paymentStatus?: string }) {
   const { data, meta } = await api.get<Invoice[]>('/invoices', { query: filters });

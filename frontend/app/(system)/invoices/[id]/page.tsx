@@ -1,7 +1,7 @@
 'use client';
 import { use, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Receipt, Wallet } from 'lucide-react';
+import { ArrowLeft, Download, Receipt, Wallet } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -11,6 +11,7 @@ import { StatusBadge, type StatusTone } from '@/components/data-display/status-b
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { useInvoice, useVoidInvoice } from '@/features/invoices/hooks/use-invoices';
+import { invoicePdfUrl } from '@/features/invoices/api/invoices.api';
 import { invoiceStatusLabel, paymentStatusLabel } from '@/features/invoices/types/invoice.types';
 import { formatDateTime } from '@/lib/format';
 
@@ -38,6 +39,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
         <Button render={<Link href={`/payments/new?invoiceId=${inv.id}&customerId=${inv.customerId}`} />} variant="outline"><Wallet className="size-4" />Record payment</Button>
       )}
       {canVoid && <Button variant="outline" onClick={() => setVoiding(true)} disabled={voidMut.isPending}>Void invoice</Button>}
+      <Button variant="outline" render={<a href={invoicePdfUrl(inv.id)} target="_blank" rel="noopener noreferrer" />}><Download className="size-4" />Download PDF</Button>
     </div>
     <div className="max-w-2xl space-y-6">
       <Card><CardContent className="space-y-4">

@@ -61,4 +61,24 @@ describe('invoices module', () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     await request(app).get(INV).set(h).query({ page: 1, pageSize: 10 }).expect(200);
   });
+
+  // --- PDF ---
+
+  it('downloads invoice PDF', async () => {
+    const { cookie } = await sadmin(); const h = await csrfH(cookie);
+    const p = await sp('Pdf1'); const c = await sc('Pdf1'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const inv = await request(app).post(INV).set(h).send({ orderId: o.id, dueDate: TOM }).expect(201);
+    await request(app)
+      .get(`${INV}/${inv.body.data.id}/pdf`)
+      .set('Cookie', cookie)
+      .expect(200)
+      .expect('Content-Type', /application\/pdf/);
+  });
+
+  it('PDF requires authentication', async () => {
+    const { cookie } = await sadmin(); const h = await csrfH(cookie);
+    const p = await sp('Pdf2'); const c = await sc('Pdf2'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const inv = await request(app).post(INV).set(h).send({ orderId: o.id, dueDate: TOM }).expect(201);
+    await request(app).get(`${INV}/${inv.body.data.id}/pdf`).expect(401);
+  });
 });
