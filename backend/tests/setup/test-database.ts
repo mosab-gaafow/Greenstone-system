@@ -91,6 +91,7 @@ const TABLES = [
   'suppliers',
   'company_settings',
   'expenses',
+  'salaries',
   'generated_documents',
   'stored_files',
   'user_capability_grants',

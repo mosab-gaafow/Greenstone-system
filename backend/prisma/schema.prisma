@@ -150,6 +150,7 @@ model StoredFile {
   purchasePaymentEvidence  PurchasePayment?
   customerPaymentEvidence  CustomerPayment?        @relation("CustomerPaymentEvidence")
   expenseEvidence          Expense?                 @relation("ExpenseEvidence")
+  salaryEvidence           Salary?                  @relation("SalaryEvidence")
 
   @@map("stored_files")
 }
@@ -246,6 +247,10 @@ model User {
   paymentsReversed               CustomerPayment[]        @relation("PaymentReversedBy")
   receiptsIssued                 Receipt[]                @relation("ReceiptIssuedBy")
   recordedExpenses               Expense[]                @relation("ExpenseRecordedBy")
+  registeredSalaries             Salary[]                 @relation("SalaryRegisteredBy")
+  approvedSalaries               Salary[]                 @relation("SalaryApprovedBy")
+  correctedSalaries              Salary[]                 @relation("SalaryCorrectedBy")
+  reversedSalaries               Salary[]                 @relation("SalaryReversedBy")
 
   @@unique([email])
   @@map("user")
@@ -423,6 +428,12 @@ enum SalaryFrequency {
   MONTHLY
 }
 
+enum SalaryStatus {
+  PENDING
+  APPROVED
+  REVERSED
+}
+
 /// Shared payment-method vocabulary.
 ///
 /// Reused from the approved customer-payment method list (business-blueprint
@@ -469,6 +480,8 @@ model Employee {
 
   @@index([isActive])
   @@index([name])
+  salaries        Salary[]
+
   @@map("employees")
 }
 
@@ -1632,6 +1645,44 @@ model Expense {
   updatedAt            DateTime        @updatedAt
 
   @@map("expenses")
+}
+
+model Salary {
+  id                   String          @id @default(uuid())
+  salaryNumber         String          @unique
+  employeeId           String
+  employee             Employee        @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+  salaryType           SalaryFrequency
+  periodStart          DateTime
+  periodEnd            DateTime
+  amount               Decimal         @db.Decimal(12, 2)
+  paymentMethod        PaymentMethod
+  paymentReference     String?
+  paymentDate          DateTime
+  status               SalaryStatus    @default(PENDING)
+  notes                String?         @db.Text
+  evidenceStoredFileId String?         @unique
+  evidenceStoredFile   StoredFile?     @relation("SalaryEvidence", fields: [evidenceStoredFileId], references: [id], onDelete: Restrict)
+  registeredByUserId   String?
+  registeredByUser     User?           @relation("SalaryRegisteredBy", fields: [registeredByUserId], references: [id], onDelete: SetNull)
+  approvedByUserId     String?
+  approvedByUser       User?           @relation("SalaryApprovedBy", fields: [approvedByUserId], references: [id], onDelete: SetNull)
+  approvedAt           DateTime?
+  correctedByUserId    String?
+  correctedByUser      User?           @relation("SalaryCorrectedBy", fields: [correctedByUserId], references: [id], onDelete: SetNull)
+  correctedAt          DateTime?
+  correctionReason     String?         @db.Text
+  reversedByUserId     String?
+  reversedByUser       User?           @relation("SalaryReversedBy", fields: [reversedByUserId], references: [id], onDelete: SetNull)
+  reversedAt           DateTime?
+  reversalReason       String?         @db.Text
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@index([employeeId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("salaries")
 }
 
 model Session {

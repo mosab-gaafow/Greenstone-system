@@ -1,0 +1,12 @@
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
+import { fetchSalaries, fetchSalary, createSalary, approveSalary, correctSalary, reverseSalary, updateSalary } from '../api/salaries.api';
+
+export const salaryKeys = { all: ['salaries'] as const, lists: () => [...salaryKeys.all, 'list'] as const, list: (f: Record<string, unknown>) => [...salaryKeys.lists(), f] as const, details: () => [...salaryKeys.all, 'detail'] as const, detail: (id: string) => [...salaryKeys.details(), id] as const };
+export function useSalaries(f: Record<string, string | number | boolean | undefined>) { return useQuery({ queryKey: salaryKeys.list(f), queryFn: () => fetchSalaries(f), placeholderData: (prev) => prev }); }
+export function useSalary(id: string) { return useQuery({ queryKey: salaryKeys.detail(id), queryFn: () => fetchSalary(id), enabled: !!id }); }
+export function useCreateSalary() { const qc = useQueryClient(); return useMutation({ mutationFn: (fd: FormData) => createSalary(fd), onSuccess: () => { qc.invalidateQueries({ queryKey: salaryKeys.all }); toast.success('Salary registered.'); }, onError: (e: Error) => toast.error(e.message ?? 'Could not register salary.') }); }
+export function useApproveSalary(id: string) { const qc = useQueryClient(); return useMutation({ mutationFn: () => approveSalary(id), onSuccess: () => { qc.invalidateQueries({ queryKey: salaryKeys.all }); toast.success('Salary approved.'); }, onError: (e: Error) => toast.error(e.message) }); }
+export function useCorrectSalary(id: string) { const qc = useQueryClient(); return useMutation({ mutationFn: (input: Record<string, unknown>) => correctSalary(id, input), onSuccess: () => { qc.invalidateQueries({ queryKey: salaryKeys.all }); toast.success('Salary corrected.'); }, onError: (e: Error) => toast.error(e.message) }); }
+export function useReverseSalary(id: string) { const qc = useQueryClient(); return useMutation({ mutationFn: (reason: string) => reverseSalary(id, reason), onSuccess: () => { qc.invalidateQueries({ queryKey: salaryKeys.all }); toast.success('Salary reversed.'); }, onError: (e: Error) => toast.error(e.message) }); }
+export function useUpdateSalary(id: string) { const qc = useQueryClient(); return useMutation({ mutationFn: (input: Record<string, unknown>) => updateSalary(id, input), onSuccess: () => { qc.invalidateQueries({ queryKey: salaryKeys.all }); toast.success('Salary updated.'); }, onError: (e: Error) => toast.error(e.message) }); }

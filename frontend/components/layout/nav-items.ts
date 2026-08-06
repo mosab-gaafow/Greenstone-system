@@ -69,6 +69,7 @@ export const NAV_GROUPS: NavGroup[] = [
         available: true,
       },
       { label: 'Employees', href: '/employees', icon: IdCard, available: true },
+      { label: 'Salaries', href: '/salaries', icon: HandCoins, available: true },
       { label: 'Suppliers', href: '/suppliers', icon: Warehouse, available: true },
     ],
   },
