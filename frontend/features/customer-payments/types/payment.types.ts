@@ -4,8 +4,10 @@ export type PaymentStatus = 'PENDING' | 'APPROVED' | 'REVERSED';
 export const PAYMENT_METHODS = ['CASH', 'MPESA', 'BANK_TRANSFER', 'CHEQUE'] as const;
 
 export interface Allocation { id: string; invoiceId: string; invoiceNumber: string; amount: string; }
+export interface EvidenceInfo { id: string; originalFileName: string; mimeType: string; sizeBytes: number; uploadedAt: string; }
+
 export interface Payment { id: string; paymentNumber: string; customerId: string; customerName: string; amount: string; paymentMethod: PaymentMethod; status: PaymentStatus; paymentDate: string; createdAt: string; }
-export interface PaymentDetail extends Payment { paymentReference: string | null; approvedAt: string | null; reversedAt: string | null; reversalReason: string | null; allocations: Allocation[]; receiptId: string | null; receiptNumber: string | null; }
+export interface PaymentDetail extends Payment { paymentReference: string | null; approvedAt: string | null; reversedAt: string | null; reversalReason: string | null; allocations: Allocation[]; receiptId: string | null; receiptNumber: string | null; evidence: EvidenceInfo | null; }
 
 const STATUS_LABELS: Record<PaymentStatus, string> = { PENDING: 'Pending', APPROVED: 'Approved', REVERSED: 'Reversed' };
 export function paymentStatusLabel(s: PaymentStatus) { return STATUS_LABELS[s]; }

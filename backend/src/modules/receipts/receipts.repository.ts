@@ -77,7 +77,7 @@ export async function findReceipts(
   }
 
   if (filters.status) where.status = filters.status;
-  if (filters.paymentMethod) where.payment = { paymentMethod: filters.paymentMethod as any };
+  if (filters.paymentMethod) where.payment = { paymentMethod: filters.paymentMethod as never };
 
   const [rows, total] = await Promise.all([
     client.receipt.findMany({

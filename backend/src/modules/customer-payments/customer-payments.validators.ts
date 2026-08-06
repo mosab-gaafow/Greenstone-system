@@ -29,3 +29,7 @@ export const listPaymentsQuerySchema = z.object({
   paymentMethod: z.enum(CUSTOMER_METHODS).optional(),
   sortBy: z.enum(['paymentNumber', 'createdAt', 'paymentDate']).default('createdAt'), sortDirection: z.enum(['asc', 'desc']).default('desc'),
 });
+
+export const evidenceQuerySchema = z.object({
+  disposition: z.enum(['inline', 'attachment']).optional().default('attachment'),
+});

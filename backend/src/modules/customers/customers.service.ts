@@ -525,3 +525,170 @@ function toAddressAuditSnapshot(row: AddressRow): Record<string, unknown> {
     isActive: row.isActive,
   };
 }
+
+// --- Customer Statement -------------------------------------------------------
+
+import { Prisma } from '../../generated/prisma/client.js';
+import { getPrisma } from '../../shared/database/prisma.js';
+
+interface StatementTransaction {
+  date: string;
+  type: 'OPENING_BALANCE' | 'BROUGHT_FORWARD' | 'INVOICE' | 'PAYMENT';
+  reference: string;
+  description: string;
+  relatedDocument: string;
+  method: string;
+  charge: string;
+  payment: string;
+  balance: string;
+  status: string;
+  paymentStatus: string;
+}
+
+export interface CustomerStatement {
+  customer: { id: string; name: string; phone: string | null };
+  from: string | null;
+  to: string | null;
+  openingBalance: string;
+  totalInvoiced: string;
+  totalPaid: string;
+  closingBalance: string;
+  transactions: StatementTransaction[];
+}
+
+export async function getCustomerStatement(
+  customerId: string,
+  from: Date | undefined,
+  to: Date | undefined,
+): Promise<CustomerStatement> {
+  const prisma = getPrisma();
+  const { ResourceNotFoundError } = await import('../../shared/errors/app-error.js');
+
+  const customer = await prisma.customer.findUnique({ where: { id: customerId }, select: { id: true, name: true, phone: true } });
+  if (!customer) throw new ResourceNotFoundError('Customer not found.');
+
+  const ob = await prisma.customerOpeningBalance.findUnique({ where: { customerId } });
+  const customerOpeningBalance = ob ? ob.amount : new Prisma.Decimal(0);
+
+  // Build `to` end-of-day: add 1 day, use < (inclusive full day).
+  const toEnd = to ? new Date(to.getTime() + 86400000) : undefined;
+
+  // ---- Fetch ALL transactions (before + during range) ----
+  // We fetch everything so we can compute the brought-forward balance
+  // and the in-range transactions separately.
+  const allInvoices = await prisma.invoice.findMany({
+    where: { customerId, status: 'ISSUED' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: { id: true, invoiceNumber: true, totalAmount: true, createdAt: true, order: { select: { orderNumber: true } } },
+  });
+
+  const allAllocations = await prisma.customerPaymentAllocation.findMany({
+    where: { invoice: { customerId }, payment: { status: 'APPROVED' } },
+    orderBy: [{ payment: { approvedAt: 'asc' } }, { id: 'asc' }],
+    select: {
+      id: true, amount: true,
+      payment: { select: { paymentNumber: true, approvedAt: true, paymentMethod: true, paymentReference: true, receipt: { select: { receiptNumber: true } } } },
+      invoice: { select: { invoiceNumber: true, order: { select: { orderNumber: true } } } },
+    },
+  });
+
+  // Separate into before-range and in-range
+  const isBefore = (d: Date) => from ? d < from : false;
+  const isAfter = (d: Date) => toEnd ? d >= toEnd : false;
+
+  let beforeInvoices = new Prisma.Decimal(0);
+  let beforePayments = new Prisma.Decimal(0);
+  let running = customerOpeningBalance;
+
+  const txns: { date: Date; type: 'INVOICE' | 'PAYMENT'; reference: string; related: string; method: string; charge: Prisma.Decimal; payment: Prisma.Decimal; status: string }[] = [];
+
+  for (const inv of allInvoices) {
+    if (isBefore(inv.createdAt)) { beforeInvoices = beforeInvoices.add(inv.totalAmount); continue; }
+    if (isAfter(inv.createdAt)) continue;
+    txns.push({ date: inv.createdAt, type: 'INVOICE', reference: inv.invoiceNumber, related: inv.order.orderNumber, method: '', charge: inv.totalAmount, payment: new Prisma.Decimal(0), status: 'ISSUED' });
+  }
+  for (const alloc of allAllocations) {
+    const d = alloc.payment.approvedAt ?? new Date(0);
+    if (isBefore(d)) { beforePayments = beforePayments.add(alloc.amount); continue; }
+    if (isAfter(d)) continue;
+    txns.push({ date: d, type: 'PAYMENT', reference: alloc.payment.paymentNumber, related: alloc.invoice.invoiceNumber, method: alloc.payment.paymentMethod, charge: new Prisma.Decimal(0), payment: alloc.amount, status: 'APPROVED' });
+  }
+
+  txns.sort((a, b) => a.date.getTime() - b.date.getTime() || a.reference.localeCompare(b.reference));
+
+  const broughtForward = customerOpeningBalance.add(beforeInvoices).sub(beforePayments);
+  const hasFilter = !!(from || to);
+  running = broughtForward;
+
+  // First row: opening balance or brought forward
+  const transactions: StatementTransaction[] = [];
+  if (hasFilter) {
+    transactions.push({
+      date: '', type: 'BROUGHT_FORWARD', reference: '', description: 'Balance before the selected date range',
+      relatedDocument: '', method: '',
+      charge: '0.00', payment: '0.00', balance: broughtForward.toFixed(2), status: '', paymentStatus: '',
+    });
+  } else {
+    transactions.push({
+      date: '', type: 'OPENING_BALANCE', reference: '', description: 'Customer opening balance',
+      relatedDocument: '', method: '',
+      charge: '0.00', payment: '0.00', balance: customerOpeningBalance.toFixed(2), status: '', paymentStatus: '',
+    });
+  }
+
+  // Compute invoice totals for payment status calculation
+  const invoiceTotalMap = new Map<string, Prisma.Decimal>();
+  for (const inv of allInvoices) invoiceTotalMap.set(inv.invoiceNumber, inv.totalAmount);
+
+  function paymentStatusLabel(approvedTotal: Prisma.Decimal, invoiceTotal: Prisma.Decimal): string {
+    if (approvedTotal.isZero()) return 'Unpaid';
+    if (approvedTotal.gte(invoiceTotal)) return 'Fully paid';
+    return 'Partially paid';
+  }
+
+  let totalInvoiced = new Prisma.Decimal(0);
+  let totalPaid = new Prisma.Decimal(0);
+  // Track running approved amount per invoice so we can show the payment status
+  // after each payment, simulating historical progression.
+  const runningApprovedByInvoice = new Map<string, Prisma.Decimal>();
+
+  for (const t of txns) {
+    if (t.type === 'INVOICE') {
+      running = running.add(t.charge);
+      totalInvoiced = totalInvoiced.add(t.charge);
+      // Invoice row — show historical state: invoice just issued, nothing paid yet
+      transactions.push({
+        date: t.date.toISOString(), type: 'INVOICE', reference: t.reference,
+        description: `Invoice ${t.reference}`, relatedDocument: t.related,
+        method: '', charge: t.charge.toFixed(2), payment: '0.00', balance: running.toFixed(2), status: 'ISSUED', paymentStatus: 'Unpaid',
+      });
+    } else {
+      running = running.sub(t.payment);
+      totalPaid = totalPaid.add(t.payment);
+      // Payment row — accumulate approved total for this invoice and show resulting status
+      const invNumber = t.related; // related is the invoice number for payment rows
+      const prevApproved = runningApprovedByInvoice.get(invNumber) ?? new Prisma.Decimal(0);
+      const newApproved = prevApproved.add(t.payment);
+      runningApprovedByInvoice.set(invNumber, newApproved);
+      const invTotal = invoiceTotalMap.get(invNumber) ?? new Prisma.Decimal(0);
+      const ps = paymentStatusLabel(newApproved, invTotal);
+      const methodLabel: Record<string, string> = { MPESA: 'M-Pesa', CASH: 'Cash', BANK_TRANSFER: 'Bank Transfer', CHEQUE: 'Cheque' };
+      transactions.push({
+        date: t.date.toISOString(), type: 'PAYMENT', reference: t.reference,
+        description: `Payment ${t.reference}`, relatedDocument: invNumber,
+        method: methodLabel[t.method] ?? t.method, charge: '0.00', payment: t.payment.toFixed(2), balance: running.toFixed(2), status: 'APPROVED', paymentStatus: ps,
+      });
+    }
+  }
+
+  return {
+    customer: { id: customer.id, name: customer.name, phone: customer.phone },
+    from: from ? from.toISOString() : null,
+    to: to ? to.toISOString() : null,
+    openingBalance: broughtForward.toFixed(2),
+    totalInvoiced: totalInvoiced.toFixed(2),
+    totalPaid: totalPaid.toFixed(2),
+    closingBalance: running.toFixed(2),
+    transactions,
+  };
+}

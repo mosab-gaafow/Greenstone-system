@@ -128,3 +128,8 @@ export const listCustomersQuerySchema = z.object({
   sortBy: z.enum(['name', 'createdAt']).default('name'),
   sortDirection: z.enum(['asc', 'desc']).default('asc'),
 });
+
+export const statementQuerySchema = z.object({
+  from: z.coerce.date().optional(),
+  to: z.coerce.date().optional(),
+});

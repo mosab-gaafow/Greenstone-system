@@ -146,4 +146,192 @@ describe('customer-payments module', () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     await request(app).get(CP).set(h).query({ page: 1, pageSize: 10 }).expect(200);
   });
+
+  // --- Evidence ---
+
+  async function createPayment(cookie: string, customerId: string, invoiceId: string) {
+    const h = await csrfH(cookie);
+    return request(app).post(CP).set(h).send({
+      customerId, amount: '500.00', paymentMethod: 'CASH',
+      paymentDate: new Date().toISOString(),
+      allocations: [{ invoiceId, amount: '500.00' }],
+    }).expect(201);
+  }
+
+  it('upload valid evidence succeeds', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvP'); const c = await sc('EvC');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app)
+      .post(`${CP}/${payId}/evidence`)
+      .set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4 fake pdf'), 'receipt.pdf')
+      .expect(200);
+
+    const detail = await request(app).get(`${CP}/${payId}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.data.evidence).not.toBeNull();
+    expect(detail.body.data.evidence.originalFileName).toBe('receipt.pdf');
+  });
+
+  it('rejects invalid file type', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvT'); const c = await sc('EvT');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app)
+      .post(`${CP}/${payId}/evidence`)
+      .set(h)
+      .attach('evidenceFile', Buffer.from('hello'), 'test.txt')
+      .expect(422);
+  });
+
+  it('replaces existing evidence', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvR'); const c = await sc('EvR');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    // Upload first
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4 first'), 'first.pdf').expect(200);
+    // Replace
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4 second'), 'second.pdf').expect(200);
+
+    const detail = await request(app).get(`${CP}/${payId}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.data.evidence.originalFileName).toBe('second.pdf');
+  });
+
+  it('downloads uploaded PDF evidence', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvD'); const c = await sc('EvD');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const pdfBytes = Buffer.from('%PDF-1.4 test content');
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', pdfBytes, 'receipt.pdf').expect(200);
+
+    const res = await request(app).get(`${CP}/${payId}/evidence`)
+      .set('Cookie', cookie).expect(200);
+    expect(res.headers['content-type']).toBe('application/pdf');
+    expect(res.headers['content-disposition']).toContain('attachment');
+    expect(res.headers['content-disposition']).toContain('receipt.pdf');
+    expect(res.body.equals(pdfBytes)).toBe(true);
+  });
+
+  it('downloads uploaded PNG evidence', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvPNG'); const c = await sc('EvPNG');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const pngBytes = Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00]);
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', pngBytes, 'proof.png').expect(200);
+
+    const res = await request(app).get(`${CP}/${payId}/evidence`)
+      .set('Cookie', cookie).expect(200);
+    expect(res.headers['content-type']).toBe('image/png');
+    expect(res.body.equals(pngBytes)).toBe(true);
+  });
+
+  it('preview uses inline disposition', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvPre'); const c = await sc('EvPre');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const pdfBytes = Buffer.from('%PDF-1.4 preview');
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', pdfBytes, 'doc.pdf').expect(200);
+
+    const res = await request(app).get(`${CP}/${payId}/evidence?disposition=inline`)
+      .set('Cookie', cookie).expect(200);
+    expect(res.headers['content-disposition']).toContain('inline');
+  });
+
+  it('download defaults to attachment disposition', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvAtt'); const c = await sc('EvAtt');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4'), 'doc.pdf').expect(200);
+
+    const res = await request(app).get(`${CP}/${payId}/evidence`)
+      .set('Cookie', cookie).expect(200);
+    expect(res.headers['content-disposition']).toContain('attachment');
+  });
+
+  it('invalid disposition is rejected', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvInv'); const c = await sc('EvInv');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4'), 'doc.pdf').expect(200);
+
+    await request(app).get(`${CP}/${payId}/evidence?disposition=none`)
+      .set('Cookie', cookie).expect(422);
+  });
+
+  it('payment without evidence returns 404', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('Ev404'); const c = await sc('Ev404');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    await request(app).get(`${CP}/${pay.body.data.id}/evidence`)
+      .set('Cookie', cookie).expect(404);
+  });
+
+  it('evidence download requires authentication', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvA'); const c = await sc('EvA');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/evidence`).set(h)
+      .attach('evidenceFile', Buffer.from('%PDF-1.4 test'), 'test.pdf').expect(200);
+
+    await request(app).get(`${CP}/${payId}/evidence`).expect(401);
+  });
+
+  it('payment approval works without evidence', async () => {
+    const { cookie } = await sadmin();
+    const p = await sp('EvNo'); const c = await sc('EvNo');
+    const invId = await seedInvoice(c.id, p.id);
+    const pay = await createPayment(cookie, c.id, invId);
+    const payId = pay.body.data.id;
+
+    const h = await csrfH(cookie);
+    await request(app).post(`${CP}/${payId}/approve`).set(h).send({}).expect(200);
+
+    const detail = await request(app).get(`${CP}/${payId}`).set('Cookie', cookie).expect(200);
+    expect(detail.body.data.status).toBe('APPROVED');
+    expect(detail.body.data.evidence).toBeNull();
+  });
 });

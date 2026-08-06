@@ -24,7 +24,9 @@ export interface ReversePaymentInput {
 
 export interface AllocationSummary { id: string; invoiceId: string; invoiceNumber: string; amount: string; }
 export interface PaymentSummary { id: string; paymentNumber: string; customerId: string; customerName: string; amount: string; paymentMethod: PaymentMethod; status: PurchasePaymentStatus; paymentDate: string; createdAt: string; }
-export interface PaymentDetail extends PaymentSummary { paymentReference: string | null; approvedByUserId: string | null; approvedAt: string | null; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null; recordedByUserId: string | null; allocations: AllocationSummary[]; receiptId: string | null; receiptNumber: string | null; }
+export interface EvidenceFileInput { content: Buffer; mimeType: string; originalFileName: string; }
+export interface EvidenceInfo { id: string; originalFileName: string; mimeType: string; sizeBytes: number; uploadedAt: string; }
+export interface PaymentDetail extends PaymentSummary { paymentReference: string | null; approvedByUserId: string | null; approvedAt: string | null; reversedByUserId: string | null; reversedAt: string | null; reversalReason: string | null; recordedByUserId: string | null; allocations: AllocationSummary[]; receiptId: string | null; receiptNumber: string | null; evidence: EvidenceInfo | null; }
 export interface ApprovePaymentResult { id: string; paymentNumber: string; status: 'APPROVED'; receiptId: string; receiptNumber: string; }
 export interface ReversePaymentResult { id: string; paymentNumber: string; status: 'REVERSED'; }
 

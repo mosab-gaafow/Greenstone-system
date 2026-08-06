@@ -193,3 +193,14 @@ export async function deactivateAddress(
     next(error);
   }
 }
+
+export async function statement(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const { from, to } = getValidatedQuery<{ from?: Date; to?: Date }>(res);
+    if (from && to && from > to) {
+      res.status(422).json({ success: false, error: { code: 'VALIDATION_ERROR', message: '"from" date must be before "to" date.' } });
+      return;
+    }
+    sendSuccess(res, await customersService.getCustomerStatement(req.params['id'] as string, from, to));
+  } catch (e) { next(e); }
+}

@@ -9,7 +9,11 @@ import { allocateNumberInTransaction } from '../../shared/numbering/numbering.se
 import { toAuditContext, type RequestContext } from '../../shared/auth/auth-context.js';
 import { BusinessRuleViolationError, InvalidDocumentStatusError, ResourceNotFoundError } from '../../shared/errors/app-error.js';
 import * as customersService from '../customers/customers.service.js';
-import type { ApprovePaymentInput, ApprovePaymentResult, CreatePaymentInput, ListPaymentsFilters, ListPaymentsResult, PaymentDetail, PaymentSummary, ReversePaymentInput, ReversePaymentResult } from './customer-payments.types.js';
+import { storeFile } from '../../shared/storage/storage.service.js';
+import { insertStoredFile } from '../../shared/storage/storage.repository.js';
+import { getStorageProvider } from '../../shared/storage/storage.service.js';
+import { updatePaymentEvidence } from './customer-payments.repository.js';
+import type { ApprovePaymentInput, ApprovePaymentResult, CreatePaymentInput, EvidenceFileInput, ListPaymentsFilters, ListPaymentsResult, PaymentDetail, PaymentSummary, ReversePaymentInput, ReversePaymentResult } from './customer-payments.types.js';
 
 const AUDIT_MODULE = 'customer-payments';
 const CACHE_MODULE = 'customer-payments';
@@ -150,5 +154,62 @@ function toDetail(r: PaymentDetailRow): PaymentDetail {
     allocations: ((r.allocations ?? []) as any[]).map((a: any) => ({ id: a.id as string, invoiceId: a.invoiceId as string, invoiceNumber: (a.invoice as any).invoiceNumber as string, amount: (a.amount as any).toFixed(2) })),
     receiptId: (r.receipt as any)?.id ?? null,
     receiptNumber: (r.receipt as any)?.receiptNumber ?? null,
+    evidence: (r as any).evidenceStoredFile ? {
+      id: (r as any).evidenceStoredFile.id,
+      originalFileName: (r as any).evidenceStoredFile.originalFileName,
+      mimeType: (r as any).evidenceStoredFile.mimeType,
+      sizeBytes: (r as any).evidenceStoredFile.sizeBytes,
+      uploadedAt: (r as any).evidenceStoredFile.createdAt.toISOString(),
+    } : null,
   };
+}
+
+// --- Evidence ---
+
+const EVIDENCE_CATEGORY = 'customer-payment-evidence';
+
+export async function uploadPaymentEvidence(id: string, file: EvidenceFileInput, context: RequestContext): Promise<PaymentDetail> {
+  const payment = await requirePayment(id);
+
+  // Store the file before the transaction (storage is not a DB operation).
+  const stored = await storeFile({ content: file.content, mimeType: file.mimeType, category: EVIDENCE_CATEGORY, originalFileName: file.originalFileName });
+
+  await runInTransaction(async (tx: TransactionClient) => {
+    const storedFile = await insertStoredFile({
+      storageKey: stored.storageKey, originalFileName: file.originalFileName,
+      mimeType: file.mimeType, sizeBytes: stored.sizeBytes,
+      checksum: stored.checksum, uploadedByUserId: context.user.id,
+      retentionType: 'PERMANENT',
+    }, tx);
+
+    // Clear old evidence if it exists (cleanup handled by caller since old file is already orphaned externally)
+    await updatePaymentEvidence(tx, id, storedFile.id);
+
+    await recordAudit(tx, {
+      ...toAuditContext(context),
+      action: payment.evidenceStoredFileId ? 'REPLACE_PAYMENT_EVIDENCE' : 'UPLOAD_PAYMENT_EVIDENCE',
+      module: AUDIT_MODULE, entityType: 'CustomerPayment', entityId: id,
+      documentNumber: payment.paymentNumber,
+      previousData: payment.evidenceStoredFileId ? { evidenceStoredFileId: payment.evidenceStoredFileId } : undefined,
+      updatedData: { evidenceStoredFileId: storedFile.id, fileName: file.originalFileName, sizeBytes: stored.sizeBytes },
+    });
+  });
+
+  await cache.delByPrefix(buildCacheKeyPrefix(CACHE_MODULE));
+  return getPayment(id);
+}
+
+export async function downloadPaymentEvidence(
+  id: string,
+): Promise<{ content: Buffer; mimeType: string; originalFileName: string; sizeBytes: number }> {
+  const payment = await requirePayment(id);
+  const evidence = (payment as any).evidenceStoredFile as { storageKey: string; mimeType: string; originalFileName: string; sizeBytes: number } | null;
+  if (!evidence) throw new ResourceNotFoundError('This payment has no uploaded evidence.');
+  let content: Buffer;
+  try {
+    content = await getStorageProvider().get(evidence.storageKey);
+  } catch {
+    throw new ResourceNotFoundError('The evidence file could not be read. It may have been removed from storage.');
+  }
+  return { content, mimeType: evidence.mimeType, originalFileName: evidence.originalFileName, sizeBytes: evidence.sizeBytes };
 }

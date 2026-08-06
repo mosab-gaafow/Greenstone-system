@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { requireAuth } from '../../shared/auth/session.middleware.js';
 import { requirePermission } from '../../shared/auth/permission.middleware.js';
 import { csrfProtection } from '../../shared/middleware/csrf.js';
+import { singleFileUpload } from '../../shared/middleware/upload.js';
 import { validate } from '../../shared/validation/validate.js';
 import * as ctrl from './customer-payments.controller.js';
-import { createPaymentBodySchema, approvePaymentBodySchema, reversePaymentBodySchema, paymentIdParamsSchema, listPaymentsQuerySchema } from './customer-payments.validators.js';
+import { createPaymentBodySchema, approvePaymentBodySchema, reversePaymentBodySchema, evidenceQuerySchema, paymentIdParamsSchema, listPaymentsQuerySchema } from './customer-payments.validators.js';
 
 export function customerPaymentsRoutes(): Router {
   const r = Router();
@@ -14,5 +15,7 @@ export function customerPaymentsRoutes(): Router {
   r.post('/', csrfProtection(), requirePermission('customer-payment', 'create'), validate({ body: createPaymentBodySchema }), ctrl.create);
   r.post('/:id/approve', csrfProtection(), requirePermission('customer-payment', 'approve'), validate({ params: paymentIdParamsSchema, body: approvePaymentBodySchema }), ctrl.approve);
   r.post('/:id/reverse', csrfProtection(), requirePermission('customer-payment', 'reverse'), validate({ params: paymentIdParamsSchema, body: reversePaymentBodySchema }), ctrl.reverse);
+  r.post('/:id/evidence', csrfProtection(), requirePermission('customer-payment', 'approve'), singleFileUpload('evidenceFile'), validate({ params: paymentIdParamsSchema }), ctrl.uploadEvidence);
+  r.get('/:id/evidence', requirePermission('customer-payment', 'read'), validate({ params: paymentIdParamsSchema, query: evidenceQuerySchema }), ctrl.downloadEvidence);
   return r;
 }

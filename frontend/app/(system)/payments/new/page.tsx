@@ -57,7 +57,7 @@ function PaymentForm() {
     return customers.filter(c => c.isActive).map(c => ({ value: c.id, label: c.name }));
   }, [custQuery.data]);
 
-  const invoicesQuery = useInvoices(customerId ? { page: 1, pageSize: 100, customerId } : { page: 1, pageSize: 0 });
+  const invoicesQuery = useInvoices({ page: 1, pageSize: 100, customerId: customerId ?? '' });
   const eligibleInvoiceIds = useMemo(
     () => (invoicesQuery.data?.invoices ?? []).filter(inv => inv.status === 'ISSUED').map(inv => inv.id),
     [invoicesQuery.data],

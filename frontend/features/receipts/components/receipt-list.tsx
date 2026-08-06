@@ -11,6 +11,7 @@ import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { Pagination } from '@/components/data-display/pagination';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DocumentPdfPreviewDialog } from '@/components/shared/document-pdf-preview-dialog';
 import { useReceipts } from '@/features/receipts/hooks/use-receipts';
 import { receiptPdfUrl } from '@/features/receipts/api/receipts.api';
 import { receiptStatusLabel, paymentMethodLabel } from '@/features/receipts/types/receipt.types';
@@ -45,6 +46,7 @@ const TONES: Record<string, StatusTone> = { ACTIVE: 'success', VOIDED: 'danger' 
 
 export function ReceiptList() {
   const { values, setFilters, setPage } = useUrlFilters(DEFAULTS);
+  const [previewReceipt, setPreviewReceipt] = useState<ReceiptRow | null>(null);
 
   const [localSearch, setLocalSearch] = useState<string>(values.search);
   const [debouncedSearch, setDebouncedSearch] = useState<string>(values.search);
@@ -94,13 +96,23 @@ export function ReceiptList() {
     { key: 'status', header: 'Status', card: 'badge', render: (r) => <StatusBadge tone={TONES[r.status]} label={receiptStatusLabel(r.status)} /> },
     {
       key: 'actions', header: '', align: 'right', render: (r) => (
-        <DropdownMenu>
-          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Actions"><MoreHorizontal className="size-4" /></Button>} />
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem render={<Link href={`/receipts/${r.id}`} />}><Eye className="size-4" />View</DropdownMenuItem>
-            <DropdownMenuItem render={<a href={receiptPdfUrl(r.id)} target="_blank" rel="noopener noreferrer" />}><Download className="size-4" />Download PDF</DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-0.5">
+          <Button
+            variant="ghost" size="icon" className="size-8"
+            title="Preview receipt"
+            aria-label={`Preview receipt ${r.receiptNumber}`}
+            onClick={() => setPreviewReceipt(r)}
+          >
+            <Eye className="size-4" />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-8" aria-label="Actions"><MoreHorizontal className="size-4" /></Button>} />
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem render={<Link href={`/receipts/${r.id}`} />}><Eye className="size-4" />View</DropdownMenuItem>
+              <DropdownMenuItem render={<a href={receiptPdfUrl(r.id)} target="_blank" rel="noopener noreferrer" />}><Download className="size-4" />Download PDF</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       ),
     },
   ];
@@ -130,6 +142,16 @@ export function ReceiptList() {
           {meta && <Pagination page={meta.page} pageSize={meta.pageSize} totalRecords={meta.totalRecords} totalPages={meta.totalPages} onPageChange={setPage} />}
         </>
       )}
+
+      {/* Receipt PDF Preview */}
+      <DocumentPdfPreviewDialog
+        open={previewReceipt !== null}
+        onOpenChange={(o) => { if (!o) setPreviewReceipt(null); }}
+        docType="Receipt"
+        docNumber={previewReceipt?.receiptNumber ?? ''}
+        pdfUrl={previewReceipt ? receiptPdfUrl(previewReceipt.id) : ''}
+        downloadFileName={previewReceipt ? `Receipt_${previewReceipt.receiptNumber}.pdf` : ''}
+      />
     </div>
   );
 }

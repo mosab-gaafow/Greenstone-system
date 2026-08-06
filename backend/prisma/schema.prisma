@@ -147,7 +147,8 @@ model StoredFile {
   createdAt        DateTime      @default(now())
 
   generatedDocument       GeneratedDocument?
-  purchasePaymentEvidence PurchasePayment?
+  purchasePaymentEvidence  PurchasePayment?
+  customerPaymentEvidence  CustomerPayment?        @relation("CustomerPaymentEvidence")
 
   @@map("stored_files")
 }
@@ -1222,6 +1223,7 @@ model ProductionBatch {
   rawMaterialUsages RawMaterialUsage[]
 
   @@index([orderId])
+  @@index([status])
   @@map("production_batches")
 }
 
@@ -1422,6 +1424,7 @@ model Delivery {
   @@index([driverId])
   @@index([vehicleId])
   @@index([createdAt])
+  @@index([status])
   @@map("deliveries")
 }
 
@@ -1495,6 +1498,7 @@ model Invoice {
   @@index([orderId])
   @@index([customerId])
   @@index([createdAt])
+  @@index([status])
   @@map("invoices")
 }
 
@@ -1537,7 +1541,8 @@ model CustomerPayment {
   /// Required for M_PESA, BANK_TRANSFER, CHEQUE; optional for CASH.
   paymentReference     String?
   /// Optional permanent evidence file.
-  evidenceStoredFileId String?
+  evidenceStoredFileId String?               @unique
+  evidenceStoredFile   StoredFile?           @relation("CustomerPaymentEvidence", fields: [evidenceStoredFileId], references: [id], onDelete: Restrict)
   status               PurchasePaymentStatus @default(PENDING)
   recordedByUserId     String?
   recordedByUser       User?                 @relation("PaymentRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)

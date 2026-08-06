@@ -117,3 +117,40 @@ function normaliseAddress(values: AddressFormValues) {
     directions: values.directions?.trim() ? values.directions.trim() : null,
   };
 }
+
+// --- Statement ---------------------------------------------------------------
+
+export interface StatementTransaction {
+  date: string;
+  type: 'OPENING_BALANCE' | 'BROUGHT_FORWARD' | 'INVOICE' | 'PAYMENT';
+  reference: string;
+  description: string;
+  relatedDocument: string;
+  method: string;
+  charge: string;
+  payment: string;
+  balance: string;
+  status: string;
+  paymentStatus: string;
+}
+
+export interface CustomerStatement {
+  customer: { id: string; name: string; phone: string | null };
+  from: string | null;
+  to: string | null;
+  openingBalance: string;
+  totalInvoiced: string;
+  totalPaid: string;
+  closingBalance: string;
+  transactions: StatementTransaction[];
+}
+
+export async function fetchCustomerStatement(customerId: string, from?: string, to?: string): Promise<CustomerStatement> {
+  const params = new URLSearchParams();
+  if (from) params.set('from', from);
+  if (to) params.set('to', to);
+  const qs = params.toString();
+  const url = `/customers/${customerId}/statement${qs ? '?' + qs : ''}`;
+  const { data } = await api.get<CustomerStatement>(url);
+  return data;
+}

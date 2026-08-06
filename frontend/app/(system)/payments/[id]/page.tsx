@@ -1,7 +1,7 @@
 'use client';
-import { use, useMemo, useState } from 'react';
+import { use, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Download, Wallet, Ban } from 'lucide-react';
+import { ArrowLeft, Download, Eye, FileText, Upload, Wallet, Ban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,10 +12,13 @@ import { DetailRow } from '@/components/data-display/detail-row';
 import { StatusBadge, type StatusTone } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { ConfirmDialog } from '@/components/shared/confirm-dialog';
+import { PreviewDialog } from '@/components/shared/preview-dialog';
+import { DocumentPdfPreviewDialog } from '@/components/shared/document-pdf-preview-dialog';
 import { usePayment, useApprovePayment, useReversePayment } from '@/features/customer-payments/hooks/use-payments';
 import { useInvoices } from '@/features/invoices/hooks/use-invoices';
 import { paymentStatusLabel, paymentMethodLabel } from '@/features/customer-payments/types/payment.types';
 import { receiptPdfUrl } from '@/features/receipts/api/receipts.api';
+import { evidenceDownloadUrl, evidencePreviewUrl, uploadEvidence } from '@/features/customer-payments/api/payments.api';
 import { formatDateTime } from '@/lib/format';
 
 const TONES: Record<string, StatusTone> = { PENDING: 'neutral', APPROVED: 'success', REVERSED: 'danger' };
@@ -29,9 +32,14 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
   const [reversing, setReversing] = useState(false);
   const [reversalReason, setReversalReason] = useState('');
   const [reasonErr, setReasonErr] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [evidencePreviewOpen, setEvidencePreviewOpen] = useState(false);
+  const [receiptPreviewOpen, setReceiptPreviewOpen] = useState(false);
 
   // For approval: show invoices for this customer
-  const invoicesQuery = useInvoices(q.data ? { page: 1, pageSize: 100, customerId: q.data.customerId } : { page: 1, pageSize: 0 });
+  const invoicesQuery = useInvoices({ page: 1, pageSize: 100, customerId: q.data?.customerId ?? '' });
   const eligibleInvoices = useMemo(() => invoicesQuery.data?.invoices.filter(inv => inv.status === 'ISSUED') ?? [], [invoicesQuery.data]);
 
   if (q.isPending) return <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8"><Skeleton className="h-6 w-1/2" /><Skeleton className="h-40 w-full" /></div>;
@@ -79,8 +87,73 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
           <DetailRow label="Receipt">
             <Link href={`/receipts/${p.receiptId}`} className="text-primary hover:underline">{p.receiptNumber}</Link>
           </DetailRow>
-          <Button variant="outline" size="sm" render={<a href={receiptPdfUrl(p.receiptId)} target="_blank" rel="noopener noreferrer" />}><Download className="size-3.5" />Download Receipt</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => setReceiptPreviewOpen(true)} title="Preview receipt" aria-label={`Preview receipt ${p.receiptNumber}`}><Eye className="size-3.5" />Preview</Button>
+            <Button variant="outline" size="sm" render={<a href={receiptPdfUrl(p.receiptId)} target="_blank" rel="noopener noreferrer" />}><Download className="size-3.5" />Download Receipt</Button>
+          </div>
         </CardContent></Card>
+      )}
+
+      {/* Evidence */}
+      <Card><CardContent className="space-y-3">
+        <h3 className="text-sm font-semibold">Payment evidence</h3>
+        {p.evidence ? (
+          <>
+            <div className="flex items-center gap-2 text-sm">
+              <FileText className="size-4 text-muted-foreground" />
+              <span>{p.evidence.originalFileName}</span>
+              <span className="text-xs text-muted-foreground">({(p.evidence.sizeBytes / 1024).toFixed(1)} KB) — uploaded {formatDateTime(p.evidence.uploadedAt)}</span>
+            </div>
+            <div className="flex gap-2">
+              {(p.evidence.mimeType.startsWith('image/') || p.evidence.mimeType === 'application/pdf') && (
+                <Button variant="outline" size="sm" onClick={() => setEvidencePreviewOpen(true)}><Eye className="size-3.5" />Preview</Button>
+              )}
+              <Button variant="outline" size="sm" render={<a href={evidenceDownloadUrl(p.id)} download />}><Download className="size-3.5" />Download</Button>
+              <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}><Upload className="size-3.5" />Replace</Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-sm text-muted-foreground">No evidence uploaded.</p>
+            <Button variant="outline" size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}><Upload className="size-3.5" />Upload evidence</Button>
+          </>
+        )}
+        <input ref={fileRef} type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={async (e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          setUploading(true); setUploadErr(null);
+          try {
+            await uploadEvidence(p.id, file);
+            await q.refetch();
+          } catch (err: unknown) { setUploadErr(err instanceof Error ? err.message : 'Upload failed.'); }
+          finally { setUploading(false); if (fileRef.current) fileRef.current.value = ''; }
+        }} />
+        {uploading && <p className="text-sm text-muted-foreground">Uploading…</p>}
+        {uploadErr && <p className="text-sm text-destructive">{uploadErr}</p>}
+      </CardContent></Card>
+
+      {/* Preview Dialog */}
+      {p.evidence && (
+        <PreviewDialog
+          open={evidencePreviewOpen}
+          onOpenChange={setEvidencePreviewOpen}
+          title={p.evidence.originalFileName}
+          previewUrl={evidencePreviewUrl(p.id)}
+          downloadUrl={evidenceDownloadUrl(p.id)}
+          mimeType={p.evidence.mimeType}
+        />
+      )}
+
+      {/* Receipt PDF Preview */}
+      {p.receiptId && p.receiptNumber && (
+        <DocumentPdfPreviewDialog
+          open={receiptPreviewOpen}
+          onOpenChange={setReceiptPreviewOpen}
+          docType="Receipt"
+          docNumber={p.receiptNumber}
+          pdfUrl={receiptPdfUrl(p.receiptId)}
+          downloadFileName={`Receipt_${p.receiptNumber}.pdf`}
+        />
       )}
     </div>
 

@@ -11,6 +11,7 @@ import {
   customerIdParamsSchema,
   forceDeactivateCustomerBodySchema,
   listCustomersQuerySchema,
+  statementQuerySchema,
   updateAddressBodySchema,
   updateCustomerBodySchema,
 } from './customers.validators.js';
@@ -84,6 +85,15 @@ export function customersRoutes(): Router {
     requirePermission('customer', 'force-deactivate'),
     validate({ params: customerIdParamsSchema, body: forceDeactivateCustomerBodySchema }),
     customersController.forceDeactivate,
+  );
+
+  // --- Statement ------------------------------------------------------------
+
+  router.get(
+    '/:id/statement',
+    requirePermission('customer', 'read'),
+    validate({ params: customerIdParamsSchema, query: statementQuerySchema }),
+    customersController.statement,
   );
 
   // --- Addresses ------------------------------------------------------------

@@ -1,7 +1,7 @@
 'use client';
 import { useRef, useState } from 'react';
 import Link from 'next/link';
-import { Receipt, MoreHorizontal, FileText } from 'lucide-react';
+import { Eye, Receipt, MoreHorizontal, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -11,8 +11,10 @@ import { EmptyState } from '@/components/data-display/empty-state';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { Pagination } from '@/components/data-display/pagination';
 import { SelectField } from '@/components/forms/select-field';
+import { DocumentPdfPreviewDialog } from '@/components/shared/document-pdf-preview-dialog';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { useInvoices } from '../hooks/use-invoices';
+import { invoicePdfUrl } from '../api/invoices.api';
 import { invoiceStatusLabel, paymentStatusLabel, type Invoice } from '../types/invoice.types';
 
 const DEFAULTS = { page: '1', search: '', invoiceStatus: 'all', paymentStatus: 'all' } as const;
@@ -47,6 +49,7 @@ export function InvoiceList() {
   const [localSearch, setLocalSearch] = useState<string>(values.search);
   const [debouncedSearch, setDebouncedSearch] = useState<string>(values.search);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
 
   // When search is active, always use page 1.  Otherwise use the URL page
   // (which pagination clicks keep in sync via useUrlFilters).
@@ -85,7 +88,26 @@ export function InvoiceList() {
     { key: 'totalAmount', header: 'Total', card: 'meta', align: 'right', className: 'tabular-nums', render: (inv) => `KES ${inv.totalAmount}` },
     { key: 'status', header: 'Invoice', card: 'badge', render: (inv) => <StatusBadge tone={TONE[inv.status]} label={invoiceStatusLabel(inv.status)} /> },
     { key: 'paymentStatus', header: 'Payment', card: 'badge', render: (inv) => inv.paymentStatus ? <StatusBadge tone={TONE[inv.paymentStatus]} label={paymentStatusLabel(inv.paymentStatus)} /> : null },
-    { key: 'actions', header: '', align: 'right', render: (inv) => <DropdownMenu><DropdownMenuTrigger render={<Button variant="ghost" size="icon" aria-label="Actions"><MoreHorizontal className="size-4" /></Button>} /><DropdownMenuContent align="end"><DropdownMenuItem render={<Link href={`/invoices/${inv.id}`} />}><FileText className="size-4" />View</DropdownMenuItem></DropdownMenuContent></DropdownMenu> },
+    { key: 'actions', header: '', align: 'right', render: (inv) => (
+      <div className="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-8"
+          title="Preview invoice"
+          aria-label={`Preview invoice ${inv.invoiceNumber}`}
+          onClick={() => setPreviewInvoice(inv)}
+        >
+          <Eye className="size-4" />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="size-8" aria-label="Actions"><MoreHorizontal className="size-4" /></Button>} />
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem render={<Link href={`/invoices/${inv.id}`} />}><FileText className="size-4" />View</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    ) },
   ];
 
   // placeholderData keeps the previous list visible while the new results load,
@@ -104,6 +126,16 @@ export function InvoiceList() {
 
       <ResponsiveList records={query.data.invoices} columns={cols} getRowKey={(i) => i.id} caption="Invoices" emptyState={<EmptyState icon={Receipt} title="No invoices" description="Create an invoice from an order." />} />
       <Pagination page={query.data.meta.page} pageSize={query.data.meta.pageSize} totalRecords={query.data.meta.totalRecords} totalPages={query.data.meta.totalPages} onPageChange={setPage} />
+
+      {/* Invoice PDF Preview */}
+      <DocumentPdfPreviewDialog
+        open={previewInvoice !== null}
+        onOpenChange={(o) => { if (!o) setPreviewInvoice(null); }}
+        docType="Invoice"
+        docNumber={previewInvoice?.invoiceNumber ?? ''}
+        pdfUrl={previewInvoice ? invoicePdfUrl(previewInvoice.id) : ''}
+        downloadFileName={previewInvoice ? `Invoice_${previewInvoice.invoiceNumber}.pdf` : ''}
+      />
     </div>
   );
 }

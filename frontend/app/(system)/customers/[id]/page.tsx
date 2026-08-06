@@ -12,6 +12,7 @@ import { StatusBadge } from '@/components/data-display/status-badge';
 import { EmptyState } from '@/components/data-display/empty-state';
 import { AddressManager } from '@/features/customers/components/address-manager';
 import { CreditStatusCard } from '@/features/customers/components/credit-status-card';
+import { StatementSection } from '@/features/customers/components/statement-section';
 import { useCustomer } from '@/features/customers/hooks/use-customers';
 
 export default function CustomerDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -21,10 +22,15 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
   if (query.isPending) {
     return (
       <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
-        <div className="max-w-2xl space-y-3">
+        <div className="space-y-3">
           <Skeleton className="h-6 w-1/2" />
           <Skeleton className="h-32 w-full" />
-          <Skeleton className="h-24 w-full" />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Skeleton className="h-24 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+          <Skeleton className="h-64 w-full" />
+          <Skeleton className="h-40 w-full" />
         </div>
       </div>
     );
@@ -78,9 +84,10 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
         }
       />
 
-      <div className="max-w-2xl space-y-6">
+      {/* Two-column: Customer info + Credit status */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
         <Card>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3 py-4">
             <DetailRow label="Phone">{customer.phone}</DetailRow>
             <DetailRow label="Email">
               {customer.email ?? <span className="text-muted-foreground">Not provided</span>}
@@ -90,11 +97,14 @@ export default function CustomerDetailPage({ params }: { params: Promise<{ id: s
             )}
           </CardContent>
         </Card>
-
         <CreditStatusCard customerId={customer.id} />
-
-        <AddressManager customerId={customer.id} addresses={customer.addresses} canEdit />
       </div>
+
+      {/* Full-width statement */}
+      <StatementSection customerId={customer.id} />
+
+      {/* Full-width addresses */}
+      <AddressManager customerId={customer.id} addresses={customer.addresses} canEdit />
     </div>
   );
 }

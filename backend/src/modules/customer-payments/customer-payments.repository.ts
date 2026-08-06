@@ -28,7 +28,15 @@ export async function findPayments(f: ListPaymentsFilters, c: DbClient = getPris
 }
 
 export async function findPaymentById(id: string, c: DbClient = getPrisma()): Promise<PaymentDetailRow | null> {
-  return c.customerPayment.findUnique({ where: { id }, include: { customer: { select: { name: true } }, allocations: { include: { invoice: { select: { invoiceNumber: true } } } }, receipt: { select: { id: true, receiptNumber: true } } } });
+  return c.customerPayment.findUnique({ where: { id }, include: { customer: { select: { name: true } }, allocations: { include: { invoice: { select: { invoiceNumber: true } } } }, receipt: { select: { id: true, receiptNumber: true } }, evidenceStoredFile: { select: { id: true, storageKey: true, originalFileName: true, mimeType: true, sizeBytes: true, createdAt: true } } } });
+}
+
+export async function updatePaymentEvidence(tx: TransactionClient, id: string, storedFileId: string): Promise<void> {
+  await tx.customerPayment.update({ where: { id }, data: { evidenceStoredFileId: storedFileId } });
+}
+
+export async function clearPaymentEvidence(tx: TransactionClient, id: string): Promise<void> {
+  await tx.customerPayment.update({ where: { id }, data: { evidenceStoredFileId: null } });
 }
 
 export async function insertPayment(tx: TransactionClient, input: { paymentNumber: string; customerId: string; amount: Prisma.Decimal; paymentMethod: string; paymentReference?: string | null; paymentDate: Date; recordedByUserId: string | null }): Promise<PaymentDetailRow> {
