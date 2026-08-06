@@ -90,6 +90,7 @@ const TABLES = [
   'vehicle_owners',
   'suppliers',
   'company_settings',
+  'expenses',
   'generated_documents',
   'stored_files',
   'user_capability_grants',

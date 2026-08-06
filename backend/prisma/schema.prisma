@@ -149,6 +149,7 @@ model StoredFile {
   generatedDocument       GeneratedDocument?
   purchasePaymentEvidence  PurchasePayment?
   customerPaymentEvidence  CustomerPayment?        @relation("CustomerPaymentEvidence")
+  expenseEvidence          Expense?                 @relation("ExpenseEvidence")
 
   @@map("stored_files")
 }
@@ -244,6 +245,7 @@ model User {
   paymentsApproved               CustomerPayment[]        @relation("PaymentApprovedBy")
   paymentsReversed               CustomerPayment[]        @relation("PaymentReversedBy")
   receiptsIssued                 Receipt[]                @relation("ReceiptIssuedBy")
+  recordedExpenses               Expense[]                @relation("ExpenseRecordedBy")
 
   @@unique([email])
   @@map("user")
@@ -430,6 +432,19 @@ enum PaymentMethod {
   CASH
   BANK_TRANSFER
   CHEQUE
+}
+
+enum ExpenseCategory {
+  ELECTRICITY
+  WATER
+  RENT
+  TRANSPORT
+  MAINTENANCE
+  SUPPLIES
+  COMMUNICATION
+  INSURANCE
+  LICENSES
+  OTHER
 }
 
 /// Employee master.
@@ -1598,6 +1613,25 @@ model Receipt {
   updatedAt                   DateTime        @updatedAt
 
   @@map("receipts")
+}
+
+model Expense {
+  id                   String          @id @default(uuid())
+  expenseNumber        String          @unique
+  category             ExpenseCategory
+  description          String          @db.Text
+  amount               Decimal         @db.Decimal(14, 2)
+  paymentMethod        PaymentMethod
+  paymentReference     String?
+  expenseDate          DateTime
+  evidenceStoredFileId String?         @unique
+  evidenceStoredFile   StoredFile?     @relation("ExpenseEvidence", fields: [evidenceStoredFileId], references: [id], onDelete: Restrict)
+  recordedByUserId     String?
+  recordedByUser       User?           @relation("ExpenseRecordedBy", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+
+  @@map("expenses")
 }
 
 model Session {
