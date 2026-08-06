@@ -1,4 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Prisma } from '../../generated/prisma/client.js';
 import { getNairobiToday } from '../../shared/utils/nairobi.js';
 import { findInvoices, findInvoiceById, findInvoiceForPdf, insertInvoice, voidInvoice, type InvoiceDetailRow, type InvoicePdfRow, type InvoiceRow } from './invoices.repository.js';
@@ -166,7 +169,11 @@ export async function downloadInvoicePdf(id: string, context: RequestContext): P
       documentTitle: `Invoice ${invoice.invoiceNumber}`,
       html,
       uploadedByUserId: context.user.id,
-      sourceUpdatedAt: invoice.updatedAt,
+      // Always force regeneration so the latest template is used, even when
+      // the invoice business data has not changed since the last PDF was
+      // generated. Passing `new Date()` ensures the reuse short-circuit in
+      // generateOfficialDocument never triggers — every download renders fresh.
+      sourceUpdatedAt: new Date(),
     },
     context,
   );
@@ -207,16 +214,42 @@ function toDetail(row: InvoiceDetailRow): InvoiceDetail {
 
 // --- Invoice PDF HTML template -------------------------------------------------
 
+// Module-level logo cache — read once from the frontend brand assets.
+let _logoSvg: string | null | undefined;
+let _logoDataUri: string | null | undefined;
+
+function loadLogo(): { dataUri: string } | null {
+  if (_logoDataUri !== undefined) return _logoDataUri ? { dataUri: _logoDataUri } : null;
+  try {
+    // Resolve from the current module file location, not process.cwd().
+    // invoices.service.ts is at: backend/src/modules/invoices/
+    // Go up 4 levels to the monorepo root, then into frontend/public/brand/.
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const repoRoot = resolve(__dirname, '..', '..', '..', '..');
+    const logoPath = resolve(repoRoot, 'frontend', 'public', 'brand', 'greenstone-logo-horizontal-green.svg');
+    const svg = readFileSync(logoPath, 'utf-8');
+    _logoSvg = svg;
+    _logoDataUri = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+    return { dataUri: _logoDataUri };
+  } catch {
+    _logoSvg = null;
+    _logoDataUri = null;
+    return null;
+  }
+}
+
 function esc(text: string | null | undefined): string {
   if (!text) return '';
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Format a decimal string with thousands separators, e.g. "20,000.00". */
 function fmtMoney(amount: string): string {
   const [whole, frac] = amount.split('.');
   return whole!.replace(/\B(?=(\d{3})+(?!\d))/g, ',') + (frac ? '.' + frac : '');
 }
+
+/** Maximum product rows that fit on one A4 page. */
+const MAX_PRODUCT_ROWS = 18;
 
 function buildInvoiceHtml(
   invoice: InvoicePdfRow,
@@ -226,10 +259,10 @@ function buildInvoiceHtml(
   const o = invoice.order;
 
   // --- Company info ---
-  const companyName = esc(settings.companyName) || 'Greenstone';
-  const hasAddress = !!(settings.address);
-  const hasPhone = !!(settings.phone);
-  const hasEmail = !!(settings.email);
+  const companyName = esc(settings.companyName) || 'Greenstone Construction Company Limited';
+  const companyAddress = esc(settings.address) || '';
+  const companyPhone = esc(settings.phone) || '';
+  const companyEmail = esc(settings.email) || '';
   const paymentDetails = settings.paymentDetails || '';
   const footerNotes = settings.footerNotes || '';
 
@@ -238,49 +271,98 @@ function buildInvoiceHtml(
   const dueDate = nairobiDateLong(invoice.dueDate);
   const generatedOn = nairobiDateLong(new Date());
 
-  // --- Logo (no logo field yet in Company Settings; safe fallback) ---
-  const logoHtml = `<div class="logo-placeholder">${companyName}</div>`;
+  // --- Logo ---
+  const logo = loadLogo();
+  const logoHtml = logo
+    ? `<img src="${logo.dataUri}" alt="Greenstone" class="logo-img" />`
+    : '';
 
   // --- Payment status (only APPROVED allocations count) ---
   let approved = new Prisma.Decimal(0);
+  const approvedPayments: { number: string; method: string; date: string; amount: string; status: string }[] = [];
   for (const alloc of invoice.allocations ?? []) {
-    if (alloc.payment.status === 'APPROVED') approved = approved.add(alloc.amount);
+    if (alloc.payment.status === 'APPROVED') {
+      approved = approved.add(alloc.amount);
+      approvedPayments.push({
+        number: alloc.payment.paymentNumber,
+        method: alloc.payment.paymentMethod,
+        date: nairobiDateLong(alloc.payment.paymentDate),
+        amount: alloc.amount.toFixed(2),
+        status: 'APPROVED',
+      });
+    }
   }
   const outstanding = invoice.totalAmount.sub(approved);
+
   let paymentStatusLabel: string;
   let paymentStatusClass: string;
-  if (approved.isZero()) { paymentStatusLabel = 'Unpaid'; paymentStatusClass = 'pay-unpaid'; }
-  else if (outstanding.isZero() || outstanding.isNegative()) { paymentStatusLabel = 'Fully paid'; paymentStatusClass = 'pay-paid'; }
-  else { paymentStatusLabel = 'Partially paid'; paymentStatusClass = 'pay-partial'; }
-
-  // --- Payment instructions ---
-  let paymentSection: string;
-  if (paymentDetails) {
-    paymentSection = `<pre class="payment-text">${esc(paymentDetails)}</pre>`;
+  if (invoice.status === 'VOIDED') {
+    paymentStatusLabel = 'VOIDED';
+    paymentStatusClass = 'badge-danger';
+  } else if (approved.isZero()) {
+    paymentStatusLabel = 'UNPAID';
+    paymentStatusClass = 'badge-neutral';
+  } else if (outstanding.isZero() || outstanding.isNegative()) {
+    paymentStatusLabel = 'FULLY PAID';
+    paymentStatusClass = 'badge-success';
   } else {
-    paymentSection = `<table class="payment-table">
-      <tr><td class="pay-label">M-Pesa Paybill / Till:</td><td class="pay-value">To be configured in Company Settings</td></tr>
-      <tr><td class="pay-label">Account Number:</td><td class="pay-value">${esc(invoice.invoiceNumber)}</td></tr>
-    </table>`;
+    paymentStatusLabel = 'PARTIALLY PAID';
+    paymentStatusClass = 'badge-warning';
+  }
+
+  const invoiceStatusLabel = invoice.status === 'VOIDED' ? 'VOIDED' : 'ISSUED';
+  const invoiceStatusClass = invoice.status === 'VOIDED' ? 'badge-danger' : 'badge-info';
+
+  // --- Invoiced by ---
+  const invoicedByName = invoice.createdByUser?.name ? esc(invoice.createdByUser.name) : '';
+  const invoicedByRole = invoice.createdByUser?.role ? esc(invoice.createdByUser.role.replace(/_/g, ' ')) : '';
+
+  // --- Overflow check ---
+  if (invoice.items.length > MAX_PRODUCT_ROWS) {
+    const msg = `Invoice ${invoice.invoiceNumber} has ${invoice.items.length} product rows — the one-page template supports up to ${MAX_PRODUCT_ROWS} rows. Reduce the number of items or split the invoice.`;
+    throw new Error(msg);
   }
 
   // --- Items ---
-  const itemsRows = invoice.items.map((item) =>
-    `<tr>
-      <td class="item-name">${esc(item.productName)}</td>
+  const itemsRows = invoice.items.map((item, i) =>
+    `<tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+      <td class="num dim">${i + 1}</td>
+      <td>${esc(item.productName)}</td>
       <td class="num">${item.quantity}</td>
       <td class="num">${fmtMoney(item.unitPrice.toFixed(2))}</td>
       <td class="num">${fmtMoney(item.lineTotal.toFixed(2))}</td>
     </tr>`,
   ).join('');
 
-  // --- Company contact lines (only show configured fields) ---
-  const contactLines: string[] = [];
-  if (hasAddress) contactLines.push(`<div>${esc(settings.address)}</div>`);
-  const phoneEmailParts: string[] = [];
-  if (hasPhone) phoneEmailParts.push(esc(settings.phone));
-  if (hasEmail) phoneEmailParts.push(esc(settings.email));
-  if (phoneEmailParts.length > 0) contactLines.push(`<div>${phoneEmailParts.join(' &ensp;|&ensp; ')}</div>`);
+  // --- Payment history ---
+  const paymentHistoryRows = approvedPayments.map((p) =>
+    `<tr><td>${p.date}</td><td>${esc(p.number)}</td><td>${esc(p.method)}</td><td class="num">KES ${fmtMoney(p.amount)}</td></tr>`,
+  ).join('');
+
+  // --- Payment info ---
+  let paymentSection: string;
+  if (paymentDetails) {
+    paymentSection = `<pre class="payment-text">${esc(paymentDetails)}</pre>`;
+  } else {
+    paymentSection = `<div class="payment-info-grid">
+      <div><span class="muted">M-Pesa Paybill / Till:</span> <span class="dim">Not configured</span></div>
+      <div><span class="muted">Account Number:</span> ${esc(invoice.invoiceNumber)}</div>
+    </div>`;
+  }
+
+  // --- Delivery lines ---
+  const deliveryParts: string[] = [];
+  if (o.addressLabel) deliveryParts.push(esc(o.addressLabel));
+  if (o.addressLine) deliveryParts.push(esc(o.addressLine));
+  if (o.addressDirections) deliveryParts.push(`<span class="dim">${esc(o.addressDirections)}</span>`);
+
+  // --- Company contact lines for header ---
+  const headerLines: string[] = [];
+  if (companyAddress) headerLines.push(companyAddress);
+  const contactParts: string[] = [];
+  if (companyPhone) contactParts.push(companyPhone);
+  if (companyEmail) contactParts.push(companyEmail);
+  if (contactParts.length > 0) headerLines.push(contactParts.join(' &ensp;|&ensp; '));
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -288,118 +370,234 @@ function buildInvoiceHtml(
 <meta charset="utf-8">
 <title>Invoice ${esc(invoice.invoiceNumber)}</title>
 <style>
+  @page { margin: 12mm 14mm; size: A4; }
+
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; font-size: 11pt; color: #1a1a1a; line-height: 1.5; padding: 48px 56px; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #2563eb; padding-bottom: 20px; margin-bottom: 28px; }
-  .logo-placeholder { font-size: 22pt; font-weight: 700; color: #2563eb; letter-spacing: -0.5px; }
-  .company-details { text-align: right; font-size: 9pt; color: #555; line-height: 1.6; }
-  .doc-title { font-size: 20pt; font-weight: 700; color: #2563eb; margin-bottom: 20px; letter-spacing: -0.5px; }
-  .info-grid { display: flex; gap: 40px; margin-bottom: 28px; }
-  .info-col { flex: 1; }
-  .info-col h3 { font-size: 9pt; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
-  .info-col p { font-size: 10pt; margin-bottom: 2px; }
-  .info-col .label { color: #888; }
-  table.items { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
-  table.items thead th { background: #f1f5f9; text-align: left; padding: 10px 12px; font-size: 9pt; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #d1d5db; }
-  table.items tbody td { padding: 10px 12px; border-bottom: 1px solid #e5e7eb; font-size: 10pt; }
+
+  body {
+    font-family: 'Inter', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
+    font-size: 9pt;
+    color: #1e293b;
+    line-height: 1.45;
+    max-height: 297mm;
+  }
+
+  :root {
+    --green: #14532D;
+    --green-light: #3F8A5A;
+    --g50: #f8fafc;
+    --g100: #f1f5f9;
+    --g200: #e2e8f0;
+    --g300: #cbd5e1;
+    --g400: #94a3b8;
+    --g500: #64748b;
+    --g600: #475569;
+    --g700: #334155;
+    --g800: #1e293b;
+    --red-bg: #fef2f2; --red-tx: #991b1b;
+    --green-bg: #f0fdf4; --green-tx: #166534;
+    --amber-bg: #fffbeb; --amber-tx: #92400e;
+    --blue-bg: #eff6ff; --blue-tx: #1e40af;
+    --slate-bg: #f8fafc; --slate-tx: #475569;
+  }
+
+  /* ---- Header ---- */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding-bottom: 10px;
+    margin-bottom: 10px;
+    border-bottom: 3px solid var(--green);
+  }
+  .header-left { flex: 1; }
+  .logo-img { height: 36px; width: auto; margin-bottom: 3px; }
+  .company-name { font-size: 10pt; font-weight: 700; color: var(--g800); }
+  .company-meta { font-size: 10pt; color: var(--g600); line-height: 1.55; margin-top: 2px; }
+
+  .header-right { text-align: right; flex-shrink: 0; }
+  .doc-title { font-size: 20pt; font-weight: 800; color: var(--green); letter-spacing: -0.5px; line-height: 1; }
+  .doc-number { font-size: 10pt; font-weight: 600; color: var(--g700); margin-top: 4px; }
+  .doc-number .inv-num { font-family: 'SF Mono', 'Cascadia Code', monospace; }
+
+  /* ---- Badges ---- */
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 3px; font-size: 7.5pt; font-weight: 700; letter-spacing: 0.3px; text-transform: uppercase; }
+  .badge-success { background: var(--green-bg); color: var(--green-tx); }
+  .badge-danger { background: var(--red-bg); color: var(--red-tx); }
+  .badge-warning { background: var(--amber-bg); color: var(--amber-tx); }
+  .badge-info { background: var(--blue-bg); color: var(--blue-tx); }
+  .badge-neutral { background: var(--slate-bg); color: var(--slate-tx); }
+
+  /* ---- Info Cards ---- */
+  .cards-row { display: flex; gap: 16px; margin-bottom: 14px; }
+  .card { flex: 1; background: var(--g50); border: 1px solid var(--g200); border-radius: 5px; padding: 9px 12px; }
+  .card h3 { font-size: 7pt; color: var(--g500); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 5px; font-weight: 700; }
+  .card p { font-size: 8.5pt; margin-bottom: 2px; color: var(--g700); }
+  .card .dim { color: var(--g500); }
+  .card .row { display: flex; justify-content: space-between; align-items: baseline; }
+  .card .row + .row { margin-top: 1px; }
+
+  /* ---- Items Table ---- */
+  table.items { width: 100%; border-collapse: collapse; margin-bottom: 12px; page-break-inside: auto; }
+  table.items thead { display: table-header-group; }
+  table.items thead th {
+    background: var(--green); color: #fff; text-align: left; padding: 6px 8px;
+    font-size: 7pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  table.items tbody td { padding: 5px 8px; border-bottom: 1px solid var(--g200); font-size: 8.5pt; }
+  table.items tbody tr.even { background: var(--g50); }
   table.items .num { text-align: right; font-variant-numeric: tabular-nums; }
-  .totals { margin-left: auto; width: 280px; margin-bottom: 24px; }
-  .totals table { width: 100%; border-collapse: collapse; }
-  .totals td { padding: 6px 12px; font-size: 10pt; }
-  .totals .total-row { border-top: 2px solid #1a1a1a; font-size: 13pt; font-weight: 700; }
-  .section-title { font-size: 11pt; font-weight: 700; color: #2563eb; margin-bottom: 10px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
-  .payment-table { width: 100%; max-width: 420px; border-collapse: collapse; margin-bottom: 24px; }
-  .payment-table td { padding: 3px 8px; font-size: 10pt; }
-  .pay-label { color: #555; width: 180px; }
-  .pay-value { font-weight: 500; }
-  .payment-text { font-size: 10pt; color: #333; white-space: pre-wrap; margin-bottom: 24px; }
-  .status-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 9pt; font-weight: 600; }
-  .status-ISSUED { background: #dbeafe; color: #1e40af; }
-  .status-VOIDED { background: #fee2e2; color: #991b1b; }
-  .pay-unpaid { background: #f1f5f9; color: #475569; }
-  .pay-paid { background: #dcfce7; color: #166534; }
-  .pay-partial { background: #fef9c3; color: #854d0e; }
-  .pay-summary { margin-bottom: 24px; }
-  .pay-summary table { width: 100%; max-width: 380px; border-collapse: collapse; margin-left: auto; }
-  .pay-summary td { padding: 4px 12px; font-size: 10pt; }
-  .pay-summary .total-row { border-top: 2px solid #1a1a1a; font-size: 12pt; font-weight: 700; }
-  .generated-on { font-size: 8pt; color: #999; text-align: right; margin-top: 20px; }
-  .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #d1d5db; font-size: 8.5pt; color: #888; text-align: center; }
-  @media print { body { padding: 0; } }
+  table.items .dim { color: var(--g400); }
+  table.items tr { page-break-inside: avoid; }
+
+  /* ---- Totals ---- */
+  .totals-row { display: flex; justify-content: flex-end; margin-bottom: 16px; }
+  .totals-box { background: var(--g50); border: 1.5px solid var(--green); border-radius: 5px; padding: 8px 24px; text-align: right; }
+  .totals-box .total-label { font-size: 7.5pt; color: var(--g500); text-transform: uppercase; letter-spacing: 0.5px; }
+  .totals-box .total-amount { font-size: 15pt; font-weight: 800; color: var(--green); }
+
+  /* ---- Payment Summary Cards ---- */
+  .pay-cards { display: flex; gap: 12px; margin-bottom: 14px; }
+  .pay-card { flex: 1; background: var(--g50); border: 1px solid var(--g200); border-radius: 5px; padding: 10px 12px; text-align: center; }
+  .pay-card .pc-label { font-size: 7pt; color: var(--g500); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 3px; font-weight: 600; }
+  .pay-card .pc-amount { font-size: 13pt; font-weight: 800; color: var(--g800); }
+  .pay-card.due .pc-amount { color: var(--red-tx); }
+  .pay-card.paid .pc-amount { color: var(--green-tx); }
+  .pay-status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .pay-status-row .ps-label { font-size: 8pt; font-weight: 600; color: var(--g600); }
+
+  /* ---- Section headings ---- */
+  .section-title { font-size: 9pt; font-weight: 700; color: var(--green); margin-bottom: 6px; padding-bottom: 3px; border-bottom: 1.5px solid var(--green); page-break-after: avoid; }
+
+  /* ---- Payment History ---- */
+  .pay-history { margin-bottom: 12px; }
+  .pay-history table { width: 100%; border-collapse: collapse; }
+  .pay-history thead th { background: var(--g100); text-align: left; padding: 4px 8px; font-size: 7pt; font-weight: 600; color: var(--g500); text-transform: uppercase; letter-spacing: 0.4px; border-bottom: 1.5px solid var(--g200); }
+  .pay-history tbody td { padding: 3px 8px; font-size: 8pt; border-bottom: 1px solid var(--g200); }
+  .pay-history .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .no-payments { font-size: 8pt; color: var(--g400); font-style: italic; padding: 6px 0; }
+
+  /* ---- Payment Info ---- */
+  .payment-info-grid { font-size: 10pt; line-height: 1.65; margin-bottom: 10px; }
+  .payment-info-grid .muted { color: var(--g500); font-weight: 500; }
+  .payment-text { font-size: 10pt; color: var(--g700); white-space: pre-wrap; margin-bottom: 10px; line-height: 1.55; }
+
+  /* ---- Invoiced By ---- */
+  .invoiced-by { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--g200); display: flex; justify-content: space-between; align-items: flex-end; }
+  .ib-block { }
+  .ib-label { font-size: 7pt; color: var(--g500); text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 2px; }
+  .ib-name { font-size: 9pt; font-weight: 600; color: var(--g700); }
+  .ib-role { font-size: 7.5pt; color: var(--g400); text-transform: capitalize; }
+
+  /* ---- Footer ---- */
+  .pdf-footer { margin-top: 10px; padding-top: 6px; border-top: 1px solid var(--g200); display: flex; justify-content: space-between; font-size: 6.5pt; color: var(--g400); }
+  .dim { color: var(--g500); }
+  .muted { color: var(--g500); }
 </style>
 </head>
 <body>
-  <!-- Company header -->
+  <!-- Header -->
   <div class="header">
-    <div>${logoHtml}</div>
-    <div class="company-details">
-      ${contactLines.join('\n      ')}
+    <div class="header-left">
+      ${logoHtml}
+      ${logo ? '' : `<div class="company-name">${companyName}</div>`}
+      <div class="company-meta">${headerLines.join('<br>')}</div>
+    </div>
+    <div class="header-right">
+      <div class="doc-title">INVOICE</div>
+      <div class="doc-number"><span class="inv-num">${esc(invoice.invoiceNumber)}</span></div>
+      <div style="margin-top:4px"><span class="badge ${invoiceStatusClass}">${invoiceStatusLabel}</span></div>
     </div>
   </div>
 
-  <!-- Document title -->
-  <div class="doc-title">INVOICE</div>
-
-  <!-- Invoice + Customer info -->
-  <div class="info-grid">
-    <div class="info-col">
+  <!-- Info Cards -->
+  <div class="cards-row">
+    <div class="card">
       <h3>Invoice Details</h3>
-      <p><span class="label">Invoice:</span> ${esc(invoice.invoiceNumber)}</p>
-      <p><span class="label">Status:</span> <span class="status-badge status-${esc(invoice.status)}">${esc(invoice.status)}</span></p>
-      <p><span class="label">Issue Date:</span> ${issueDate}</p>
-      <p><span class="label">Due Date:</span> ${dueDate}</p>
-      <p><span class="label">Order:</span> ${esc(o.orderNumber)}</p>
+      <div class="row"><span class="dim">Invoice</span> <span class="inv-num" style="font-size:8pt">${esc(invoice.invoiceNumber)}</span></div>
+      <div class="row"><span class="dim">Order</span> ${esc(o.orderNumber)}</div>
+      <div class="row"><span class="dim">Issue Date</span> ${issueDate}</div>
+      <div class="row"><span class="dim">Due Date</span> ${dueDate}</div>
+      <div class="row"><span class="dim">Invoice Status</span> <span class="badge ${invoiceStatusClass}">${invoiceStatusLabel}</span></div>
     </div>
-    <div class="info-col">
+    <div class="card">
       <h3>Bill To</h3>
-      <p>${esc(c.name)}</p>
+      <p style="font-weight:600">${esc(c.name)}</p>
       ${c.phone ? `<p>${esc(c.phone)}</p>` : ''}
     </div>
-    <div class="info-col">
+    <div class="card">
       <h3>Deliver To</h3>
-      ${o.addressLabel ? `<p>${esc(o.addressLabel)}</p>` : ''}
-      ${o.addressLine ? `<p>${esc(o.addressLine)}</p>` : ''}
-      ${o.addressDirections ? `<p>${esc(o.addressDirections)}</p>` : ''}
+      ${deliveryParts.length > 0 ? deliveryParts.map(p => `<p>${p}</p>`).join('\n      ') : '<p class="dim">Same as billing</p>'}
     </div>
   </div>
 
-  <!-- Items -->
+  <!-- Items Table -->
   <table class="items">
     <thead>
-      <tr><th>Product</th><th class="num">Qty</th><th class="num">Unit Price (KES)</th><th class="num">Line Total (KES)</th></tr>
+      <tr><th style="width:24px">#</th><th>Description</th><th class="num" style="width:48px">Qty</th><th class="num" style="width:90px">Unit Price</th><th class="num" style="width:100px">Amount</th></tr>
     </thead>
-    <tbody>
-      ${itemsRows}
-    </tbody>
+    <tbody>${itemsRows}</tbody>
   </table>
 
   <!-- Totals -->
-  <div class="totals">
-    <table>
-      <tr class="total-row"><td>Total</td><td class="num">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</td></tr>
-    </table>
+  <div class="totals-row">
+    <div class="totals-box">
+      <div class="total-label">Total (KES)</div>
+      <div class="total-amount">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</div>
+    </div>
   </div>
 
-  <!-- Payment summary -->
-  <div class="section-title">Payment Summary</div>
-  <div class="pay-summary">
-    <table>
-      <tr><td>Payment Status</td><td class="num"><span class="status-badge ${paymentStatusClass}">${paymentStatusLabel}</span></td></tr>
-      <tr><td>Invoice Total</td><td class="num">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</td></tr>
-      <tr><td>Approved</td><td class="num">KES ${fmtMoney(approved.toFixed(2))}</td></tr>
-      <tr class="total-row"><td>Outstanding</td><td class="num">KES ${fmtMoney(outstanding.toFixed(2))}</td></tr>
-    </table>
+  <!-- Payment Summary -->
+  <div class="pay-status-row">
+    <span class="ps-label">Payment Status:</span>
+    <span class="badge ${paymentStatusClass}">${paymentStatusLabel}</span>
+  </div>
+  <div class="pay-cards">
+    <div class="pay-card">
+      <div class="pc-label">Invoice Total</div>
+      <div class="pc-amount">KES ${fmtMoney(invoice.totalAmount.toFixed(2))}</div>
+    </div>
+    <div class="pay-card paid">
+      <div class="pc-label">Amount Paid</div>
+      <div class="pc-amount">KES ${fmtMoney(approved.toFixed(2))}</div>
+    </div>
+    <div class="pay-card due">
+      <div class="pc-label">Balance Due</div>
+      <div class="pc-amount">KES ${fmtMoney(outstanding.toFixed(2))}</div>
+    </div>
   </div>
 
-  <!-- Payment instructions -->
+  <!-- Payment History -->
+  <div class="section-title">Payment History</div>
+  ${approvedPayments.length > 0 ? `
+  <div class="pay-history">
+    <table>
+      <thead><tr><th>Date</th><th>Payment #</th><th>Method</th><th class="num">Amount</th></tr></thead>
+      <tbody>${paymentHistoryRows}</tbody>
+    </table>
+  </div>` : '<div class="no-payments">No approved payments yet.</div>'}
+
+  <!-- Payment Information -->
   <div class="section-title">Payment Information</div>
   ${paymentSection}
 
-  <!-- Generated on -->
-  <div class="generated-on">PDF generated on ${generatedOn}</div>
+  <!-- Invoiced By -->
+  <div class="invoiced-by">
+    <div class="ib-block">
+      <div class="ib-label">Invoiced by</div>
+      <div class="ib-name">${invoicedByName || '&mdash;'}</div>
+      ${invoicedByRole ? `<div class="ib-role">${invoicedByRole}</div>` : ''}
+    </div>
+    <div style="text-align:right;">
+      ${footerNotes ? `<div style="font-size:7pt;color:var(--g400);max-width:280px">${esc(footerNotes)}</div>` : ''}
+    </div>
+  </div>
 
   <!-- Footer -->
-  ${footerNotes ? `<div class="footer">${esc(footerNotes)}</div>` : ''}
+  <div class="pdf-footer">
+    <span>PDF generated on ${generatedOn}</span>
+    <span>Page 1 of 1</span>
+  </div>
 </body>
 </html>`;
 }

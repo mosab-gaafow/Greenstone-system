@@ -30,7 +30,9 @@ export async function downloadPdf(req: Request, res: Response, next: NextFunctio
     const pdf = await invoicesService.downloadInvoicePdf(req.params['id'] as string, getRequestContext(res));
     res.setHeader('Content-Type', pdf.mimeType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(pdf.fileName)}"`);
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.send(pdf.content);
   } catch (e) { next(e); }
 }

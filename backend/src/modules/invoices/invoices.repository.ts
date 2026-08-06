@@ -17,12 +17,13 @@ export type InvoiceDetailRow = Invoice & {
   allocations?: any[];
 };
 
-/** Row with PDF-required fields: customer phone, order delivery address, and allocations. */
+/** Row with PDF-required fields: customer phone/email, order delivery address, allocations, and creator name/role. */
 export type InvoicePdfRow = Invoice & {
   order: { orderNumber: string; addressLabel: string | null; addressLine: string | null; addressDirections: string | null };
-  customer: { name: string; phone: string | null };
+  customer: { name: string; phone: string | null; email: string | null };
   items: (InvoiceItem & { product: Product })[];
-  allocations?: { amount: Prisma.Decimal; payment: { status: string } }[];
+  allocations?: { amount: Prisma.Decimal; payment: { status: string; paymentNumber: string; paymentDate: Date; paymentMethod: string } }[];
+  createdByUser: { name: string; role: string | null } | null;
 };
 
 function buildWhere(filters: ListInvoicesFilters): Prisma.InvoiceWhereInput {
@@ -81,9 +82,10 @@ export async function findInvoiceForPdf(
     where: { id },
     include: {
       order: { select: { orderNumber: true, addressLabel: true, addressLine: true, addressDirections: true } },
-      customer: { select: { name: true, phone: true } },
+      customer: { select: { name: true, phone: true, email: true } },
       items: { include: { product: true }, orderBy: { sortOrder: 'asc' } },
-      allocations: { select: { amount: true, payment: { select: { status: true } } } },
+      allocations: { select: { amount: true, payment: { select: { status: true, paymentNumber: true, paymentDate: true, paymentMethod: true } } } },
+      createdByUser: { select: { name: true, role: true } },
     },
   });
 }
