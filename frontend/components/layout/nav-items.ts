@@ -108,6 +108,7 @@ export const NAV_GROUPS: NavGroup[] = [
     items: [
       { label: 'Invoices', href: '/invoices', icon: Receipt, available: true },
       { label: 'Payments', href: '/payments', icon: Wallet, available: true },
+      { label: 'Receipts', href: '/receipts', icon: HandCoins, available: true },
       { label: 'Expenses', href: '/expenses', icon: BadgeDollarSign, available: false },
     ],
   },

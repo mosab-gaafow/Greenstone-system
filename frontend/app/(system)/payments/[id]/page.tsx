@@ -1,7 +1,7 @@
 'use client';
 import { use, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { ArrowLeft, Wallet, Ban } from 'lucide-react';
+import { ArrowLeft, Download, Wallet, Ban } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/shared/confirm-dialog';
 import { usePayment, useApprovePayment, useReversePayment } from '@/features/customer-payments/hooks/use-payments';
 import { useInvoices } from '@/features/invoices/hooks/use-invoices';
 import { paymentStatusLabel, paymentMethodLabel } from '@/features/customer-payments/types/payment.types';
+import { receiptPdfUrl } from '@/features/receipts/api/receipts.api';
 import { formatDateTime } from '@/lib/format';
 
 const TONES: Record<string, StatusTone> = { PENDING: 'neutral', APPROVED: 'success', REVERSED: 'danger' };
@@ -73,7 +74,14 @@ export default function PaymentDetailPage({ params }: { params: Promise<{ id: st
 
       {p.allocations.length > 0 && <Card><CardContent className="p-0"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="p-4 font-medium">Invoice</th><th className="p-4 text-right font-medium">Amount</th></tr></thead><tbody>{p.allocations.map(a => <tr key={a.id} className="border-b last:border-0"><td className="p-4"><Link href={`/invoices/${a.invoiceId}`} className="text-primary hover:underline">{a.invoiceNumber}</Link></td><td className="p-4 text-right tabular-nums">KES {a.amount}</td></tr>)}</tbody></table></div></CardContent></Card>}
 
-      {p.receiptNumber && <Card><CardContent className="space-y-2"><DetailRow label="Receipt">{p.receiptNumber}</DetailRow></CardContent></Card>}
+      {p.receiptNumber && p.receiptId && (
+        <Card><CardContent className="space-y-3">
+          <DetailRow label="Receipt">
+            <Link href={`/receipts/${p.receiptId}`} className="text-primary hover:underline">{p.receiptNumber}</Link>
+          </DetailRow>
+          <Button variant="outline" size="sm" render={<a href={receiptPdfUrl(p.receiptId)} target="_blank" rel="noopener noreferrer" />}><Download className="size-3.5" />Download Receipt</Button>
+        </CardContent></Card>
+      )}
     </div>
 
     {/* Approve dialog */}
