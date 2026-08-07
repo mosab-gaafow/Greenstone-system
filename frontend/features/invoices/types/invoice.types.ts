@@ -16,7 +16,7 @@ export interface Invoice {
   finance?: InvoiceFinanceSummary;
 }
 
-export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID';
+export type PaymentStatus = 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID' | 'VOIDED';
 
 export interface InvoiceFinanceItem {
   paymentId: string; paymentNumber: string; amount: string; status: string; paymentDate: string;
@@ -36,5 +36,5 @@ export interface InvoiceDetail extends Invoice {
 const STATUS_LABELS: Record<InvoiceStatus, string> = { ISSUED: 'Issued', VOIDED: 'Voided' };
 export function invoiceStatusLabel(s: InvoiceStatus) { return STATUS_LABELS[s]; }
 
-const PSTATUS_LABELS: Record<PaymentStatus, string> = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially paid', FULLY_PAID: 'Fully paid' };
+const PSTATUS_LABELS: Record<PaymentStatus, string> = { UNPAID: 'Unpaid', PARTIALLY_PAID: 'Partially paid', FULLY_PAID: 'Fully paid', VOIDED: 'Voided' };
 export function paymentStatusLabel(s: PaymentStatus) { return PSTATUS_LABELS[s]; }

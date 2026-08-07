@@ -48,6 +48,9 @@ export async function getInvoiceWithFinance(id: string): Promise<InvoiceDetailWi
 
 /** Quick payment status from list rows (has allocations with payment.status). */
 function computeInvoiceFinanceFast(row: InvoiceRow): { paymentStatus: InvoiceFinanceSummary['paymentStatus'] } {
+  // VOIDED invoices are not receivables — they have no payment status.
+  if ((row as any).status === 'VOIDED') return { paymentStatus: 'VOIDED' };
+
   let approved = new Prisma.Decimal(0);
   for (const alloc of (row as any).allocations ?? []) {
     if ((alloc as any).payment?.status === 'APPROVED') approved = approved.add((alloc as any).amount);
@@ -59,6 +62,11 @@ function computeInvoiceFinanceFast(row: InvoiceRow): { paymentStatus: InvoiceFin
 }
 
 async function computeInvoiceFinance(row: InvoiceDetailRow): Promise<InvoiceFinanceSummary> {
+  // VOIDED invoices are not receivables.
+  if ((row as any).status === 'VOIDED') {
+    return { invoiceTotal: row.totalAmount.toFixed(2), approvedAmount: '0.00', outstandingAmount: '0.00', pendingAmount: '0.00', reversedAmount: '0.00', paymentStatus: 'VOIDED', payments: [] };
+  }
+
   const allocations = row.allocations ?? [];
   let approved = new Prisma.Decimal(0);
   let pending = new Prisma.Decimal(0);

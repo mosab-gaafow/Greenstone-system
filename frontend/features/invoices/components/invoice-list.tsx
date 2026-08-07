@@ -31,6 +31,7 @@ const PAYMENT_STATUS_OPTIONS = [
   { value: 'UNPAID', label: 'Unpaid' },
   { value: 'PARTIALLY_PAID', label: 'Partially paid' },
   { value: 'FULLY_PAID', label: 'Fully paid' },
+  { value: 'VOIDED', label: 'Voided' },
 ];
 
 /** Sync search to the URL without triggering navigation or a re-render. */
@@ -78,7 +79,7 @@ export function InvoiceList() {
     page: effectivePage, pageSize: PAGE_SIZE,
     search: debouncedSearch || undefined,
     status: values.invoiceStatus !== 'all' ? (values.invoiceStatus as Invoice['status']) : undefined,
-    paymentStatus: values.paymentStatus !== 'all' ? (values.paymentStatus as 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID') : undefined,
+    paymentStatus: values.paymentStatus !== 'all' ? (values.paymentStatus as 'UNPAID' | 'PARTIALLY_PAID' | 'FULLY_PAID' | 'VOIDED') : undefined,
   });
 
   const cols: ListColumn<Invoice>[] = [

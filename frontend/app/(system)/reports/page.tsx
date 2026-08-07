@@ -1,114 +1,294 @@
 'use client';
 
-import { useState } from 'react';
-import { BarChart3, Clock, FileText, Search } from 'lucide-react';
+import { useState, useMemo } from 'react';
+import Link from 'next/link';
+import {
+  Activity,
+  AlertTriangle,
+  ArrowLeftRight,
+  BadgeDollarSign,
+  BarChart3,
+  Boxes,
+  CheckCircle,
+  ClipboardList,
+  Clock,
+  Factory,
+  FileText,
+  HandCoins,
+  Layers,
+  Lock,
+  Receipt,
+  Scale,
+  Search,
+  ShieldCheck,
+  ShoppingCart,
+  TrendingUp,
+  Truck,
+  Users,
+  Wallet,
+  Warehouse,
+  type LucideIcon,
+} from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 
-interface ReportItem { name: string; description: string; category: string; available: boolean }
+// ── Report definitions ──────────────────────────────────────────────
 
-const REPORTS: ReportItem[] = [
-  // Sales & Customers
-  { name: 'Orders Report', description: 'All orders with status, customer, and value.', category: 'Sales & Customers', available: false },
-  { name: 'Top Orders by Value', description: 'Highest-value orders in a selected period.', category: 'Sales & Customers', available: false },
-  { name: 'Top Customers by Payments', description: 'Customers ranked by approved payments received.', category: 'Sales & Customers', available: false },
-  { name: 'Customer Balances', description: 'Outstanding balances for all active customers.', category: 'Sales & Customers', available: false },
-  { name: 'Invoices Report', description: 'Issued and voided invoices with payment status.', category: 'Sales & Customers', available: false },
-  { name: 'Payments Report', description: 'Customer payments with approval and reversal history.', category: 'Sales & Customers', available: false },
-  { name: 'Receipts Report', description: 'Receipts issued from approved payments.', category: 'Sales & Customers', available: false },
-  // Operations
-  { name: 'Production Report', description: 'Production batches with status and quantities.', category: 'Operations', available: false },
-  { name: 'Curing Report', description: 'Curing records with completion status.', category: 'Operations', available: false },
-  { name: 'Deliveries Report', description: 'Delivery records with dispatch status.', category: 'Operations', available: false },
-  // Stock
-  { name: 'Finished Stock Report', description: 'Current finished-product stock quantities.', category: 'Stock', available: false },
-  { name: 'Reserved Stock Report', description: 'Stock reserved for orders awaiting dispatch.', category: 'Stock', available: false },
-  { name: 'Available Stock Report', description: 'Stock available for new orders.', category: 'Stock', available: false },
-  { name: 'Low Stock Report', description: 'Products below their reorder level.', category: 'Stock', available: false },
-  { name: 'Stock Movement Report', description: 'Stock-in and stock-out movements with reasons.', category: 'Stock', available: false },
-  // Purchasing
-  { name: 'Purchases Report', description: 'Supplier purchase records.', category: 'Purchasing', available: false },
-  { name: 'Purchase Payments Report', description: 'Payments made to suppliers.', category: 'Purchasing', available: false },
-  { name: 'Supplier Report', description: 'Supplier balances and purchase history.', category: 'Purchasing', available: false },
-  // Finance
-  { name: 'Expenses Report', description: 'General business expenses.', category: 'Finance', available: false },
-  { name: 'Salaries Report', description: 'Employee salary records.', category: 'Finance', available: false },
-  { name: 'Outstanding Invoices Report', description: 'Invoices with unpaid balances.', category: 'Finance', available: false },
-  { name: 'Billing Summary', description: 'Monthly invoicing, payments, and outstanding totals.', category: 'Finance', available: false },
-  // Administration
-  { name: 'Audit Logs Report', description: 'System audit trail — sensitive actions only.', category: 'Administration', available: false },
-  { name: 'User Activity Report', description: 'System usage by user role and action.', category: 'Administration', available: false },
+interface ReportDefinition {
+  name: string;
+  description: string;
+  category: ReportCategory;
+  icon: LucideIcon;
+  available: boolean;
+  href: string;
+}
+
+type ReportCategory =
+  | 'Sales & Customers'
+  | 'Operations'
+  | 'Stock'
+  | 'Purchasing'
+  | 'Finance'
+  | 'Administration';
+
+const CATEGORIES: { key: ReportCategory; label: string; color: string; bg: string; text: string; border: string }[] = [
+  { key: 'Sales & Customers', label: 'Sales & Customers', color: 'blue',    bg: 'bg-blue-50',     text: 'text-blue-700',     border: 'border-blue-200' },
+  { key: 'Operations',       label: 'Operations',       color: 'amber',   bg: 'bg-amber-50',    text: 'text-amber-700',    border: 'border-amber-200' },
+  { key: 'Stock',            label: 'Stock',            color: 'emerald', bg: 'bg-emerald-50',  text: 'text-emerald-700',  border: 'border-emerald-200' },
+  { key: 'Purchasing',       label: 'Purchasing',       color: 'violet',  bg: 'bg-violet-50',   text: 'text-violet-700',   border: 'border-violet-200' },
+  { key: 'Finance',          label: 'Finance',          color: 'rose',    bg: 'bg-rose-50',     text: 'text-rose-700',     border: 'border-rose-200' },
+  { key: 'Administration',   label: 'Administration',   color: 'slate',   bg: 'bg-slate-100',   text: 'text-slate-700',    border: 'border-slate-200' },
 ];
 
-const CATEGORIES = ['Sales & Customers', 'Operations', 'Stock', 'Purchasing', 'Finance', 'Administration'] as const;
-const CAT_ICONS: Record<string, string> = {
-  'Sales & Customers': 'bg-blue-50 text-blue-600',
-  'Operations': 'bg-amber-50 text-amber-600',
-  'Stock': 'bg-emerald-50 text-emerald-600',
-  'Purchasing': 'bg-purple-50 text-purple-600',
-  'Finance': 'bg-rose-50 text-rose-600',
-  'Administration': 'bg-slate-100 text-slate-600',
-};
+const CATEGORY_MAP = new Map(CATEGORIES.map((c) => [c.key, c]));
+
+const REPORTS: ReportDefinition[] = [
+  // Sales & Customers (Phase 11C1 — available)
+  { name: 'Orders Report',              description: 'All orders with status, customer, and value across any period.',               category: 'Sales & Customers', icon: ShoppingCart, available: true, href: '/reports/orders' },
+  { name: 'Top Orders by Value',        description: 'Highest-value orders ranked by total amount in a selected period.',            category: 'Sales & Customers', icon: TrendingUp, available: true, href: '/reports/top-orders' },
+  { name: 'Top Customers by Payments',  description: 'Customers ranked by approved payments received in a selected period.',         category: 'Sales & Customers', icon: Users, available: true, href: '/reports/top-customers' },
+  { name: 'Customer Balances',          description: 'Outstanding balances for every active customer with credit status.',           category: 'Sales & Customers', icon: Scale, available: true, href: '/reports/customer-balances' },
+  { name: 'Invoices Report',            description: 'Issued and voided invoices with full payment-status breakdown.',               category: 'Sales & Customers', icon: FileText, available: true, href: '/reports/invoices' },
+  { name: 'Payments Report',            description: 'Customer payments with approval dates, methods, and reversal history.',        category: 'Sales & Customers', icon: Wallet, available: true, href: '/reports/payments' },
+  { name: 'Receipts Report',            description: 'Official receipts issued from approved customer payments.',                    category: 'Sales & Customers', icon: Receipt, available: true, href: '/reports/receipts' },
+  // Operations
+  { name: 'Production Report',          description: 'Production batches with status, quantities, and raw-material usage.',          category: 'Operations',       icon: Factory, available: false, href: '' },
+  { name: 'Curing Report',              description: 'Curing records with start dates, durations, and release status.',              category: 'Operations',       icon: Layers, available: false, href: '' },
+  { name: 'Deliveries Report',          description: 'Delivery trips with dispatch status, driver, vehicle, and transport cost.',    category: 'Operations',       icon: Truck, available: false, href: '' },
+  // Stock
+  { name: 'Finished Stock Report',      description: 'Current finished-product stock quantities by product.',                        category: 'Stock',            icon: Boxes, available: false, href: '' },
+  { name: 'Reserved Stock Report',      description: 'Stock currently reserved for planned deliveries not yet dispatched.',          category: 'Stock',            icon: Lock, available: false, href: '' },
+  { name: 'Available Stock Report',     description: 'Stock available for new orders — physical minus reserved.',                    category: 'Stock',            icon: CheckCircle, available: false, href: '' },
+  { name: 'Low Stock Report',           description: 'Products whose available quantity is at or below their reorder level.',        category: 'Stock',            icon: AlertTriangle, available: false, href: '' },
+  { name: 'Stock Movement Report',      description: 'All stock-in and stock-out movements with reasons and reference documents.',   category: 'Stock',            icon: ArrowLeftRight, available: false, href: '' },
+  // Purchasing
+  { name: 'Purchases Report',           description: 'Supplier purchase records with raw-material receipts and costs.',              category: 'Purchasing',       icon: ClipboardList, available: false, href: '' },
+  { name: 'Purchase Payments Report',   description: 'Payments made to suppliers with approval status and allocations.',             category: 'Purchasing',       icon: HandCoins, available: false, href: '' },
+  { name: 'Supplier Report',            description: 'Supplier master data with current balances and purchase history.',             category: 'Purchasing',       icon: Warehouse, available: false, href: '' },
+  // Finance
+  { name: 'Expenses Report',            description: 'General business expenses by category with evidence where uploaded.',           category: 'Finance',          icon: BadgeDollarSign, available: false, href: '' },
+  { name: 'Salaries Report',            description: 'Employee salary records with approval, correction, and reversal history.',     category: 'Finance',          icon: HandCoins, available: false, href: '' },
+  { name: 'Outstanding Invoices Report',description: 'Invoices with unpaid or partially-paid balances past their due dates.',        category: 'Finance',          icon: Clock, available: false, href: '' },
+  { name: 'Billing Summary',            description: 'Monthly aggregates — invoicing, payments received, expenses, and outstanding.',category: 'Finance',          icon: BarChart3, available: false, href: '' },
+  // Administration
+  { name: 'Audit Logs Report',          description: 'System audit trail — filtered by module, action, user, and date range.',      category: 'Administration',   icon: ShieldCheck, available: false, href: '' },
+  { name: 'User Activity Report',       description: 'System usage summary by user, role, and action type.',                         category: 'Administration',   icon: Activity, available: false, href: '' },
+];
+
+// ── Page component ───────────────────────────────────────────────────
 
 export default function ReportsPage() {
   const [search, setSearch] = useState('');
-  const [cat, setCat] = useState<string>('all');
+  const [activeCategory, setActiveCategory] = useState<string>('all');
 
-  const filtered = REPORTS.filter((r) => {
-    if (cat !== 'all' && r.category !== cat) return false;
-    if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
-  });
+  const availableCount = useMemo(() => REPORTS.filter((r) => r.available).length, []);
 
-  const available = REPORTS.filter((r) => r.available).length;
+  const filtered = useMemo(() => {
+    let list = REPORTS;
+    if (activeCategory !== 'all') {
+      list = list.filter((r) => r.category === activeCategory);
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((r) => r.name.toLowerCase().includes(q) || r.description.toLowerCase().includes(q));
+    }
+    return list;
+  }, [search, activeCategory]);
+
+  const countsByCategory = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of REPORTS) {
+      map.set(r.category, (map.get(r.category) ?? 0) + 1);
+    }
+    return map;
+  }, []);
 
   return (
     <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
-      {/* Hero */}
-      <div className="rounded-2xl border bg-card p-6 sm:p-8">
-        <div className="flex items-center gap-3 mb-2">
-          <div className="flex items-center justify-center size-10 rounded-xl bg-blue-50 text-blue-600"><BarChart3 className="size-5" /></div>
-          <h1 className="text-2xl font-bold">Reports Center</h1>
-        </div>
-        <p className="text-sm text-muted-foreground max-w-xl">Management reports across sales, operations, stock, purchasing, finances, and administration.</p>
-        <div className="flex gap-4 mt-4 text-xs text-muted-foreground">
-          <span><strong className="text-foreground">{REPORTS.length}</strong> reports planned</span>
-          <span><strong className="text-foreground">{CATEGORIES.length}</strong> categories</span>
-          <span><strong className="text-foreground">{available}</strong> available now</span>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
-          <Input placeholder="Search reports…" className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant={cat === 'all' ? 'default' : 'outline'} className="cursor-pointer" onClick={() => setCat('all')}>All</Badge>
-          {CATEGORIES.map((c) => (
-            <Badge key={c} variant={cat === c ? 'default' : 'outline'} className="cursor-pointer" onClick={() => setCat(c)}>{c}</Badge>
-          ))}
-        </div>
-      </div>
-
-      {/* Report cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((r) => (
-          <div key={r.name} className={`rounded-xl border p-4 flex flex-col gap-2 transition-colors ${r.available ? 'hover:bg-muted/50 cursor-pointer' : 'opacity-60'}`}>
-            <div className="flex items-center gap-2">
-              <div className={`flex items-center justify-center size-8 rounded-lg shrink-0 ${CAT_ICONS[r.category] ?? 'bg-gray-50 text-gray-500'}`}><FileText className="size-4" /></div>
-              <span className="text-sm font-medium">{r.name}</span>
+      {/* ── Hero ────────────────────────────────────────────────── */}
+      <div className="rounded-2xl border bg-card overflow-hidden">
+        <div className="p-6 sm:p-8 lg:p-10">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="flex items-center justify-center size-12 rounded-xl bg-blue-50 text-blue-600 shrink-0">
+              <BarChart3 className="size-6" />
             </div>
-            <p className="text-xs text-muted-foreground">{r.description}</p>
-            <div className="flex items-center gap-2 mt-auto pt-1">
-              <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{r.category}</span>
-              {!r.available && <span className="text-[10px] text-muted-foreground/50 flex items-center gap-1"><Clock className="size-3" />Next phase</span>}
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Reports Center</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Management reports across sales, operations, stock, purchasing, finance, and administration.
+              </p>
             </div>
           </div>
-        ))}
+          <div className="flex flex-wrap gap-4 mt-5 text-sm text-muted-foreground">
+            <span>
+              <strong className="text-foreground">{REPORTS.length}</strong> planned reports
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <strong className="text-foreground">{CATEGORIES.length}</strong> categories
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>
+              <strong className="text-foreground">{availableCount}</strong> available now
+            </span>
+          </div>
+        </div>
+        {/* subtle bottom gradient bar */}
+        <div className="h-1 bg-gradient-to-r from-blue-500 via-emerald-500 to-rose-500" />
       </div>
-      {filtered.length === 0 && <p className="text-sm text-muted-foreground text-center py-8">No reports match your search.</p>}
+
+      {/* ── Search + Category filters ───────────────────────────── */}
+      <div className="flex flex-col gap-4">
+        {/* Search */}
+        <div className="relative w-full max-w-md">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search reports by name or description…"
+            className="pl-9 h-10"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {/* Category pills */}
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveCategory('all')}
+            className={`inline-flex items-center rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors border ${
+              activeCategory === 'all'
+                ? 'bg-foreground text-background border-foreground'
+                : 'bg-card text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
+            }`}
+          >
+            All reports
+            <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${activeCategory === 'all' ? 'bg-background/20' : 'bg-muted'}`}>
+              {REPORTS.length}
+            </span>
+          </button>
+          {CATEGORIES.map((c) => {
+            const count = countsByCategory.get(c.key) ?? 0;
+            const isActive = activeCategory === c.key;
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => setActiveCategory(c.key)}
+                className={`inline-flex items-center rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors border ${
+                  isActive
+                    ? `${c.bg} ${c.text} ${c.border}`
+                    : 'bg-card text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
+                }`}
+              >
+                {c.label}
+                <span className={`ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] ${isActive ? 'bg-black/10' : 'bg-muted'}`}>
+                  {count}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Report cards grid ───────────────────────────────────── */}
+      {filtered.length > 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((r) => {
+            const cat = CATEGORY_MAP.get(r.category)!;
+            const cardContent = (
+              <>
+                {/* Icon + title row */}
+                <div className="flex items-start gap-3">
+                  <div className={`flex items-center justify-center size-10 rounded-lg shrink-0 ${cat.bg} ${cat.text}`}>
+                    <r.icon className="size-5" />
+                  </div>
+                  <div className="min-w-0 pt-0.5">
+                    <h3 className="text-sm font-semibold leading-snug">{r.name}</h3>
+                  </div>
+                </div>
+
+                {/* Description */}
+                <p className="text-xs text-muted-foreground leading-relaxed flex-1">
+                  {r.description}
+                </p>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between pt-1">
+                  <span className={`text-[10px] font-medium uppercase tracking-wider ${cat.text}`}>
+                    {r.category}
+                  </span>
+                  {r.available ? (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-green-600">
+                      <span className="size-1.5 rounded-full bg-green-500" />
+                      Available
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/60">
+                      <Clock className="size-3" />
+                      Next phase
+                    </span>
+                  )}
+                </div>
+              </>
+            );
+
+            if (r.available) {
+              return (
+                <Link
+                  key={r.name}
+                  href={r.href}
+                  className={`group relative rounded-xl border bg-card p-5 flex flex-col gap-3 transition-all hover:shadow-md hover:border-primary/30 ${cat.border}`}
+                  style={{ borderLeftWidth: '3px' }}
+                >
+                  {cardContent}
+                </Link>
+              );
+            }
+
+            return (
+              <div
+                key={r.name}
+                className={`group relative rounded-xl border bg-card p-5 flex flex-col gap-3 opacity-60 ${cat.border}`}
+                style={{ borderLeftWidth: '3px' }}
+              >
+                {cardContent}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <Search className="size-10 text-muted-foreground/40 mb-3" />
+          <p className="text-sm text-muted-foreground">No reports match your search.</p>
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline mt-1"
+            onClick={() => { setSearch(''); setActiveCategory('all'); }}
+          >
+            Clear filters
+          </button>
+        </div>
+      )}
     </div>
   );
 }

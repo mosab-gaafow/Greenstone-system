@@ -29,6 +29,7 @@ import { receiptsRoutes } from './modules/receipts/receipts.routes.js';
 import { expensesRoutes } from './modules/expenses/expenses.routes.js';
 import { salariesRoutes } from './modules/salaries/salaries.routes.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard.routes.js';
+import { reportsRoutes } from './modules/reports/reports.routes.js';
 import { csrfRoutes } from './shared/middleware/csrf.routes.js';
 import { errorHandler } from './shared/middleware/error-handler.js';
 import { notFoundHandler } from './shared/middleware/not-found.js';
@@ -107,6 +108,7 @@ export function createApp(): Express {
   app.use(`${API_BASE_PATH}/expenses`, expensesRoutes());
   app.use(`${API_BASE_PATH}/salaries`, salariesRoutes());
   app.use(`${API_BASE_PATH}/dashboard`, dashboardRoutes());
+  app.use(`${API_BASE_PATH}/reports`, reportsRoutes());
 
   app.use(notFoundHandler());
   app.use(errorHandler());

@@ -71,7 +71,7 @@ export async function getDashboard(query: DashboardQuery): Promise<DashboardData
       where: { createdAt: { gte: from, lt: toEnd }, status: { not: 'CANCELLED' } },
       orderBy: { totalAmount: 'desc' }, take: 10,
       select: { id: true, orderNumber: true, totalAmount: true, status: true, createdAt: true, customerId: true, customer: { select: { name: true } },
-        invoice: { select: { id: true, totalAmount: true, allocations: { select: { amount: true, payment: { select: { status: true } } } } } },
+        invoice: { select: { id: true, totalAmount: true, status: true, allocations: { select: { amount: true, payment: { select: { status: true } } } } } },
       },
     });
     const topOrders = topOrdersRes.map((o, i) => {
@@ -79,7 +79,11 @@ export async function getDashboard(query: DashboardQuery): Promise<DashboardData
       const approvedAmt = inv?.allocations?.filter((a) => a.payment.status === 'APPROVED').reduce((s, a) => s.add(a.amount), new Prisma.Decimal(0)) ?? new Prisma.Decimal(0);
       const invTotal = inv?.totalAmount ?? new Prisma.Decimal(0);
       const out = invTotal.sub(approvedAmt);
-      let ps = 'Unpaid'; if (approvedAmt.gte(invTotal) && !approvedAmt.isZero()) ps = 'Fully paid'; else if (!approvedAmt.isZero()) ps = 'Partially paid';
+      let ps: string;
+      if (inv?.status === 'VOIDED') ps = 'Voided';
+      else if (approvedAmt.gte(invTotal) && !approvedAmt.isZero()) ps = 'Fully paid';
+      else if (!approvedAmt.isZero()) ps = 'Partially paid';
+      else ps = 'Unpaid';
       return { rank: i + 1, orderId: o.id, orderNumber: o.orderNumber, date: o.createdAt.toISOString(), customerId: o.customerId, customerName: o.customer.name, total: invTotal.toFixed(2), amountPaid: approvedAmt.toFixed(2), outstanding: out.toFixed(2), paymentStatus: ps, orderStatus: o.status };
     });
 

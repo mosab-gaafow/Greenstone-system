@@ -86,7 +86,7 @@ Claude must not:
 | 8 | Finished stock (deliveries; transport payment, truck-trip count) | NOT_STARTED |
 | 9 | Invoices, customer payments, and receipts | NOT_STARTED |
 | 10 | Expenses and salaries | NOT_STARTED |
-| 11 | Dashboard, reports, and alerts | NOT_STARTED |
+| 11 | Dashboard, reports, and alerts | IN_PROGRESS |
 | 12 | Hardening and production preparation | NOT_STARTED |
 
 Allowed status values:
@@ -2234,4 +2234,129 @@ The executive dashboard at `/` provides management with:
 - **View Reports button**: Links to `/reports`.
 - **Reports Center** at `/reports`: 24 planned reports across 6 categories (Sales & Customers, Operations, Stock, Purchasing, Finance, Administration). Cards marked "Next phase". Search and category filter. Added to sidebar under "Reporting".
 
-Next: Phase 11B — build detailed report pages.
+## Phase 11B — Reports Center Catalog ✅ COMPLETED (2026-08-07)
+
+The Reports Center at `/reports` is a professional, management-focused catalog page showcasing all 24 planned reports across 6 categories. No backend was required — this phase is pure frontend UI.
+
+### What was built
+
+- **Hero section**: Title ("Reports Center"), description, stats row (24 planned reports, 6 categories, 0 available now). Gradient bar accent at the bottom.
+- **Search**: Local `useState` search that filters by report name and description. Stable while typing — no URL coupling, no debounce needed because there's no API call.
+- **Category filter pills**: 7 buttons (All reports + 6 categories) with per-category counts. Active "All" uses inverted colors (dark bg), active category uses its own subtle color scheme (e.g. blue for Sales, emerald for Stock). Toggle behavior — only one active at a time.
+- **24 report cards** in a responsive grid (1/2/3 columns). Each card displays:
+  - A unique Lucide icon (e.g. `ShoppingCart` for Orders, `Factory` for Production, `Boxes` for Stock, `ShieldCheck` for Audit Logs)
+  - Report title
+  - One-line description of what the report will show
+  - Category label in the category's color
+  - "Next phase" badge with `Clock` icon
+- **Category colors**: Subtle left border accent + colored icon background + colored category label per category.
+- **Empty state**: When search returns no results, shows a search icon, message, and "Clear filters" button.
+- **Responsive**: Mobile-first, 1 column → 2 (sm) → 3 (lg). No horizontal overflow at any breakpoint.
+- **No broken links**: Cards are `<div>` elements, not links — all 24 reports are pending implementation in Phase 11C.
+
+### Files changed
+
+| File | Change |
+|---|---|
+| `frontend/app/(system)/reports/page.tsx` | Complete redesign — unique icons, category color system, professional card layout |
+| `docs/current-project-state.md` | Added Phase 11B completion section |
+| `docs/implementation-plan.md` | This entry |
+
+### No backend changes
+
+No new database tables, no new API endpoints, no migrations. This phase is a catalog only.
+
+### Validation
+
+| Command | Result |
+|---|---|
+| `pnpm --filter frontend typecheck` | ✅ Clean |
+| `pnpm --filter frontend lint` | ✅ 0 errors (19 pre-existing warnings) |
+| `pnpm --filter frontend test` | ✅ 7 files / 30 tests passed |
+| `pnpm --filter frontend build` | ✅ All routes generated including `/reports` |
+
+Next: Phase 11C1 — Build detailed Sales & Customer report pages. ✅ COMPLETE (2026-08-07)
+
+See below.
+
+## Phase 11C1 — Sales & Customer Detailed Reports ✅ COMPLETED (2026-08-07)
+
+Seven detailed report pages with real database data, period filters, KPI cards, and responsive data tables. New backend `reports` module (6 files) with 7 read-only API endpoints.
+
+### Backend: `reports` module
+
+| File | Purpose |
+|---|---|
+| `backend/src/modules/reports/reports.types.ts` | Query and result types for all 7 reports |
+| `backend/src/modules/reports/reports.validators.ts` | Zod schemas for query params (date range + optional filters) |
+| `backend/src/modules/reports/reports.repository.ts` | Prisma aggregation queries across orders, invoices, payments, receipts, customers |
+| `backend/src/modules/reports/reports.service.ts` | Business logic: invoice finance computation, credit status, summary calculations |
+| `backend/src/modules/reports/reports.controller.ts` | 7 controller functions — one per report |
+| `backend/src/modules/reports/reports.routes.ts` | Mounted at `/api/v1/reports`, permission `report:read-operational` |
+
+Also edited `backend/src/app.ts` — added import and mount for reports routes.
+
+### API endpoints
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/v1/reports/orders` | GET | Orders with optional customer/status filters, date range, KPI summary |
+| `/api/v1/reports/top-orders` | GET | Top orders by invoice total DESC in period, optional limit |
+| `/api/v1/reports/top-customers` | GET | Top customers by APPROVED payment allocations in period |
+| `/api/v1/reports/customer-balances` | GET | All active customers: opening + invoiced − approved = outstanding + credit status |
+| `/api/v1/reports/invoices` | GET | Invoices with payment status, optional customer/status filters |
+| `/api/v1/reports/payments` | GET | Payments with status breakdown, evidence indicator, optional filters |
+| `/api/v1/reports/receipts` | GET | Receipts with active/voided status, optional payment method filter |
+
+### Redis caching
+- 30s TTL per report
+- Cache keys: `greenstone:v1:<env>:reports:<report-type>:<safe_date_key>`
+- Safe date keys: `.replace(/[:.]/g, '-')`
+
+### Frontend: new files
+
+| File | Purpose |
+|---|---|
+| `features/reports/api/reports.api.ts` | API client — typed fetch functions for 7 reports |
+| `features/reports/hooks/use-reports.ts` | TanStack Query hooks with `placeholderData: (prev) => prev` |
+| `components/shared/report-filter-sheet.tsx` | Reusable period filter (9 presets + custom) with `useReportFilters()` hook |
+| `app/(system)/reports/orders/page.tsx` | Orders Report — KPI cards + data table with totals |
+| `app/(system)/reports/top-orders/page.tsx` | Top Orders by Value — ranked table |
+| `app/(system)/reports/top-customers/page.tsx` | Top Customers by Payments — ranked table |
+| `app/(system)/reports/customer-balances/page.tsx` | Customer Balances — no date filter, credit status badges |
+| `app/(system)/reports/invoices/page.tsx` | Invoices Report — invoice/order/customer links |
+| `app/(system)/reports/payments/page.tsx` | Payments Report — status breakdown, evidence indicator |
+| `app/(system)/reports/receipts/page.tsx` | Receipts Report — active/voided counts |
+
+### Frontend: changed files
+
+| File | Change |
+|---|---|
+| `app/(system)/reports/page.tsx` | Activated 7 Sales & Customers cards with `available: true`, `href`, green "Available" badge, `<Link>` wrapping, hover effects. Added `Link` import. Dynamic available count. |
+
+### Data correctness
+- Only APPROVED payments count as received; PENDING/REVERSED excluded
+- VOIDED invoices respected
+- Outstanding = openingBalance + ISSUED invoices − APPROVED allocations
+- Credit status: NORMAL (< 800k), WARNING (< 900k), STRONG_WARNING (< 1M), BLOCKED (≥ 1M)
+
+### Excluded
+- Excel/CSV/PDF export (Phase 11D)
+- Operations, Stock, Purchasing, Finance, Administration reports (Phase 11C2)
+- Print-specific design
+- Email reports
+
+### Validation
+
+| Command | Result |
+|---|---|
+| Backend typecheck | ✅ |
+| Backend lint | ✅ 0 errors (1 pre-existing warning) |
+| Backend test | ✅ 54 files / 801 tests |
+| Backend build | ✅ |
+| Frontend typecheck | ✅ |
+| Frontend lint | ✅ 0 errors (20 pre-existing warnings) |
+| Frontend test | ✅ 7 files / 30 tests |
+| Frontend build | ✅ All 7 new routes generated |
+
+Next: Phase 11C2 — Operations, Stock, Purchasing, Finance, and Administration reports.

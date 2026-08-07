@@ -33,6 +33,104 @@
 | 10B | Salary registration | COMPLETED |
 | 10C | Salary approval, correction, reversal | COMPLETED |
 | 11A | Executive dashboard | COMPLETED |
+| 11B | Reports Center | COMPLETED |
+| 11C1 | Sales & Customer Reports | COMPLETED |
+
+### Phase 11C1 improvements (2026-08-07)
+
+**Calculation fixes:**
+- **Invoices Report**: Fixed VOIDED invoices incorrectly contributing to outstanding. VOIDED invoices now show `outstanding = 0` and payment status = `VOIDED`. Summary split into `issuedValue`, `amountPaid`, `validOutstanding`, `voidedValue`/`voidedCount`.
+- **Top Customers**: Fixed missing opening balances in outstanding calculation. Now uses canonical formula: `opening + ISSUED invoices − APPROVED allocations` — same as Customer Balances.
+- **Receipts Report**: Fixed VOIDED receipts counted in total. Split into `activeAmount`/`activeCount` vs `voidedAmount`/`voidedCount`. Only ACTIVE receipts count as valid received money.
+
+**Search and filters added:**
+- Orders & Top Orders: search (order number, customer), fulfillment status dropdown, payment status dropdown
+- Top Customers: search (customer name)
+- Customer Balances: search (name, phone), balance filter (all/has outstanding/zero balance)
+- Invoices: search (invoice/order/customer), invoice status dropdown, payment status dropdown
+- Payments: search (payment number, customer, reference), status dropdown, method dropdown
+- Receipts: search (receipt number, customer), status dropdown, method dropdown
+
+**UX improvements:**
+- "Status" → "Fulfillment Status" on orders/top-orders (vs separate Payment Status)
+- Payments: "Total Amount" → "Recorded Payment Amount" (includes ALL statuses), added Reversed KPI
+- Payments: Reference and Evidence columns visible in table
+- VOIDED invoice rows dimmed, outstanding shows "—"
+
+## Phase 11C1 — Sales & Customer Detailed Reports (Completed 2026-08-07)
+
+Seven detailed report pages built with real data from existing database tables.
+
+### Reports implemented
+
+| Report | Route | API Endpoint | Features |
+|---|---|---|---|
+| Orders Report | `/reports/orders` | `GET /api/v1/reports/orders` | Period filter, KPI cards (count/value/paid/outstanding), full table with totals |
+| Top Orders by Value | `/reports/top-orders` | `GET /api/v1/reports/top-orders` | Ranked by invoice total DESC, limit 20, period filter |
+| Top Customers by Payments | `/reports/top-customers` | `GET /api/v1/reports/top-customers` | Ranked by APPROVED allocations, period filter |
+| Customer Balances | `/reports/customer-balances` | `GET /api/v1/reports/customer-balances` | Balance = opening + invoiced − approved payments, credit status |
+| Invoices Report | `/reports/invoices` | `GET /api/v1/reports/invoices` | Period filter, KPI cards, payment status per invoice |
+| Payments Report | `/reports/payments` | `GET /api/v1/reports/payments` | Period filter, status breakdown (approved/pending/reversed), evidence indicator |
+| Receipts Report | `/reports/receipts` | `GET /api/v1/reports/receipts` | Period filter, active/voided counts |
+
+### Backend: new `reports` module (6 files)
+- `backend/src/modules/reports/reports.{routes,controller,service,repository,validators,types}.ts`
+- Mounted at `/api/v1/reports` in `app.ts`
+- Permission: `report:read-operational` (all roles)
+- Redis caching: 30s TTL per report
+- Date filtering with end-of-day adjustment (Nairobi-safe)
+
+### Frontend: new files
+- `features/reports/api/reports.api.ts` — API client for 7 report endpoints
+- `features/reports/hooks/use-reports.ts` — TanStack Query hooks with `placeholderData`
+- `components/shared/report-filter-sheet.tsx` — Reusable period filter Sheet/Drawer (9 presets + custom)
+- 7 report pages under `app/(system)/reports/{orders,top-orders,top-customers,customer-balances,invoices,payments,receipts}/page.tsx`
+
+### Shared report UI pattern
+- **Header**: Back to Reports link, title, description, period label, Refresh + Filter buttons
+- **KPI cards**: 2–4 summary metric cards above the table
+- **Data table**: Responsive, mobile-first with `overflow-x-auto`, totals footer
+- **Clickable links**: Order numbers, customer names, invoice numbers, payment numbers
+- **Status badges**: Consistent color coding (green=good, amber=partial, red=voided)
+- **Filter Sheet**: 9 period presets (Today through This Year + Custom) with date inputs
+
+### Reports Center cards activated
+7 Sales & Customers cards now show "Available" (green dot) and link to report pages. Cards are clickable and show hover effects. Remaining 17 cards still show "Next phase".
+
+### Data rules applied
+- Only APPROVED payments count as received
+- PENDING and REVERSED payments excluded from financial totals
+- VOIDED invoices respected
+- Customer balance = openingBalance + Σ(ISSUED invoices) − Σ(APPROVED allocations)
+- Credit thresholds: NORMAL < 800k, WARNING < 900k, STRONG_WARNING < 1M, BLOCKED ≥ 1M
+
+## Phase 11B — Reports Center (Completed 2026-08-07)
+
+The Reports Center at `/reports` is a professional catalog of 24 planned reports across 6 categories. All reports are marked "Next phase" — detailed report pages, APIs, and export logic are deferred to Phase 11C.
+
+### Reports by Category
+
+| Category | Color | Reports |
+|---|---|---|
+| Sales & Customers | Blue | Orders Report, Top Orders by Value, Top Customers by Payments, Customer Balances, Invoices Report, Payments Report, Receipts Report |
+| Operations | Amber | Production Report, Curing Report, Deliveries Report |
+| Stock | Emerald | Finished Stock Report, Reserved Stock Report, Available Stock Report, Low Stock Report, Stock Movement Report |
+| Purchasing | Violet | Purchases Report, Purchase Payments Report, Supplier Report |
+| Finance | Rose | Expenses Report, Salaries Report, Outstanding Invoices Report, Billing Summary |
+| Administration | Slate | Audit Logs Report, User Activity Report |
+
+### Features
+- **Hero section**: Title, description, total planned reports (24), categories (6), available now (7).
+- **Search**: Searches by report name and description. Uses local `useState` — stable while typing, no URL coupling.
+- **Category filters**: Pill/toggle buttons with per-category counts. Active category shows in its own color scheme. "All reports" is the default.
+- **Report cards**: Each card shows a unique Lucide icon, title, description, category label with color. Available reports show a green "Available" badge and link to the report page. Unavailable reports show a "Next phase" badge.
+- **Category colors**: Each category has its own subtle color (blue, amber, emerald, violet, rose, slate) applied to icon background, category label, and left border accent.
+- **Empty state**: When search returns no results, a clear message with a "Clear filters" button is shown.
+- **Responsive**: 1 column on mobile, 2 on tablet (`sm`), 3 on desktop (`lg`). No horizontal overflow.
+- **No broken links**: Cards are non-interactive (no `<a>` or `<Link>` wrapping) — all reports are pending implementation.
+
+### Sidebar
+Already present from Phase 11A: "Reports" under the "Reporting" section with `BarChart3` icon, `available: true`, `href: '/reports'`.
 
 ## Phase 11A — Executive Dashboard (Current State)
 
@@ -179,4 +277,4 @@ is untracked (filter reference images).
 
 ## Next Phase
 
-Phase 11B — Reports Center. Build detailed report pages for the 24 reports catalogued at `/reports`.
+Phase 11C2 — Operations, Stock, Purchasing, Finance, and Administration detailed reports.
