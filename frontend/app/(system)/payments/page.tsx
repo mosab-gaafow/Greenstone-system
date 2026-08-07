@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/data-display/empty-state';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { Pagination } from '@/components/data-display/pagination';
 import { PageHeader } from '@/components/layout/page-header';
+import { ListExportButton } from '@/components/shared/list-export-button';
 import { SelectField } from '@/components/forms/select-field';
 import { useUrlFilters } from '@/hooks/use-url-filters';
 import { usePayments } from '@/features/customer-payments/hooks/use-payments';
@@ -106,7 +107,8 @@ function PaymentList() {
 export default function PaymentsPage() {
   const qc = useQueryClient();
   return <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
-    <PageHeader icon={Wallet} title="Customer payments" description="Record and manage payments." secondaryActions={<Button variant="outline" className="h-11" onClick={() => void qc.invalidateQueries({ queryKey: paymentKeys.all })}><RefreshCw className="size-4" />Refresh</Button>} action={<Button render={<Link href="/payments/new" />} className="h-11 w-full sm:w-auto"><Plus className="size-4" />Record payment</Button>} />
+    <PageHeader icon={Wallet} title="Customer payments" description="Record and manage payments." secondaryActions={<>
+            <ListExportButton source="payments" fileName="Payments" /><Button variant="outline" className="h-11" onClick={() => void qc.invalidateQueries({ queryKey: paymentKeys.all })}><RefreshCw className="size-4" />Refresh</Button></>} action={<Button render={<Link href="/payments/new" />} className="h-11 w-full sm:w-auto"><Plus className="size-4" />Record payment</Button>} />
     <PaymentList />
   </div>;
 }

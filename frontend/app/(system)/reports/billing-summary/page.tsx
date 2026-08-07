@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useBillingSummary } from '@/features/reports/hooks/use-reports';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
@@ -24,24 +29,25 @@ export default function BillingSummaryPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/billing-summary" params={{ from: range.from, to: range.to }} fileName="Billing_Summary" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
 
       {/* Customer KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Invoiced</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-blue-600">KES {Number(d?.invoicedAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Payments received</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-green-600">KES {Number(d?.paymentsReceived ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Current customer out.</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-red-600">KES {Number(d?.currentCustomerOutstanding ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Expenses</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-rose-600">KES {Number(d?.expensesAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Invoiced" value={`KES ${Number(d?.invoicedAmount ?? 0).toLocaleString()}`} tone="blue" />
+        <ReportKpiCard label="Payments received" value={`KES ${Number(d?.paymentsReceived ?? 0).toLocaleString()}`} tone="green" />
+        <ReportKpiCard label="Current customer out." value={`KES ${Number(d?.currentCustomerOutstanding ?? 0).toLocaleString()}`} tone="red" />
+        <ReportKpiCard label="Expenses" value={`KES ${Number(d?.expensesAmount ?? 0).toLocaleString()}`} tone="red" />
       </div>
 
       {/* Operations KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Approved salaries</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-cyan-600">KES {Number(d?.approvedSalariesAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Purchases</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-violet-600">KES {Number(d?.purchasesAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Approved supp. pmts</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-emerald-600">KES {Number(d?.approvedPurchasePayments ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Current supplier out.</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-orange-600">KES {Number(d?.currentSupplierOutstanding ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Approved salaries" value={`KES ${Number(d?.approvedSalariesAmount ?? 0).toLocaleString()}`} tone="teal" />
+        <ReportKpiCard label="Purchases" value={`KES ${Number(d?.purchasesAmount ?? 0).toLocaleString()}`} tone="purple" />
+        <ReportKpiCard label="Approved supp. pmts" value={`KES ${Number(d?.approvedPurchasePayments ?? 0).toLocaleString()}`} tone="blue" />
+        <ReportKpiCard label="Current supplier out." value={`KES ${Number(d?.currentSupplierOutstanding ?? 0).toLocaleString()}`} tone="amber" />
       </div>
 
       {/* Chart */}

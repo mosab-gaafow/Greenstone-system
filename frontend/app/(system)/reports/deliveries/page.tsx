@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useDeliveriesReport } from '@/features/reports/hooks/use-reports';
 
 const STATUSES = ['All', 'PLANNED', 'DISPATCHED', 'DELIVERED', 'CANCELLED'];
@@ -29,6 +34,7 @@ export default function DeliveriesReportPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/deliveries" params={{ from: range.from, to: range.to, search: search || undefined, status: status !== "All" ? status : undefined }} fileName="Deliveries_Report" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -45,18 +51,18 @@ export default function DeliveriesReportPage() {
 
       {/* Trip count KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Trips</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.tripCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Planned</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums text-blue-600">{d?.summary.plannedCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Dispatched</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums text-amber-600">{d?.summary.dispatchedCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Delivered</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums text-green-600">{d?.summary.deliveredCount ?? 0}</span>}</CardContent></Card>
+        <ReportKpiCard label="Trips" value={d?.summary.tripCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Planned" value={d?.summary.plannedCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Dispatched" value={d?.summary.dispatchedCount ?? 0} tone="amber" />
+        <ReportKpiCard label="Delivered" value={d?.summary.deliveredCount ?? 0} tone="green" />
       </div>
 
       {/* Quantity KPIs */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Planned qty</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.plannedQty?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Dispatched qty</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.dispatchedQty?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Delivered qty</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.deliveredQty?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Actual transport</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">KES {Number(d?.summary.actualTransportCost ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Planned qty" value={d?.summary.plannedQty?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Dispatched qty" value={d?.summary.dispatchedQty?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Delivered qty" value={d?.summary.deliveredQty?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Actual transport" value={`KES ${Number(d?.summary.actualTransportCost ?? 0).toLocaleString()}`} tone="blue" />
       </div>
 
       {/* Transport KPIs — actual vs planned */}
@@ -72,7 +78,7 @@ export default function DeliveriesReportPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Delivery</th><th className="p-2.5">Date</th><th className="p-2.5">Order</th><th className="p-2.5">Customer</th><th className="p-2.5">Driver</th><th className="p-2.5">Vehicle</th><th className="p-2.5 text-center">Items</th><th className="p-2.5 text-right">Qty</th><th className="p-2.5 text-right">Transport</th><th className="p-2.5">Status</th></tr></thead>
               <tbody>{d.rows.map((r) => (
-                <tr key={r.deliveryId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={r.deliveryId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/deliveries/${r.deliveryId}`} className="text-primary hover:underline text-xs font-medium">{r.deliveryNumber}</Link></td>
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(r.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="p-2.5 text-xs"><Link href={`/orders/${r.orderNumber}`} className="text-primary hover:underline">{r.orderNumber}</Link></td>
@@ -82,7 +88,7 @@ export default function DeliveriesReportPage() {
                   <td className="p-2.5 text-xs text-center">{r.itemCount}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{r.totalQuantity.toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{r.transportCost ? `KES ${Number(r.transportCost).toLocaleString()}` : '—'}</td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${r.status === 'DELIVERED' ? 'bg-green-50 text-green-700' : r.status === 'DISPATCHED' ? 'bg-amber-50 text-amber-700' : r.status === 'CANCELLED' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{r.status}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${r.status === 'DELIVERED' ? 'bg-green-50 text-green-700' : r.status === 'DISPATCHED' ? 'bg-amber-50 text-amber-700' : r.status === 'CANCELLED' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{r.status}</span></td>
                 </tr>
               ))}</tbody>
             </table></div>

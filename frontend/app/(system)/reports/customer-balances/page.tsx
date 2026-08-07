@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useCustomerBalances } from '@/features/reports/hooks/use-reports';
+import { ExportButton } from '@/components/shared/export-button';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
 
 const CREDIT_COLORS: Record<string, string> = {
   NORMAL: 'bg-green-50 text-green-700',
@@ -37,6 +42,7 @@ export default function CustomerBalancesPage() {
           <h1 className="text-xl font-bold">Customer Balances</h1>
           <p className="text-xs text-muted-foreground">Current outstanding balances and credit status for active customers.</p>
         </div>
+          <ReportExportBar source="reports/customer-balances" params={{ search: search || undefined, balanceFilter }} fileName="Customer_Balances" />
         <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
       </div>
 
@@ -51,8 +57,8 @@ export default function CustomerBalancesPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Active customers</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.customerCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Total outstanding</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-red-600">KES {Number(d?.summary.totalOutstanding ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Active customers" value={d?.summary.customerCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Total outstanding" value={`KES ${Number(d?.summary.totalOutstanding ?? 0).toLocaleString()}`} tone="red" />
       </div>
 
       <Card>
@@ -62,14 +68,14 @@ export default function CustomerBalancesPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Customer</th><th className="p-2.5">Phone</th><th className="p-2.5 text-right">Opening Bal.</th><th className="p-2.5 text-right">Invoiced</th><th className="p-2.5 text-right">Paid</th><th className="p-2.5 text-right">Outstanding</th><th className="p-2.5">Credit Status</th></tr></thead>
               <tbody>{d.rows.map((c) => (
-                <tr key={c.customerId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={c.customerId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/customers/${c.customerId}`} className="text-primary hover:underline text-xs font-medium">{c.customerName}</Link></td>
                   <td className="p-2.5 text-xs text-muted-foreground">{c.phone ?? '—'}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">KES {Number(c.openingBalance).toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">KES {Number(c.totalInvoiced).toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-green-600">KES {Number(c.approvedPayments).toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-red-600">KES {Number(c.outstanding).toLocaleString()}</td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${CREDIT_COLORS[c.creditStatus] ?? 'bg-gray-100 text-gray-600'}`}>{c.creditStatus}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${CREDIT_COLORS[c.creditStatus] ?? 'bg-gray-100 text-gray-600'}`}>{c.creditStatus}</span></td>
                 </tr>
               ))}</tbody>
             </table></div>

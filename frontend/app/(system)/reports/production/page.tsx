@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useProductionReport } from '@/features/reports/hooks/use-reports';
 
 const STATUSES = ['All', 'IN_PROGRESS', 'COMPLETED'];
@@ -29,6 +34,7 @@ export default function ProductionReportPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/production" params={{ from: range.from, to: range.to, search: search || undefined, status: status !== "All" ? status : undefined }} fileName="Production_Report" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -44,10 +50,10 @@ export default function ProductionReportPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Batches</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.batchCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Produced</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.totalProduced?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Broken</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-red-600">{d?.summary.totalBroken?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Usable</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-green-600">{d?.summary.totalUsable?.toLocaleString() ?? 0}</span>}</CardContent></Card>
+        <ReportKpiCard label="Batches" value={d?.summary.batchCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Produced" value={d?.summary.totalProduced?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Broken" value={d?.summary.totalBroken?.toLocaleString() ?? 0} tone="red" />
+        <ReportKpiCard label="Usable" value={d?.summary.totalUsable?.toLocaleString() ?? 0} tone="green" />
       </div>
 
       <Card>
@@ -57,7 +63,7 @@ export default function ProductionReportPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Batch</th><th className="p-2.5">Date</th><th className="p-2.5">Purpose</th><th className="p-2.5">Order</th><th className="p-2.5 text-center">Products</th><th className="p-2.5 text-right">Produced</th><th className="p-2.5 text-right">Broken</th><th className="p-2.5 text-right">Usable</th><th className="p-2.5">Status</th></tr></thead>
               <tbody>{d.rows.map((b) => (
-                <tr key={b.batchId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={b.batchId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/production/${b.batchId}`} className="text-primary hover:underline text-xs font-medium">{b.productionNumber}</Link></td>
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(b.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="p-2.5 text-xs">{b.purpose === 'ORDER' ? 'Order' : 'General stock'}</td>
@@ -66,7 +72,7 @@ export default function ProductionReportPage() {
                   <td className="p-2.5 text-right text-xs tabular-nums">{b.totalProduced.toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-red-600">{b.totalBroken.toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-green-600">{b.totalUsable.toLocaleString()}</td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${b.status === 'COMPLETED' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>{b.status.replace(/_/g, ' ')}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${b.status === 'COMPLETED' ? 'bg-green-50 text-green-700' : 'bg-blue-50 text-blue-700'}`}>{b.status.replace(/_/g, ' ')}</span></td>
                 </tr>
               ))}</tbody>
               <tfoot><tr className="border-t-2 bg-muted/30 font-medium text-xs"><td className="p-2.5" colSpan={5}>Totals</td><td className="p-2.5 text-right tabular-nums">{d.rows.reduce((s, b) => s + b.totalProduced, 0).toLocaleString()}</td><td className="p-2.5 text-right tabular-nums text-red-600">{d.rows.reduce((s, b) => s + b.totalBroken, 0).toLocaleString()}</td><td className="p-2.5 text-right tabular-nums text-green-600">{d.rows.reduce((s, b) => s + b.totalUsable, 0).toLocaleString()}</td><td className="p-2.5" /></tr></tfoot>

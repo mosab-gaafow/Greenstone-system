@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Boxes, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
+import { ListExportButton } from '@/components/shared/list-export-button';
 import { StockList } from '@/features/stock/components/stock-list';
 import { stockKeys } from '@/features/stock/hooks/use-stock';
 
@@ -16,7 +17,8 @@ export default function StockPage() {
         icon={Boxes}
         title="Finished stock"
         description="Physical, reserved, and available quantities per product."
-        secondaryActions={
+        secondaryActions={<>
+            <ListExportButton source="stock" fileName="Stock" />
           <Button
             variant="outline"
             className="h-11"
@@ -27,7 +29,7 @@ export default function StockPage() {
             <RefreshCw className="size-4" aria-hidden />
             Refresh
           </Button>
-        }
+        </>}
       />
 
       <StockList />

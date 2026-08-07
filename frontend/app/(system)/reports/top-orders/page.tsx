@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useTopOrders } from '@/features/reports/hooks/use-reports';
 
 export default function TopOrdersPage() {
@@ -27,6 +32,7 @@ export default function TopOrdersPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/top-orders" params={{ from: range.from, to: range.to, search: search || undefined }} fileName="Top_Orders" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -43,7 +49,7 @@ export default function TopOrdersPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5 w-8">#</th><th className="p-2.5">Order</th><th className="p-2.5">Date</th><th className="p-2.5">Customer</th><th className="p-2.5 text-right">Total</th><th className="p-2.5 text-right">Paid</th><th className="p-2.5 text-right">Outstanding</th><th className="p-2.5">Payment</th><th className="p-2.5">Fulfillment</th></tr></thead>
               <tbody>{d.rows.map((o) => (
-                <tr key={o.orderId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={o.orderId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5 text-xs text-muted-foreground">{o.rank}</td>
                   <td className="p-2.5"><Link href={`/orders/${o.orderId}`} className="text-primary hover:underline text-xs font-medium">{o.orderNumber}</Link></td>
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(o.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
@@ -51,8 +57,8 @@ export default function TopOrdersPage() {
                   <td className="p-2.5 text-right text-xs tabular-nums">KES {Number(o.total).toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-green-600">KES {Number(o.amountPaid).toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-red-600">KES {Number(o.outstanding).toLocaleString()}</td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${o.paymentStatus === 'Fully paid' ? 'bg-green-50 text-green-700' : o.paymentStatus === 'Partially paid' ? 'bg-amber-50 text-amber-700' : o.paymentStatus === 'VOIDED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{o.paymentStatus}</span></td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${o.fulfillmentStatus === 'COMPLETED' ? 'bg-green-50 text-green-700' : o.fulfillmentStatus === 'CANCELLED' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{o.fulfillmentStatus.replace(/_/g, ' ')}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${o.paymentStatus === 'Fully paid' ? 'bg-green-50 text-green-700' : o.paymentStatus === 'Partially paid' ? 'bg-amber-50 text-amber-700' : o.paymentStatus === 'VOIDED' ? 'bg-red-50 text-red-700' : 'bg-gray-100 text-gray-600'}`}>{o.paymentStatus}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${o.fulfillmentStatus === 'COMPLETED' ? 'bg-green-50 text-green-700' : o.fulfillmentStatus === 'CANCELLED' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>{o.fulfillmentStatus.replace(/_/g, ' ')}</span></td>
                 </tr>
               ))}</tbody>
             </table></div>

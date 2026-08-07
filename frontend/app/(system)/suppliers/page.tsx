@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw, Warehouse } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
+import { ListExportButton } from '@/components/shared/list-export-button';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { SupplierSummaryCards } from '@/features/suppliers/components/supplier-summary-cards';
 import { SupplierList } from '@/features/suppliers/components/supplier-list';
@@ -20,7 +21,8 @@ export default function SuppliersPage() {
         icon={Warehouse}
         title="Suppliers"
         description="The suppliers Greenstone buys raw materials from."
-        secondaryActions={
+        secondaryActions={<>
+            <ListExportButton source="suppliers" fileName="Suppliers" />
           <Button
             variant="outline"
             className="h-11"
@@ -31,7 +33,7 @@ export default function SuppliersPage() {
             <RefreshCw className="size-4" aria-hidden />
             Refresh
           </Button>
-        }
+        </>}
         action={
           <Button render={<Link href="/suppliers/new" />} className="h-11 w-full sm:w-auto">
             <Plus className="size-4" aria-hidden />

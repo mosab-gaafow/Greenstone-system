@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useSalariesReport } from '@/features/reports/hooks/use-reports';
 
 const SALARY_TYPES = ['All', 'WEEKLY', 'MONTHLY'];
@@ -31,6 +36,7 @@ export default function SalariesReportPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/salaries" params={{ from: range.from, to: range.to, search: search || undefined, salaryType: salaryType !== "All" ? salaryType : undefined, status: status !== "All" ? status : undefined }} fileName="Salaries_Report" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -49,11 +55,11 @@ export default function SalariesReportPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Records</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.salaryCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Recorded</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">KES {Number(d?.summary.recordedAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Approved</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-green-600">KES {Number(d?.summary.approvedAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Pending</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-amber-600">KES {Number(d?.summary.pendingAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Reversed</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-red-600">KES {Number(d?.summary.reversedAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Records" value={d?.summary.salaryCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Recorded" value={`KES ${Number(d?.summary.recordedAmount ?? 0).toLocaleString()}`} tone="blue" />
+        <ReportKpiCard label="Approved" value={`KES ${Number(d?.summary.approvedAmount ?? 0).toLocaleString()}`} tone="green" />
+        <ReportKpiCard label="Pending" value={`KES ${Number(d?.summary.pendingAmount ?? 0).toLocaleString()}`} tone="amber" />
+        <ReportKpiCard label="Reversed" value={`KES ${Number(d?.summary.reversedAmount ?? 0).toLocaleString()}`} tone="red" />
       </div>
 
       <Card>
@@ -63,7 +69,7 @@ export default function SalariesReportPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Salary</th><th className="p-2.5">Date</th><th className="p-2.5">Employee</th><th className="p-2.5">Type</th><th className="p-2.5">Period</th><th className="p-2.5 text-right">Amount</th><th className="p-2.5">Method</th><th className="p-2.5">Status</th></tr></thead>
               <tbody>{d.rows.map((s) => (
-                <tr key={s.salaryId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={s.salaryId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/salaries/${s.salaryId}`} className="text-primary hover:underline text-xs font-medium">{s.salaryNumber}</Link></td>
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(s.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="p-2.5"><Link href={`/employees/${s.employeeId}`} className="text-primary hover:underline text-xs">{s.employeeName}</Link></td>
@@ -71,7 +77,7 @@ export default function SalariesReportPage() {
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(s.periodStart).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })} – {new Date(s.periodEnd).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">KES {Number(s.amount).toLocaleString()}</td>
                   <td className="p-2.5 text-xs">{s.paymentMethod.replace('_', ' ')}</td>
-                  <td className="p-2.5 text-xs"><span className={`inline-block rounded px-1.5 py-0.5 text-[10px] font-medium ${s.status === 'APPROVED' ? 'bg-green-50 text-green-700' : s.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>{s.status}</span></td>
+                  <td className="p-2.5 text-xs"><span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium ${s.status === 'APPROVED' ? 'bg-green-50 text-green-700' : s.status === 'PENDING' ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>{s.status}</span></td>
                 </tr>
               ))}</tbody>
             </table></div>

@@ -6,6 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useCuringReport } from '@/features/reports/hooks/use-reports';
 
 export default function CuringReportPage() {
@@ -23,16 +28,17 @@ export default function CuringReportPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/curing" params={{ from: range.from, to: range.to }} fileName="Curing_Report" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Records</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.recordCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Entered</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.totalEntering?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Released</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-green-600">{d?.summary.totalReleased?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Pending records</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums text-amber-600">{d?.summary.pendingCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Qty still curing</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-amber-600">{d?.summary.pendingQuantity?.toLocaleString() ?? 0}</span>}</CardContent></Card>
+        <ReportKpiCard label="Records" value={d?.summary.recordCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Entered" value={d?.summary.totalEntering?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Released" value={d?.summary.totalReleased?.toLocaleString() ?? 0} tone="green" />
+        <ReportKpiCard label="Pending records" value={d?.summary.pendingCount ?? 0} tone="amber" />
+        <ReportKpiCard label="Qty still curing" value={d?.summary.pendingQuantity?.toLocaleString() ?? 0} tone="amber" />
       </div>
 
       <Card>
@@ -42,7 +48,7 @@ export default function CuringReportPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Batch</th><th className="p-2.5">Product</th><th className="p-2.5 text-right">Entering</th><th className="p-2.5">Duration</th><th className="p-2.5">Started</th><th className="p-2.5">Planned</th><th className="p-2.5">Released</th><th className="p-2.5 text-right">Broken</th><th className="p-2.5 text-right">Rel. Qty</th></tr></thead>
               <tbody>{d.rows.map((r) => (
-                <tr key={r.curingId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={r.curingId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/production/${r.batchId}`} className="text-primary hover:underline text-xs font-medium">{r.productionNumber}</Link></td>
                   <td className="p-2.5 text-xs">{r.productName}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{r.quantityEntering.toLocaleString()}</td>

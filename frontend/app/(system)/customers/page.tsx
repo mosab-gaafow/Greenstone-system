@@ -6,6 +6,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Plus, RefreshCw, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PageHeader } from '@/components/layout/page-header';
+import { ListExportButton } from '@/components/shared/list-export-button';
 import { ListSkeleton } from '@/components/data-display/list-skeleton';
 import { CustomerSummaryCards } from '@/features/customers/components/customer-summary-cards';
 import { CustomerList } from '@/features/customers/components/customer-list';
@@ -20,29 +21,10 @@ export default function CustomersPage() {
         icon={Users}
         title="Customers"
         description="Contractors, developers and homeowners Greenstone supplies."
-        secondaryActions={
-          <Button
-            variant="outline"
-            className="h-11"
-            onClick={() => {
-              void queryClient.invalidateQueries({ queryKey: customerKeys.all });
-            }}
-          >
-            <RefreshCw className="size-4" aria-hidden />
-            Refresh
-          </Button>
-        }
-        action={
-          <Button render={<Link href="/customers/new" />} className="h-11 w-full sm:w-auto">
-            <Plus className="size-4" aria-hidden />
-            Add customer
-          </Button>
-        }
+        secondaryActions={<><ListExportButton source="customers" fileName="Customers" /><Button variant="outline" className="h-11" onClick={() => { void queryClient.invalidateQueries({ queryKey: customerKeys.all }); }}><RefreshCw className="size-4" aria-hidden />Refresh</Button></>}
+        action={<Button render={<Link href="/customers/new" />} className="h-11 w-full sm:w-auto"><Plus className="size-4" aria-hidden />Add customer</Button>}
       />
-
       <CustomerSummaryCards />
-
-      {/* useSearchParams needs a Suspense boundary while prerendering. */}
       <Suspense fallback={<ListSkeleton />}>
         <CustomerList />
       </Suspense>

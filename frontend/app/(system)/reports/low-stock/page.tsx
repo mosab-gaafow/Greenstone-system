@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useLowStockReport } from '@/features/reports/hooks/use-reports';
+import { ExportButton } from '@/components/shared/export-button';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
 
 export default function LowStockPage() {
   const [search, setSearch] = useState('');
@@ -22,7 +27,8 @@ export default function LowStockPage() {
           <h1 className="text-xl font-bold">Low Stock Report</h1>
           <p className="text-xs text-muted-foreground">Finished products at or below their configured reorder level. Requires reorder levels to be set on products.</p>
         </div>
-        <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+                  <ReportExportBar source="reports/low-stock" params={{ search: search || undefined }} fileName="Low_Stock" />
+          <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
       </div>
 
       <div className="relative max-w-sm">
@@ -31,8 +37,8 @@ export default function LowStockPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Products below reorder</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums text-red-600">{d?.summary.productCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Available in low stock</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.totalAvailable?.toLocaleString() ?? 0}</span>}</CardContent></Card>
+        <ReportKpiCard label="Products below reorder" value={d?.summary.productCount ?? 0} tone="red" />
+        <ReportKpiCard label="Available in low stock" value={d?.summary.totalAvailable?.toLocaleString() ?? 0} tone="blue" />
       </div>
 
       <Card>
@@ -42,7 +48,7 @@ export default function LowStockPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Product</th><th className="p-2.5 text-right">Physical</th><th className="p-2.5 text-right">Reserved</th><th className="p-2.5 text-right">Available</th><th className="p-2.5 text-right">Reorder Level</th></tr></thead>
               <tbody>{d.rows.map((s) => (
-                <tr key={s.productId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={s.productId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/stock/${s.productId}`} className="text-primary hover:underline text-xs font-medium">{s.productName}</Link></td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{s.physicalQuantity.toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-amber-600">{s.reservedQuantity.toLocaleString()}</td>

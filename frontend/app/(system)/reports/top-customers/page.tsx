@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useTopCustomers } from '@/features/reports/hooks/use-reports';
 
 export default function TopCustomersPage() {
@@ -27,6 +32,7 @@ export default function TopCustomersPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/top-customers" params={{ from: range.from, to: range.to, search: search || undefined }} fileName="Top_Customers" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -43,7 +49,7 @@ export default function TopCustomersPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5 w-8">#</th><th className="p-2.5">Customer</th><th className="p-2.5 text-right">Orders</th><th className="p-2.5 text-right">Payments</th><th className="p-2.5 text-right">Invoiced</th><th className="p-2.5 text-right">Received</th><th className="p-2.5 text-right">Outstanding</th></tr></thead>
               <tbody>{d.rows.map((c) => (
-                <tr key={c.customerId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={c.customerId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5 text-xs text-muted-foreground">{c.rank}</td>
                   <td className="p-2.5"><Link href={`/customers/${c.customerId}`} className="text-primary hover:underline text-xs font-medium">{c.customerName}</Link></td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{c.orderCount}</td>

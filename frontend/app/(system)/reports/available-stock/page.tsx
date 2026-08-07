@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAvailableStockReport } from '@/features/reports/hooks/use-reports';
+import { ExportButton } from '@/components/shared/export-button';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
 
 export default function AvailableStockPage() {
   const [search, setSearch] = useState('');
@@ -18,7 +23,8 @@ export default function AvailableStockPage() {
     <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div><Link href="/reports" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1 mb-1"><ArrowLeft className="size-3" />Back to Reports</Link><h1 className="text-xl font-bold">Available Stock Report</h1><p className="text-xs text-muted-foreground">Stock available for new orders (physical minus reserved).</p></div>
-        <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+                  <ReportExportBar source="reports/available-stock" params={{ search: search || undefined }} fileName="Available_Stock" />
+          <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
       </div>
 
       <div className="relative max-w-sm">
@@ -27,10 +33,10 @@ export default function AvailableStockPage() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Products</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.productCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Physical</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.totalPhysical?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Reserved</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-amber-600">{d?.summary.totalReserved?.toLocaleString() ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Available</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-green-600">{d?.summary.totalAvailable?.toLocaleString() ?? 0}</span>}</CardContent></Card>
+        <ReportKpiCard label="Products" value={d?.summary.productCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Physical" value={d?.summary.totalPhysical?.toLocaleString() ?? 0} tone="blue" />
+        <ReportKpiCard label="Reserved" value={d?.summary.totalReserved?.toLocaleString() ?? 0} tone="amber" />
+        <ReportKpiCard label="Available" value={d?.summary.totalAvailable?.toLocaleString() ?? 0} tone="green" />
       </div>
 
       <Card>
@@ -40,7 +46,7 @@ export default function AvailableStockPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Product</th><th className="p-2.5 text-right">Physical</th><th className="p-2.5 text-right">Reserved</th><th className="p-2.5 text-right">Available</th></tr></thead>
               <tbody>{d.rows.map((s) => (
-                <tr key={s.productId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={s.productId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/stock/${s.productId}`} className="text-primary hover:underline text-xs font-medium">{s.productName}</Link></td>
                   <td className="p-2.5 text-right text-xs tabular-nums">{s.physicalQuantity.toLocaleString()}</td>
                   <td className="p-2.5 text-right text-xs tabular-nums text-amber-600">{s.reservedQuantity.toLocaleString()}</td>

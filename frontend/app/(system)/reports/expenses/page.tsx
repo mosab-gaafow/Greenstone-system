@@ -8,6 +8,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ReportFilterSheet, useReportFilters } from '@/components/shared/report-filter-sheet';
+import { ReportFilterPanel } from '@/components/shared/report-filter-panel';
+import { ReportTableToolbar } from '@/components/shared/report-table-toolbar';
+import { ReportKpiCard } from '@/components/shared/report-kpi-card';
+import { ReportExportBar } from '@/components/shared/report-export-bar';
+import { ExportButton } from '@/components/shared/export-button';
 import { useExpensesReport } from '@/features/reports/hooks/use-reports';
 
 const CATEGORIES = ['All', 'ELECTRICITY', 'WATER', 'RENT', 'TRANSPORT', 'MAINTENANCE', 'SUPPLIES', 'COMMUNICATION', 'INSURANCE', 'LICENSES', 'OTHER'];
@@ -29,6 +34,7 @@ export default function ExpensesReportPage() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="ghost" size="icon" className="size-9" onClick={() => q.refetch()}><RefreshCw className="size-4" /></Button>
+          <ReportExportBar source="reports/expenses" params={{ from: range.from, to: range.to, search: search || undefined, category: category !== "All" ? category : undefined }} fileName="Expenses_Report" />
           <ReportFilterSheet filters={filters} />
         </div>
       </div>
@@ -44,8 +50,8 @@ export default function ExpensesReportPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3">
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Expenses</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-12" /> : <span className="text-lg font-bold tabular-nums">{d?.summary.expenseCount ?? 0}</span>}</CardContent></Card>
-        <Card><CardHeader className="pb-1"><CardTitle className="text-[10px] uppercase tracking-wider text-muted-foreground">Total amount</CardTitle></CardHeader><CardContent>{loading ? <Skeleton className="h-6 w-20" /> : <span className="text-lg font-bold tabular-nums text-red-600">KES {Number(d?.summary.totalAmount ?? 0).toLocaleString()}</span>}</CardContent></Card>
+        <ReportKpiCard label="Expenses" value={d?.summary.expenseCount ?? 0} tone="blue" />
+        <ReportKpiCard label="Total amount" value={`KES ${Number(d?.summary.totalAmount ?? 0).toLocaleString()}`} tone="red" />
       </div>
 
       <Card>
@@ -55,7 +61,7 @@ export default function ExpensesReportPage() {
             <div className="overflow-x-auto"><table className="w-full text-sm">
               <thead><tr className="border-b bg-muted/30 text-left text-xs text-muted-foreground"><th className="p-2.5">Expense</th><th className="p-2.5">Date</th><th className="p-2.5">Category</th><th className="p-2.5">Description</th><th className="p-2.5 text-right">Amount</th><th className="p-2.5">Method</th><th className="p-2.5">Reference</th><th className="p-2.5">Evidence</th></tr></thead>
               <tbody>{d.rows.map((e) => (
-                <tr key={e.expenseId} className="border-b last:border-0 hover:bg-muted/20">
+                <tr key={e.expenseId} className="border-b last:border-0 hover:bg-muted/30">
                   <td className="p-2.5"><Link href={`/expenses/${e.expenseId}`} className="text-primary hover:underline text-xs font-medium">{e.expenseNumber}</Link></td>
                   <td className="p-2.5 text-xs whitespace-nowrap">{new Date(e.date).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</td>
                   <td className="p-2.5 text-xs">{e.category.replace(/_/g, ' ')}</td>
