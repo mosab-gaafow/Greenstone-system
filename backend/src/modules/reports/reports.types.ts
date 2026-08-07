@@ -207,3 +207,143 @@ export interface ReceiptsReportResult {
   };
   periodLabel: string;
 }
+
+// ── Phase 11C2: Operations ────────────────────────────────────────
+
+export interface ProductionReportQuery extends ReportQuery {
+  search?: string;
+  status?: string;
+}
+
+export interface ProductionReportRow {
+  batchId: string;
+  productionNumber: string;
+  date: string;
+  purpose: string;
+  orderNumber: string | null;
+  status: string;
+  productCount: number;
+  totalProduced: number;
+  totalBroken: number;
+  totalUsable: number;
+}
+
+export interface ProductionReportResult {
+  rows: ProductionReportRow[];
+  summary: { batchCount: number; totalProduced: number; totalBroken: number; totalUsable: number };
+  periodLabel: string;
+}
+
+export interface CuringReportQuery extends ReportQuery {
+  search?: string;
+  productId?: string;
+}
+
+export interface CuringReportRow {
+  curingId: string;
+  batchId: string;
+  productionNumber: string;
+  productName: string;
+  quantityEntering: number;
+  duration: string;
+  startedAt: string;
+  plannedCompletion: string;
+  actualRelease: string | null;
+  brokenQuantity: number;
+  releasedQuantity: number | null;
+  isReleased: boolean;
+}
+
+export interface CuringReportResult {
+  rows: CuringReportRow[];
+  summary: { recordCount: number; totalEntering: number; totalReleased: number; pendingCount: number; pendingQuantity: number };
+  periodLabel: string;
+}
+
+export interface DeliveriesReportQuery extends ReportQuery {
+  search?: string;
+  status?: string;
+}
+
+export interface DeliveriesReportRow {
+  deliveryId: string;
+  deliveryNumber: string;
+  date: string;
+  orderNumber: string;
+  customerName: string;
+  driverName: string;
+  vehicleReg: string;
+  status: string;
+  itemCount: number;
+  totalQuantity: number;
+  transportCost: string | null;
+}
+
+export interface DeliveriesReportResult {
+  rows: DeliveriesReportRow[];
+  summary: {
+    tripCount: number; plannedCount: number; dispatchedCount: number; deliveredCount: number;
+    plannedQty: number; dispatchedQty: number; deliveredQty: number;
+    actualTransportCost: string;
+    plannedTransportCost: string;
+  };
+  periodLabel: string;
+}
+
+// ── Phase 11C2: Stock ─────────────────────────────────────────────
+
+export interface StockReportQuery {
+  search?: string;
+}
+
+export interface FinishedStockRow {
+  productId: string;
+  productName: string;
+  physicalQuantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+}
+
+export interface FinishedStockResult {
+  rows: FinishedStockRow[];
+  summary: { productCount: number; totalPhysical: number; totalReserved: number; totalAvailable: number };
+}
+
+export interface LowStockRow {
+  productId: string;
+  productName: string;
+  physicalQuantity: number;
+  reservedQuantity: number;
+  availableQuantity: number;
+  reorderLevel: number;
+}
+
+export interface LowStockResult {
+  rows: LowStockRow[];
+  summary: { productCount: number; totalAvailable: number };
+}
+
+export interface StockMovementQuery extends ReportQuery {
+  search?: string;
+  movementType?: string;
+}
+
+export interface StockMovementRow {
+  movementId: string;
+  date: string;
+  productName: string;
+  movementType: string;
+  quantity: number;
+  quantityIn: number;
+  quantityOut: number;
+  balanceAfter: number;
+  reason: string | null;
+  referenceLabel: string | null;
+  referenceHref: string | null;
+}
+
+export interface StockMovementResult {
+  rows: StockMovementRow[];
+  summary: { movementCount: number; totalIn: number; totalOut: number };
+  periodLabel: string;
+}

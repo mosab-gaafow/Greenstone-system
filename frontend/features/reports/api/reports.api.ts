@@ -87,6 +87,8 @@ export interface ReportQueryParams {
   receiptStatus?: string;
   balanceFilter?: string;
   limit?: number;
+  status?: string;
+  movementType?: string;
 }
 
 function toParams(p: ReportQueryParams): Record<string, string | number> {
@@ -100,6 +102,8 @@ function toParams(p: ReportQueryParams): Record<string, string | number> {
   if (p.receiptStatus) params.receiptStatus = p.receiptStatus;
   if (p.balanceFilter && p.balanceFilter !== 'all') params.balanceFilter = p.balanceFilter;
   if (p.limit) params.limit = p.limit;
+  if (p.status) params.status = p.status;
+  if (p.movementType) params.movementType = p.movementType;
   return params;
 }
 
@@ -132,5 +136,111 @@ export async function fetchPaymentsReport(params: ReportQueryParams) {
 }
 export async function fetchReceiptsReport(params: ReportQueryParams) {
   const { data } = await api.get<ReceiptsReportResult>('/reports/receipts', { query: toParams(params) });
+  return data;
+}
+
+// ── Phase 11C2: Operations ───────────────────────────────────────
+
+export interface ProductionReportRow {
+  batchId: string; productionNumber: string; date: string;
+  purpose: string; orderNumber: string | null; status: string;
+  productCount: number; totalProduced: number; totalBroken: number; totalUsable: number;
+}
+export interface ProductionReportResult extends ReportSummary {
+  rows: ProductionReportRow[];
+  summary: { batchCount: number; totalProduced: number; totalBroken: number; totalUsable: number };
+}
+
+export interface CuringReportRow {
+  curingId: string; batchId: string; productionNumber: string; productName: string;
+  quantityEntering: number; duration: string; startedAt: string;
+  plannedCompletion: string; actualRelease: string | null;
+  brokenQuantity: number; releasedQuantity: number | null; isReleased: boolean;
+}
+export interface CuringReportResult extends ReportSummary {
+  rows: CuringReportRow[];
+  summary: { recordCount: number; totalEntering: number; totalReleased: number; pendingCount: number; pendingQuantity: number };
+}
+
+export interface DeliveriesReportRow {
+  deliveryId: string; deliveryNumber: string; date: string;
+  orderNumber: string; customerName: string; driverName: string;
+  vehicleReg: string; status: string; itemCount: number; totalQuantity: number;
+  transportCost: string | null;
+}
+export interface DeliveriesReportResult extends ReportSummary {
+  rows: DeliveriesReportRow[];
+  summary: { tripCount: number; plannedCount: number; dispatchedCount: number; deliveredCount: number; plannedQty: number; dispatchedQty: number; deliveredQty: number; actualTransportCost: string; plannedTransportCost: string };
+}
+
+export async function fetchProductionReport(params: ReportQueryParams) {
+  const { data } = await api.get<ProductionReportResult>('/reports/production', { query: toParams(params) });
+  return data;
+}
+export async function fetchCuringReport(params: ReportQueryParams) {
+  const { data } = await api.get<CuringReportResult>('/reports/curing', { query: toParams(params) });
+  return data;
+}
+export async function fetchDeliveriesReport(params: ReportQueryParams) {
+  const { data } = await api.get<DeliveriesReportResult>('/reports/deliveries', { query: toParams(params) });
+  return data;
+}
+
+// ── Phase 11C2: Stock ─────────────────────────────────────────────
+
+export interface FinishedStockRow {
+  productId: string; productName: string;
+  physicalQuantity: number; reservedQuantity: number; availableQuantity: number;
+}
+export interface FinishedStockResult {
+  rows: FinishedStockRow[];
+  summary: { productCount: number; totalPhysical: number; totalReserved: number; totalAvailable: number };
+}
+
+export interface LowStockRow extends FinishedStockRow {
+  reorderLevel: number;
+}
+export interface LowStockResult {
+  rows: LowStockRow[];
+  summary: { productCount: number; totalAvailable: number };
+}
+
+export interface StockMovementRow {
+  movementId: string; date: string; productName: string;
+  movementType: string; quantity: number; quantityIn: number; quantityOut: number;
+  balanceAfter: number; reason: string | null;
+  referenceLabel: string | null; referenceHref: string | null;
+}
+export interface StockMovementResult extends ReportSummary {
+  rows: StockMovementRow[];
+  summary: { movementCount: number; totalIn: number; totalOut: number };
+}
+
+export async function fetchFinishedStockReport(params: { search?: string } = {}) {
+  const query: Record<string, string> = {};
+  if (params.search) query.search = params.search;
+  const { data } = await api.get<FinishedStockResult>('/reports/finished-stock', { query });
+  return data;
+}
+export async function fetchReservedStockReport(params: { search?: string } = {}) {
+  const query: Record<string, string> = {};
+  if (params.search) query.search = params.search;
+  const { data } = await api.get<FinishedStockResult>('/reports/reserved-stock', { query });
+  return data;
+}
+export async function fetchAvailableStockReport(params: { search?: string } = {}) {
+  const query: Record<string, string> = {};
+  if (params.search) query.search = params.search;
+  const { data } = await api.get<FinishedStockResult>('/reports/available-stock', { query });
+  return data;
+}
+export async function fetchLowStockReport(params: { search?: string } = {}) {
+  const query: Record<string, string> = {};
+  if (params.search) query.search = params.search;
+  const { data } = await api.get<LowStockResult>('/reports/low-stock', { query });
+  return data;
+}
+export async function fetchStockMovementReport(params: ReportQueryParams) {
+  const { data } = await api.get<StockMovementResult>('/reports/stock-movement', { query: toParams(params) });
   return data;
 }

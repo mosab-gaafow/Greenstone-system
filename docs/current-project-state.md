@@ -35,6 +35,7 @@
 | 11A | Executive dashboard | COMPLETED |
 | 11B | Reports Center | COMPLETED |
 | 11C1 | Sales & Customer Reports | COMPLETED |
+| 11C2 | Operations & Stock Reports | COMPLETED |
 
 ### Phase 11C1 improvements (2026-08-07)
 

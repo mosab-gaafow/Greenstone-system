@@ -29,3 +29,33 @@ export function usePaymentsReport(params: ReportQueryParams) {
 export function useReceiptsReport(params: ReportQueryParams) {
   return useQuery({ queryKey: qk('reports:receipts', params), queryFn: () => api.fetchReceiptsReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
 }
+
+// ── Phase 11C2: Operations ───────────────────────────────────────
+
+export function useProductionReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:production', params), queryFn: () => api.fetchProductionReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useCuringReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:curing', params), queryFn: () => api.fetchCuringReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useDeliveriesReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:deliveries', params), queryFn: () => api.fetchDeliveriesReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+
+// ── Phase 11C2: Stock ─────────────────────────────────────────────
+
+export function useFinishedStockReport(params: { search?: string } = {}) {
+  return useQuery({ queryKey: ['reports:finished-stock', params] as const, queryFn: () => api.fetchFinishedStockReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useReservedStockReport(params: { search?: string } = {}) {
+  return useQuery({ queryKey: ['reports:reserved-stock', params] as const, queryFn: () => api.fetchReservedStockReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useAvailableStockReport(params: { search?: string } = {}) {
+  return useQuery({ queryKey: ['reports:available-stock', params] as const, queryFn: () => api.fetchAvailableStockReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useLowStockReport(params: { search?: string } = {}) {
+  return useQuery({ queryKey: ['reports:low-stock', params] as const, queryFn: () => api.fetchLowStockReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useStockMovementReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:stock-movement', params), queryFn: () => api.fetchStockMovementReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}

@@ -71,16 +71,16 @@ const REPORTS: ReportDefinition[] = [
   { name: 'Invoices Report',            description: 'Issued and voided invoices with full payment-status breakdown.',               category: 'Sales & Customers', icon: FileText, available: true, href: '/reports/invoices' },
   { name: 'Payments Report',            description: 'Customer payments with approval dates, methods, and reversal history.',        category: 'Sales & Customers', icon: Wallet, available: true, href: '/reports/payments' },
   { name: 'Receipts Report',            description: 'Official receipts issued from approved customer payments.',                    category: 'Sales & Customers', icon: Receipt, available: true, href: '/reports/receipts' },
-  // Operations
-  { name: 'Production Report',          description: 'Production batches with status, quantities, and raw-material usage.',          category: 'Operations',       icon: Factory, available: false, href: '' },
-  { name: 'Curing Report',              description: 'Curing records with start dates, durations, and release status.',              category: 'Operations',       icon: Layers, available: false, href: '' },
-  { name: 'Deliveries Report',          description: 'Delivery trips with dispatch status, driver, vehicle, and transport cost.',    category: 'Operations',       icon: Truck, available: false, href: '' },
-  // Stock
-  { name: 'Finished Stock Report',      description: 'Current finished-product stock quantities by product.',                        category: 'Stock',            icon: Boxes, available: false, href: '' },
-  { name: 'Reserved Stock Report',      description: 'Stock currently reserved for planned deliveries not yet dispatched.',          category: 'Stock',            icon: Lock, available: false, href: '' },
-  { name: 'Available Stock Report',     description: 'Stock available for new orders — physical minus reserved.',                    category: 'Stock',            icon: CheckCircle, available: false, href: '' },
-  { name: 'Low Stock Report',           description: 'Products whose available quantity is at or below their reorder level.',        category: 'Stock',            icon: AlertTriangle, available: false, href: '' },
-  { name: 'Stock Movement Report',      description: 'All stock-in and stock-out movements with reasons and reference documents.',   category: 'Stock',            icon: ArrowLeftRight, available: false, href: '' },
+  // Operations (Phase 11C2 — available)
+  { name: 'Production Report',          description: 'Production batches with status, quantities, and raw-material usage.',          category: 'Operations',       icon: Factory, available: true, href: '/reports/production' },
+  { name: 'Curing Report',              description: 'Curing records with start dates, durations, and release status.',              category: 'Operations',       icon: Layers, available: true, href: '/reports/curing' },
+  { name: 'Deliveries Report',          description: 'Delivery trips with dispatch status, driver, vehicle, and transport cost.',    category: 'Operations',       icon: Truck, available: true, href: '/reports/deliveries' },
+  // Stock (Phase 11C2 — available)
+  { name: 'Finished Stock Report',      description: 'Current finished-product stock quantities by product.',                        category: 'Stock',            icon: Boxes, available: true, href: '/reports/finished-stock' },
+  { name: 'Reserved Stock Report',      description: 'Stock currently reserved for planned deliveries not yet dispatched.',          category: 'Stock',            icon: Lock, available: true, href: '/reports/reserved-stock' },
+  { name: 'Available Stock Report',     description: 'Stock available for new orders — physical minus reserved.',                    category: 'Stock',            icon: CheckCircle, available: true, href: '/reports/available-stock' },
+  { name: 'Low Stock Report',           description: 'Products whose physical quantity is at or below their reorder level.',         category: 'Stock',            icon: AlertTriangle, available: true, href: '/reports/low-stock' },
+  { name: 'Stock Movement Report',      description: 'All stock-in and stock-out movements with reasons and reference documents.',   category: 'Stock',            icon: ArrowLeftRight, available: true, href: '/reports/stock-movement' },
   // Purchasing
   { name: 'Purchases Report',           description: 'Supplier purchase records with raw-material receipts and costs.',              category: 'Purchasing',       icon: ClipboardList, available: false, href: '' },
   { name: 'Purchase Payments Report',   description: 'Payments made to suppliers with approval status and allocations.',             category: 'Purchasing',       icon: HandCoins, available: false, href: '' },

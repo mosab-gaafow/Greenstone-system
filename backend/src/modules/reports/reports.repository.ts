@@ -6,6 +6,8 @@ import type {
   OrdersReportQuery, InvoicesReportQuery, PaymentsReportQuery,
   ReceiptsReportQuery, TopOrdersQuery, TopCustomersQuery,
   CustomerBalancesQuery,
+  ProductionReportQuery, CuringReportQuery, DeliveriesReportQuery,
+  StockMovementQuery,
 } from './reports.types.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -313,6 +315,194 @@ export async function findReceiptsForReport(
           allocations: { select: { invoice: { select: { invoiceNumber: true } } }, take: 1 },
         },
       },
+    },
+  });
+}
+
+// ── Phase 11C2: Production ────────────────────────────────────────
+
+export async function findProductionBatches(
+  query: ProductionReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.ProductionBatchWhereInput = {
+    productionDate: { gte: query.from, lt: query.toEnd },
+  };
+  if (query.status) where.status = query.status as any;
+  if (query.search) {
+    where.OR = [
+      { productionNumber: { contains: query.search } },
+      { order: { orderNumber: { contains: query.search } } },
+    ] as any;
+  }
+  return client.productionBatch.findMany({
+    where,
+    orderBy: { productionDate: 'desc' },
+    select: {
+      id: true, productionNumber: true, productionDate: true, purpose: true, status: true,
+      order: { select: { orderNumber: true } },
+      _count: { select: { items: true } },
+      items: { select: { producedQuantity: true, brokenQuantity: true, usableQuantity: true } },
+    },
+  });
+}
+
+// ── Phase 11C2: Curing ────────────────────────────────────────────
+
+export async function findCuringRecords(
+  query: CuringReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.CuringRecordWhereInput = {
+    startedAt: { gte: query.from, lt: query.toEnd },
+  };
+  if (query.productId) where.productionItem = { productId: query.productId };
+  return client.curingRecord.findMany({
+    where,
+    orderBy: { startedAt: 'desc' },
+    select: {
+      id: true, productionBatchId: true, quantityEntering: true,
+      currentDuration: true, startedAt: true, plannedCompletion: true,
+      actualRelease: true, brokenQuantity: true, releasedQuantity: true,
+      productionItem: {
+        select: {
+          product: { select: { id: true, name: true } },
+          productionBatch: { select: { productionNumber: true } },
+        },
+      },
+    },
+  });
+}
+
+// ── Phase 11C2: Deliveries ────────────────────────────────────────
+
+export async function findDeliveriesForReport(
+  query: DeliveriesReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.DeliveryWhereInput = {
+    deliveryDate: { gte: query.from, lt: query.toEnd },
+  };
+  if (query.status) where.status = query.status as any;
+  if (query.search) {
+    where.OR = [
+      { deliveryNumber: { contains: query.search } },
+      { order: { orderNumber: { contains: query.search } } },
+      { customer: { name: { contains: query.search } } },
+    ] as any;
+  }
+  return client.delivery.findMany({
+    where,
+    orderBy: { deliveryDate: 'desc' },
+    select: {
+      id: true, deliveryNumber: true, deliveryDate: true, status: true,
+      totalTransportCost: true,
+      order: { select: { orderNumber: true } },
+      customer: { select: { name: true } },
+      driver: { select: { name: true } },
+      vehicle: { select: { registrationNumber: true } },
+      _count: { select: { items: true } },
+      items: { select: { plannedQuantity: true, dispatchedQuantity: true, deliveredQuantity: true } },
+    },
+  });
+}
+
+// ── Phase 11C2: Stock ─────────────────────────────────────────────
+
+export async function findFinishedStockBalances(
+  search: string | undefined,
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.FinishedStockBalanceWhereInput = { physicalQuantity: { gt: 0 } };
+  if (search) where.product = { name: { contains: search } };
+  return client.finishedStockBalance.findMany({
+    where,
+    orderBy: { physicalQuantity: 'desc' },
+    select: {
+      productId: true, physicalQuantity: true, reservedQuantity: true, availableQuantity: true,
+      product: { select: { name: true } },
+    },
+  });
+}
+
+export async function findReservedStockBalances(
+  search: string | undefined,
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.FinishedStockBalanceWhereInput = { reservedQuantity: { gt: 0 } };
+  if (search) where.product = { name: { contains: search } };
+  return client.finishedStockBalance.findMany({
+    where,
+    orderBy: { reservedQuantity: 'desc' },
+    select: {
+      productId: true, physicalQuantity: true, reservedQuantity: true, availableQuantity: true,
+      product: { select: { name: true } },
+    },
+  });
+}
+
+export async function findAvailableStockBalances(
+  search: string | undefined,
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.FinishedStockBalanceWhereInput = { availableQuantity: { gt: 0 } };
+  if (search) where.product = { name: { contains: search } };
+  return client.finishedStockBalance.findMany({
+    where,
+    orderBy: { availableQuantity: 'desc' },
+    select: {
+      productId: true, physicalQuantity: true, reservedQuantity: true, availableQuantity: true,
+      product: { select: { name: true } },
+    },
+  });
+}
+
+export async function findLowStockProducts(
+  search: string | undefined,
+  client: DbClient = getPrisma(),
+) {
+  const products = await (client as any).product.findMany({
+    where: {
+      isActive: true,
+      reorderLevel: { not: null },
+      ...(search ? { name: { contains: search } } : {}),
+    },
+    select: {
+      id: true, name: true, reorderLevel: true,
+      finishedStockBalance: {
+        select: { physicalQuantity: true, reservedQuantity: true, availableQuantity: true },
+      },
+    },
+    orderBy: { name: 'asc' },
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (products as any[]).filter((p: any) => p.finishedStockBalance && p.finishedStockBalance.physicalQuantity <= (p.reorderLevel ?? 0))
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .map((p: any) => ({
+      productId: p.id,
+      productName: p.name,
+      physicalQuantity: p.finishedStockBalance!.physicalQuantity,
+      reservedQuantity: p.finishedStockBalance!.reservedQuantity,
+      availableQuantity: p.finishedStockBalance!.availableQuantity,
+      reorderLevel: p.reorderLevel!,
+    }));
+}
+
+export async function findStockMovements(
+  query: StockMovementQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.FinishedStockMovementWhereInput = {
+    createdAt: { gte: query.from, lt: query.toEnd },
+  };
+  if (query.movementType) where.movementType = query.movementType as any;
+  return client.finishedStockMovement.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+    select: {
+      id: true, movementType: true, quantity: true, balanceAfter: true,
+      reason: true, relatedEntityId: true, createdAt: true,
+      product: { select: { name: true } },
     },
   });
 }
