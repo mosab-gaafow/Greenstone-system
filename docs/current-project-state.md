@@ -1,6 +1,6 @@
 # Greenstone Management System — Current Project State
 
-**Date:** 2026-08-05
+**Date:** 2026-08-07
 
 ## Completed Phases
 
@@ -23,8 +23,39 @@
 | 9D | Live credit formula (openingBalance + ISSUED invoices − APPROVED allocations) | COMPLETED |
 | 9E | PREPAID dispatch gate + list filter UI | COMPLETED |
 
-**Phase 9 is complete.** All sub-phases (9A–9E) are implemented. Uncommitted changes
-are in the working tree (26 files modified, `docs/design-references/` untracked).
+**Phase 9 is complete.** All sub-phases (9A–9E) are implemented.
+
+| 9F | Invoice PDF | COMPLETED |
+| 9G | Receipt module + PDF | COMPLETED |
+| 9H | Customer payment evidence | COMPLETED |
+| 9I | Customer statements | COMPLETED |
+| 10A | General expenses | COMPLETED |
+| 10B | Salary registration | COMPLETED |
+| 10C | Salary approval, correction, reversal | COMPLETED |
+| 11A | Executive dashboard | COMPLETED |
+
+## Phase 11A — Executive Dashboard (Current State)
+
+The dashboard at `/` replaces the placeholder page. Features:
+
+- **Filter**: Sheet/Drawer with 9 preset periods (Today through This Year + Custom). Default: This Week.
+- **KPI cards (8)**: Active orders, Pending deliveries, Overdue invoices, Low-stock materials, Total finished stock (SUM of physicalQuantity), Pending payments, Pending salary approvals, Credit customers. Each clickable to its module page.
+- **Financial cards (4)**: Total invoiced, Payments received (APPROVED only), Outstanding, Expenses. Date-filtered.
+- **Invoices vs Payments chart**: Grouped bar chart, day/month auto-grouping.
+- **Invoice payment status**: Donut chart (Fully paid / Partially paid / Unpaid).
+- **Stock by Product chart**: Horizontal bar chart showing physical vs available quantities per product from `FinishedStockBalance`.
+- **Top 10 Orders table**: Ranked by `totalAmount` DESC in period. Columns: rank, order (link), date, customer (link), total, paid (APPROVED), outstanding, status. Totals footer.
+- **Top 10 Customers by Payments table**: Ranked by `SUM(APPROVED allocations)` in period. Columns: rank, customer (link), orders, payments count, invoiced, received, outstanding. Totals footer.
+- **Redis caching**: Cache-aside, 30s TTL, keyed by `from`/`to` dates with safe segments. Dashboard works when Redis unavailable.
+- **View Reports** button → `/reports`
+
+### Key dashboard formulas
+- `activeOrders` = COUNT orders WHERE status ≠ CANCELLED
+- `totalFinishedStock` = SUM(finishedStockBalance.physicalQuantity)
+- `paymentsReceived` = SUM(allocation.amount) WHERE payment.status = APPROVED
+- `outstanding` = openingBalance + all ISSUED invoices − all APPROVED allocations (all-time)
+- Top orders: ORDER BY totalAmount DESC, top 10 in date range
+- Top customers: GROUP BY customerId on APPROVED allocations in range, top 10 by SUM(amount)
 
 ## Final Finance Rules (Phase 9)
 
@@ -127,7 +158,7 @@ is untracked (filter reference images).
 
 | Suite | Files | Passed | Failed |
 |---|---|---|---|
-| Backend | 50 (1 failed) | 713 | 3 |
+| Backend | 54 | ~800 | 0 |
 | Frontend | 7 | 30 | 0 |
 
 ## Build Status
@@ -138,9 +169,14 @@ is untracked (filter reference images).
 | Backend lint | ✅ |
 | Backend build | ✅ |
 | Frontend typecheck | ✅ |
-| Frontend lint | ✅ (0 errors, 9 pre-existing warnings) |
+| Frontend lint | ✅ (0 errors, 18 pre-existing warnings) |
 | Frontend build | ✅ (all routes generated) |
+
+## Known Issues
+
+- Delivery tests have intermittent flakiness from narrow random orderNumber range (test isolation, not business logic).
+- Better Auth migration index drift requires manual cleanup per migration.
 
 ## Next Phase
 
-Phase 10 — Expenses and Salaries. Do not start without explicit approval.
+Phase 11B — Reports Center. Build detailed report pages for the 24 reports catalogued at `/reports`.

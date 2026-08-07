@@ -2217,3 +2217,21 @@ Anything intentionally excluded.
 ## Next phase
 
 Name only. Do not start it automatically.
+
+## Phase 11A — Executive Dashboard ✅ COMPLETED (2026-08-07)
+
+The executive dashboard at `/` provides management with:
+
+- **Date filter**: Sheet/Drawer with 9 presets (Today, Yesterday, This Week, Last 7 Days, This Month, Last Month, Last 3 Months, This Year, Custom). Default: This Week.
+- **8 operational KPI cards**: Active orders, Pending deliveries, Overdue invoices, Low-stock materials, Total finished stock (SUM of physicalQuantity), Pending payments, Salary approvals, Credit customers. All clickable to module pages.
+- **4 financial cards**: Total invoiced, Payments received (APPROVED only), Outstanding, Expenses.
+- **Invoices vs Payments chart**: Grouped bar chart with day/month auto-grouping.
+- **Invoice payment status**: Donut chart (Fully paid / Partially paid / Unpaid).
+- **Stock by Product chart**: Horizontal bar (physical vs available quantities from FinishedStockBalance).
+- **Top 10 Orders table**: Ranked by `totalAmount` DESC in period, with totals footer.
+- **Top 10 Customers by Payments table**: Ranked by `SUM(APPROVED allocations)` in period, with totals footer.
+- **Redis caching**: 30s TTL, cache-aside, safe date-based keys. Fallback to MySQL when Redis unavailable.
+- **View Reports button**: Links to `/reports`.
+- **Reports Center** at `/reports`: 24 planned reports across 6 categories (Sales & Customers, Operations, Stock, Purchasing, Finance, Administration). Cards marked "Next phase". Search and category filter. Added to sidebar under "Reporting".
+
+Next: Phase 11B — build detailed report pages.

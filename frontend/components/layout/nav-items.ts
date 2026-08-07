@@ -1,5 +1,6 @@
 import {
   BadgeDollarSign,
+  BarChart3,
   Boxes,
   Building2,
   ClipboardList,
@@ -111,6 +112,12 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Payments', href: '/payments', icon: Wallet, available: true },
       { label: 'Receipts', href: '/receipts', icon: HandCoins, available: true },
       { label: 'Expenses', href: '/expenses', icon: BadgeDollarSign, available: true },
+    ],
+  },
+  {
+    label: 'Reporting',
+    items: [
+      { label: 'Reports', href: '/reports', icon: BarChart3, available: true },
     ],
   },
   {
