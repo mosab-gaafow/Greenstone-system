@@ -8,6 +8,9 @@ import type {
   InvoicesReportQuery, PaymentsReportQuery, ReceiptsReportQuery,
   ProductionReportQuery, CuringReportQuery, DeliveriesReportQuery,
   StockReportQuery, StockMovementQuery,
+  PurchasesReportQuery, PurchasePaymentsReportQuery, SuppliersReportQuery,
+  ExpensesReportQuery, SalariesReportQuery, OutstandingInvoicesQuery,
+  BillingSummaryQuery,
 } from './reports.types.js';
 
 export async function ordersReport(req: Request, res: Response, next: NextFunction) {
@@ -60,4 +63,31 @@ export async function lowStockReport(req: Request, res: Response, next: NextFunc
 }
 export async function stockMovementReport(req: Request, res: Response, next: NextFunction) {
   try { sendSuccess(res, await svc.stockMovementReport(getValidatedQuery<StockMovementQuery>(res))); } catch (e) { next(e); }
+}
+
+// ── Phase 11C3: Purchasing ────────────────────────────────────────
+
+export async function purchasesReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.purchasesReport(getValidatedQuery<PurchasesReportQuery>(res))); } catch (e) { next(e); }
+}
+export async function purchasePaymentsReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.purchasePaymentsReport(getValidatedQuery<PurchasePaymentsReportQuery>(res))); } catch (e) { next(e); }
+}
+export async function suppliersReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.suppliersReport(getValidatedQuery<SuppliersReportQuery>(res))); } catch (e) { next(e); }
+}
+
+// ── Phase 11C4: Finance ───────────────────────────────────────────
+
+export async function expensesReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.expensesReport(getValidatedQuery<ExpensesReportQuery>(res))); } catch (e) { next(e); }
+}
+export async function salariesReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.salariesReport(getValidatedQuery<SalariesReportQuery>(res))); } catch (e) { next(e); }
+}
+export async function outstandingInvoicesReport(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.outstandingInvoicesReport(getValidatedQuery<OutstandingInvoicesQuery>(res))); } catch (e) { next(e); }
+}
+export async function billingSummary(req: Request, res: Response, next: NextFunction) {
+  try { sendSuccess(res, await svc.billingSummary(getValidatedQuery<BillingSummaryQuery>(res))); } catch (e) { next(e); }
 }

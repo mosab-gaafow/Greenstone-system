@@ -81,15 +81,15 @@ const REPORTS: ReportDefinition[] = [
   { name: 'Available Stock Report',     description: 'Stock available for new orders — physical minus reserved.',                    category: 'Stock',            icon: CheckCircle, available: true, href: '/reports/available-stock' },
   { name: 'Low Stock Report',           description: 'Products whose physical quantity is at or below their reorder level.',         category: 'Stock',            icon: AlertTriangle, available: true, href: '/reports/low-stock' },
   { name: 'Stock Movement Report',      description: 'All stock-in and stock-out movements with reasons and reference documents.',   category: 'Stock',            icon: ArrowLeftRight, available: true, href: '/reports/stock-movement' },
-  // Purchasing
-  { name: 'Purchases Report',           description: 'Supplier purchase records with raw-material receipts and costs.',              category: 'Purchasing',       icon: ClipboardList, available: false, href: '' },
-  { name: 'Purchase Payments Report',   description: 'Payments made to suppliers with approval status and allocations.',             category: 'Purchasing',       icon: HandCoins, available: false, href: '' },
-  { name: 'Supplier Report',            description: 'Supplier master data with current balances and purchase history.',             category: 'Purchasing',       icon: Warehouse, available: false, href: '' },
-  // Finance
-  { name: 'Expenses Report',            description: 'General business expenses by category with evidence where uploaded.',           category: 'Finance',          icon: BadgeDollarSign, available: false, href: '' },
-  { name: 'Salaries Report',            description: 'Employee salary records with approval, correction, and reversal history.',     category: 'Finance',          icon: HandCoins, available: false, href: '' },
-  { name: 'Outstanding Invoices Report',description: 'Invoices with unpaid or partially-paid balances past their due dates.',        category: 'Finance',          icon: Clock, available: false, href: '' },
-  { name: 'Billing Summary',            description: 'Monthly aggregates — invoicing, payments received, expenses, and outstanding.',category: 'Finance',          icon: BarChart3, available: false, href: '' },
+  // Purchasing (Phase 11C3 — available)
+  { name: 'Purchases Report',           description: 'Supplier purchase records with raw-material receipts and costs.',              category: 'Purchasing',       icon: ClipboardList, available: true, href: '/reports/purchases' },
+  { name: 'Purchase Payments Report',   description: 'Payments made to suppliers with approval status and allocations.',             category: 'Purchasing',       icon: HandCoins, available: true, href: '/reports/purchase-payments' },
+  { name: 'Supplier Report',            description: 'Supplier master data with current balances and purchase history.',             category: 'Purchasing',       icon: Warehouse, available: true, href: '/reports/suppliers' },
+  // Finance (Phase 11C4 — available)
+  { name: 'Expenses Report',            description: 'General business expenses by category with evidence where uploaded.',           category: 'Finance',          icon: BadgeDollarSign, available: true, href: '/reports/expenses' },
+  { name: 'Salaries Report',            description: 'Employee salary records with approval, correction, and reversal history.',     category: 'Finance',          icon: HandCoins, available: true, href: '/reports/salaries' },
+  { name: 'Outstanding Invoices Report',description: 'ISSUED invoices with unpaid balances. VOIDED excluded.',                        category: 'Finance',          icon: Clock, available: true, href: '/reports/outstanding-invoices' },
+  { name: 'Billing Summary',            description: 'Management financial summary — invoicing, payments, expenses, and purchases.',  category: 'Finance',          icon: BarChart3, available: true, href: '/reports/billing-summary' },
   // Administration
   { name: 'Audit Logs Report',          description: 'System audit trail — filtered by module, action, user, and date range.',      category: 'Administration',   icon: ShieldCheck, available: false, href: '' },
   { name: 'User Activity Report',       description: 'System usage summary by user, role, and action type.',                         category: 'Administration',   icon: Activity, available: false, href: '' },

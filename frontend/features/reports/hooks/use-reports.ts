@@ -59,3 +59,30 @@ export function useLowStockReport(params: { search?: string } = {}) {
 export function useStockMovementReport(params: ReportQueryParams) {
   return useQuery({ queryKey: qk('reports:stock-movement', params), queryFn: () => api.fetchStockMovementReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
 }
+
+// ── Phase 11C3: Purchasing ───────────────────────────────────────
+
+export function usePurchasesReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:purchases', params), queryFn: () => api.fetchPurchasesReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function usePurchasePaymentsReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:purchase-payments', params), queryFn: () => api.fetchPurchasePaymentsReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useSuppliersReport(params: { search?: string; balanceFilter?: string } = {}) {
+  return useQuery({ queryKey: ['reports:suppliers', params] as const, queryFn: () => api.fetchSuppliersReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+
+// ── Phase 11C4: Finance ───────────────────────────────────────────
+
+export function useExpensesReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:expenses', params), queryFn: () => api.fetchExpensesReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useSalariesReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:salaries', params), queryFn: () => api.fetchSalariesReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useOutstandingInvoicesReport(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:outstanding-invoices', params), queryFn: () => api.fetchOutstandingInvoicesReport(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}
+export function useBillingSummary(params: ReportQueryParams) {
+  return useQuery({ queryKey: qk('reports:billing-summary', params), queryFn: () => api.fetchBillingSummary(params), placeholderData: (prev) => prev, staleTime: 30_000 });
+}

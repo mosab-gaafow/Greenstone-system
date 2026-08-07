@@ -13,7 +13,7 @@ const PERIODS = [
   { key: 'month', label: 'This month', getRange: () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return { from: d, to: new Date() }; } },
   { key: 'lastMonth', label: 'Last month', getRange: () => { const d = new Date(); d.setMonth(d.getMonth() - 1); d.setDate(1); d.setHours(0, 0, 0, 0); return { from: d, to: new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999) }; } },
   { key: '3m', label: 'Last 3 months', getRange: () => { const d = new Date(); d.setDate(d.getDate() - 89); d.setHours(0, 0, 0, 0); return { from: d, to: new Date() }; } },
-  { key: 'year', label: 'This year', getRange: () => { const d = new Date(2026, 0, 1); return { from: d, to: new Date() }; } },
+  { key: 'year', label: 'This year', getRange: () => { const d = new Date(); d.setMonth(0, 1); d.setHours(0, 0, 0, 0); return { from: d, to: new Date() }; } },
   { key: 'custom', label: 'Custom', getRange: () => ({ from: new Date(), to: new Date() }) },
 ] as const;
 

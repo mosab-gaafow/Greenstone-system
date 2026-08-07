@@ -8,6 +8,8 @@ import type {
   CustomerBalancesQuery,
   ProductionReportQuery, CuringReportQuery, DeliveriesReportQuery,
   StockMovementQuery,
+  PurchasesReportQuery, PurchasePaymentsReportQuery, SuppliersReportQuery,
+  ExpensesReportQuery, SalariesReportQuery, OutstandingInvoicesQuery,
 } from './reports.types.js';
 
 // ── Helpers ─────────────────────────────────────────────────────────
@@ -503,6 +505,133 @@ export async function findStockMovements(
       id: true, movementType: true, quantity: true, balanceAfter: true,
       reason: true, relatedEntityId: true, createdAt: true,
       product: { select: { name: true } },
+    },
+  });
+}
+
+// ── Phase 11C3: Purchases ─────────────────────────────────────────
+
+export async function findPurchasesForReport(
+  query: PurchasesReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.PurchaseWhereInput = { purchaseDate: { gte: query.from, lt: query.toEnd } };
+  if (query.supplierId) where.supplierId = query.supplierId;
+  if (query.search) {
+    where.OR = [{ purchaseNumber: { contains: query.search } }, { supplier: { name: { contains: query.search } } }] as any;
+  }
+  return client.purchase.findMany({
+    where, orderBy: { purchaseDate: 'desc' },
+    select: {
+      id: true, purchaseNumber: true, purchaseDate: true, totalCost: true, reference: true,
+      supplierId: true, supplier: { select: { name: true } },
+      _count: { select: { items: true } },
+    },
+  });
+}
+
+export async function findPurchasePaymentsForReport(
+  query: PurchasePaymentsReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.PurchasePaymentWhereInput = { paymentDate: { gte: query.from, lt: query.toEnd } };
+  if (query.supplierId) where.supplierId = query.supplierId;
+  if (query.status) where.status = query.status as any;
+  if (query.paymentMethod) where.paymentMethod = query.paymentMethod as any;
+  if (query.search) {
+    where.OR = [{ paymentNumber: { contains: query.search } }, { supplier: { name: { contains: query.search } } }, { paymentReference: { contains: query.search } }] as any;
+  }
+  return client.purchasePayment.findMany({
+    where, orderBy: { paymentDate: 'desc' },
+    select: {
+      id: true, paymentNumber: true, amount: true, paymentMethod: true,
+      paymentReference: true, status: true, paymentDate: true, evidenceStoredFileId: true,
+      supplierId: true, supplier: { select: { name: true } },
+      allocations: { select: { purchase: { select: { purchaseNumber: true } } } },
+    },
+  });
+}
+
+export async function findSuppliersForReport(
+  query: SuppliersReportQuery,
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.SupplierWhereInput = { isActive: true };
+  if (query.search) {
+    where.OR = [{ name: { contains: query.search } }, { phone: { contains: query.search } }] as any;
+  }
+  return client.supplier.findMany({
+    where, orderBy: { name: 'asc' },
+    select: {
+      id: true, name: true, phone: true,
+      openingBalance: { select: { amount: true } },
+      purchases: { select: { totalCost: true } },
+      purchasePayments: { where: { status: 'APPROVED' }, select: { amount: true } },
+    },
+  });
+}
+
+// ── Phase 11C4: Expenses ──────────────────────────────────────────
+
+export async function findExpensesForReport(
+  query: ExpensesReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.ExpenseWhereInput = { expenseDate: { gte: query.from, lt: query.toEnd } };
+  if (query.category) where.category = query.category as any;
+  if (query.search) {
+    where.OR = [{ expenseNumber: { contains: query.search } }, { description: { contains: query.search } }] as any;
+  }
+  return client.expense.findMany({
+    where, orderBy: { expenseDate: 'desc' },
+    select: { id: true, expenseNumber: true, category: true, description: true, amount: true, paymentMethod: true, paymentReference: true, expenseDate: true, evidenceStoredFileId: true },
+  });
+}
+
+// ── Phase 11C4: Salaries ──────────────────────────────────────────
+
+export async function findSalariesForReport(
+  query: SalariesReportQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  // Include salaries whose period overlaps the selected date range.
+  // periodStart <= rangeEnd AND periodEnd >= rangeFrom
+  const where: Prisma.SalaryWhereInput = {
+    periodStart: { lte: query.toEnd },
+    periodEnd: { gte: query.from },
+  };
+  if (query.salaryType) where.salaryType = query.salaryType as any;
+  if (query.status) where.status = query.status as any;
+  if (query.search) {
+    where.OR = [{ salaryNumber: { contains: query.search } }, { employee: { name: { contains: query.search } } }] as any;
+  }
+  return client.salary.findMany({
+    where, orderBy: { periodStart: 'desc' },
+    select: { id: true, salaryNumber: true, salaryType: true, periodStart: true, periodEnd: true, amount: true, paymentMethod: true, status: true, paymentDate: true,
+      employeeId: true, employee: { select: { name: true } },
+    },
+  });
+}
+
+// ── Phase 11C4: Outstanding Invoices ──────────────────────────────
+
+export async function findOutstandingInvoices(
+  query: OutstandingInvoicesQuery & { toEnd: Date },
+  client: DbClient = getPrisma(),
+) {
+  const where: Prisma.InvoiceWhereInput = {
+    status: 'ISSUED',
+    createdAt: { gte: query.from, lt: query.toEnd },
+  };
+  if (query.search) {
+    where.OR = [{ invoiceNumber: { contains: query.search } }, { order: { orderNumber: { contains: query.search } } }, { customer: { name: { contains: query.search } } }] as any;
+  }
+  return client.invoice.findMany({
+    where, orderBy: { createdAt: 'desc' },
+    select: { id: true, invoiceNumber: true, status: true, totalAmount: true, createdAt: true,
+      customerId: true, customer: { select: { name: true } },
+      orderId: true, order: { select: { orderNumber: true } },
+      allocations: { select: { amount: true, payment: { select: { status: true } } } },
     },
   });
 }

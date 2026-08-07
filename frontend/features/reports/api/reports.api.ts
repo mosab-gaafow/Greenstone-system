@@ -89,6 +89,8 @@ export interface ReportQueryParams {
   limit?: number;
   status?: string;
   movementType?: string;
+  category?: string;
+  salaryType?: string;
 }
 
 function toParams(p: ReportQueryParams): Record<string, string | number> {
@@ -104,6 +106,8 @@ function toParams(p: ReportQueryParams): Record<string, string | number> {
   if (p.limit) params.limit = p.limit;
   if (p.status) params.status = p.status;
   if (p.movementType) params.movementType = p.movementType;
+  if (p.salaryType) params.salaryType = p.salaryType;
+  if (p.category) params.category = p.category;
   return params;
 }
 
@@ -242,5 +246,110 @@ export async function fetchLowStockReport(params: { search?: string } = {}) {
 }
 export async function fetchStockMovementReport(params: ReportQueryParams) {
   const { data } = await api.get<StockMovementResult>('/reports/stock-movement', { query: toParams(params) });
+  return data;
+}
+
+// ── Phase 11C3: Purchasing ────────────────────────────────────────
+
+export interface PurchasesReportRow {
+  purchaseId: string; purchaseNumber: string; date: string;
+  supplierId: string; supplierName: string; reference: string | null;
+  itemCount: number; totalCost: string;
+}
+export interface PurchasesReportResult extends ReportSummary {
+  rows: PurchasesReportRow[];
+  summary: { purchaseCount: number; totalCost: string };
+}
+
+export interface PurchasePaymentsReportRow {
+  paymentId: string; paymentNumber: string; date: string;
+  supplierId: string; supplierName: string; amount: string;
+  method: string; reference: string; status: string;
+  purchaseNumbers: string[]; hasEvidence: boolean;
+}
+export interface PurchasePaymentsReportResult extends ReportSummary {
+  rows: PurchasePaymentsReportRow[];
+  summary: { paymentCount: number; recordedAmount: string; approvedAmount: string; pendingAmount: string; reversedAmount: string };
+}
+
+export interface SuppliersReportRow {
+  supplierId: string; supplierName: string; phone: string | null;
+  openingBalance: string; totalPurchases: string; approvedPayments: string; outstanding: string;
+}
+export interface SuppliersReportResult {
+  rows: SuppliersReportRow[];
+  summary: { supplierCount: number; totalOutstanding: string };
+}
+
+export async function fetchPurchasesReport(params: ReportQueryParams) {
+  const { data } = await api.get<PurchasesReportResult>('/reports/purchases', { query: toParams(params) });
+  return data;
+}
+export async function fetchPurchasePaymentsReport(params: ReportQueryParams) {
+  const { data } = await api.get<PurchasePaymentsReportResult>('/reports/purchase-payments', { query: toParams(params) });
+  return data;
+}
+export async function fetchSuppliersReport(params: { search?: string; balanceFilter?: string } = {}) {
+  const query: Record<string, string> = {};
+  if (params.search) query.search = params.search;
+  if (params.balanceFilter && params.balanceFilter !== 'all') query.balanceFilter = params.balanceFilter;
+  const { data } = await api.get<SuppliersReportResult>('/reports/suppliers', { query });
+  return data;
+}
+
+// ── Phase 11C4: Finance ───────────────────────────────────────────
+
+export interface ExpensesReportRow {
+  expenseId: string; expenseNumber: string; date: string;
+  category: string; description: string; amount: string;
+  paymentMethod: string; paymentReference: string | null; hasEvidence: boolean;
+}
+export interface ExpensesReportResult extends ReportSummary {
+  rows: ExpensesReportRow[];
+  summary: { expenseCount: number; totalAmount: string };
+}
+
+export interface SalariesReportRow {
+  salaryId: string; salaryNumber: string; date: string;
+  employeeId: string; employeeName: string; salaryType: string;
+  periodStart: string; periodEnd: string; amount: string;
+  paymentMethod: string; status: string;
+}
+export interface SalariesReportResult extends ReportSummary {
+  rows: SalariesReportRow[];
+  summary: { salaryCount: number; recordedAmount: string; approvedAmount: string; pendingAmount: string; reversedAmount: string };
+}
+
+export interface OutstandingInvoicesRow {
+  invoiceId: string; invoiceNumber: string; date: string;
+  customerId: string; customerName: string; orderId: string; orderNumber: string;
+  total: string; amountPaid: string; outstanding: string; paymentStatus: string;
+}
+export interface OutstandingInvoicesResult extends ReportSummary {
+  rows: OutstandingInvoicesRow[];
+  summary: { invoiceCount: number; totalInvoiced: string; totalPaid: string; totalOutstanding: string };
+}
+
+export interface BillingSummaryResult extends ReportSummary {
+  invoicedAmount: string; paymentsReceived: string; currentCustomerOutstanding: string;
+  expensesAmount: string; approvedSalariesAmount: string;
+  purchasesAmount: string; approvedPurchasePayments: string; currentSupplierOutstanding: string;
+  chart: { label: string; invoiced: string; received: string; expenses: string; salaries: string }[];
+}
+
+export async function fetchExpensesReport(params: ReportQueryParams) {
+  const { data } = await api.get<ExpensesReportResult>('/reports/expenses', { query: toParams(params) });
+  return data;
+}
+export async function fetchSalariesReport(params: ReportQueryParams) {
+  const { data } = await api.get<SalariesReportResult>('/reports/salaries', { query: toParams(params) });
+  return data;
+}
+export async function fetchOutstandingInvoicesReport(params: ReportQueryParams) {
+  const { data } = await api.get<OutstandingInvoicesResult>('/reports/outstanding-invoices', { query: toParams(params) });
+  return data;
+}
+export async function fetchBillingSummary(params: ReportQueryParams) {
+  const { data } = await api.get<BillingSummaryResult>('/reports/billing-summary', { query: toParams(params) });
   return data;
 }

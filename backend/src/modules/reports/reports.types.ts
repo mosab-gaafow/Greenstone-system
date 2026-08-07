@@ -347,3 +347,167 @@ export interface StockMovementResult {
   summary: { movementCount: number; totalIn: number; totalOut: number };
   periodLabel: string;
 }
+
+// ── Phase 11C3: Purchasing ────────────────────────────────────────
+
+export interface PurchasesReportQuery extends ReportQuery {
+  search?: string;
+  supplierId?: string;
+}
+
+export interface PurchasesReportRow {
+  purchaseId: string;
+  purchaseNumber: string;
+  date: string;
+  supplierId: string;
+  supplierName: string;
+  reference: string | null;
+  itemCount: number;
+  totalCost: string;
+}
+
+export interface PurchasesReportResult {
+  rows: PurchasesReportRow[];
+  summary: { purchaseCount: number; totalCost: string };
+  periodLabel: string;
+}
+
+export interface PurchasePaymentsReportQuery extends ReportQuery {
+  search?: string;
+  supplierId?: string;
+  status?: string;
+  paymentMethod?: string;
+}
+
+export interface PurchasePaymentsReportRow {
+  paymentId: string;
+  paymentNumber: string;
+  date: string;
+  supplierId: string;
+  supplierName: string;
+  amount: string;
+  method: string;
+  reference: string;
+  status: string;
+  purchaseNumbers: string[];
+  hasEvidence: boolean;
+}
+
+export interface PurchasePaymentsReportResult {
+  rows: PurchasePaymentsReportRow[];
+  summary: { paymentCount: number; recordedAmount: string; approvedAmount: string; pendingAmount: string; reversedAmount: string };
+  periodLabel: string;
+}
+
+export interface SuppliersReportQuery {
+  search?: string;
+  balanceFilter?: 'all' | 'has-outstanding' | 'zero-balance';
+}
+
+export interface SuppliersReportRow {
+  supplierId: string;
+  supplierName: string;
+  phone: string | null;
+  openingBalance: string;
+  totalPurchases: string;
+  approvedPayments: string;
+  outstanding: string;
+}
+
+export interface SuppliersReportResult {
+  rows: SuppliersReportRow[];
+  summary: { supplierCount: number; totalOutstanding: string };
+}
+
+// ── Phase 11C4: Finance ───────────────────────────────────────────
+
+export interface ExpensesReportQuery extends ReportQuery {
+  search?: string;
+  category?: string;
+}
+
+export interface ExpensesReportRow {
+  expenseId: string;
+  expenseNumber: string;
+  date: string;
+  category: string;
+  description: string;
+  amount: string;
+  paymentMethod: string;
+  paymentReference: string | null;
+  hasEvidence: boolean;
+}
+
+export interface ExpensesReportResult {
+  rows: ExpensesReportRow[];
+  summary: { expenseCount: number; totalAmount: string };
+  periodLabel: string;
+}
+
+export interface SalariesReportQuery extends ReportQuery {
+  search?: string;
+  salaryType?: string;
+  status?: string;
+}
+
+export interface SalariesReportRow {
+  salaryId: string;
+  salaryNumber: string;
+  date: string;
+  employeeId: string;
+  employeeName: string;
+  salaryType: string;
+  periodStart: string;
+  periodEnd: string;
+  amount: string;
+  paymentMethod: string;
+  status: string;
+}
+
+export interface SalariesReportResult {
+  rows: SalariesReportRow[];
+  summary: { salaryCount: number; recordedAmount: string; approvedAmount: string; pendingAmount: string; reversedAmount: string };
+  periodLabel: string;
+}
+
+export interface OutstandingInvoicesQuery extends ReportQuery {
+  search?: string;
+  paymentStatus?: string;
+}
+
+export interface OutstandingInvoicesRow {
+  invoiceId: string;
+  invoiceNumber: string;
+  date: string;
+  customerId: string;
+  customerName: string;
+  orderId: string;
+  orderNumber: string;
+  total: string;
+  amountPaid: string;
+  outstanding: string;
+  paymentStatus: string;
+}
+
+export interface OutstandingInvoicesResult {
+  rows: OutstandingInvoicesRow[];
+  summary: { invoiceCount: number; totalInvoiced: string; totalPaid: string; totalOutstanding: string };
+  periodLabel: string;
+}
+
+export interface BillingSummaryQuery extends ReportQuery {
+  groupBy?: 'day' | 'month';
+}
+
+export interface BillingSummaryResult {
+  invoicedAmount: string;
+  paymentsReceived: string;
+  currentCustomerOutstanding: string;
+  expensesAmount: string;
+  approvedSalariesAmount: string;
+  purchasesAmount: string;
+  approvedPurchasePayments: string;
+  currentSupplierOutstanding: string;
+  chart: { label: string; invoiced: string; received: string; expenses: string; salaries: string }[];
+  periodLabel: string;
+}

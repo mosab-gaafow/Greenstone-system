@@ -3,7 +3,7 @@ import { z } from 'zod';
 const dateRangeSchema = z.object({
   from: z.coerce.date(),
   to: z.coerce.date(),
-});
+}).refine((d) => d.from <= d.to, { message: 'From date must not be after to date.', path: ['from'] });
 
 export const ordersReportSchema = dateRangeSchema.extend({
   search: z.string().optional(),
@@ -78,4 +78,45 @@ export const lowStockSchema = stockSnapshotSchema;
 export const stockMovementReportSchema = dateRangeSchema.extend({
   search: z.string().optional(),
   movementType: z.string().optional(),
+});
+
+// ── Phase 11C3: Purchasing ────────────────────────────────────────
+
+export const purchasesReportSchema = dateRangeSchema.extend({
+  search: z.string().optional(),
+  supplierId: z.string().optional(),
+});
+
+export const purchasePaymentsReportSchema = dateRangeSchema.extend({
+  search: z.string().optional(),
+  supplierId: z.string().optional(),
+  status: z.string().optional(),
+  paymentMethod: z.string().optional(),
+});
+
+export const suppliersReportSchema = z.object({
+  search: z.string().optional(),
+  balanceFilter: z.enum(['all', 'has-outstanding', 'zero-balance']).optional(),
+});
+
+// ── Phase 11C4: Finance ───────────────────────────────────────────
+
+export const expensesReportSchema = dateRangeSchema.extend({
+  search: z.string().optional(),
+  category: z.string().optional(),
+});
+
+export const salariesReportSchema = dateRangeSchema.extend({
+  search: z.string().optional(),
+  salaryType: z.string().optional(),
+  status: z.string().optional(),
+});
+
+export const outstandingInvoicesSchema = dateRangeSchema.extend({
+  search: z.string().optional(),
+  paymentStatus: z.string().optional(),
+});
+
+export const billingSummarySchema = dateRangeSchema.extend({
+  groupBy: z.enum(['day', 'month']).optional(),
 });

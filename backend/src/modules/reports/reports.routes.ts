@@ -10,6 +10,8 @@ import {
   productionReportSchema, curingReportSchema, deliveriesReportSchema,
   finishedStockSchema, reservedStockSchema, availableStockSchema,
   lowStockSchema, stockMovementReportSchema,
+  purchasesReportSchema, purchasePaymentsReportSchema, suppliersReportSchema,
+  expensesReportSchema, salariesReportSchema, outstandingInvoicesSchema, billingSummarySchema,
 } from './reports.validators.js';
 
 export function reportsRoutes(): Router {
@@ -37,6 +39,17 @@ export function reportsRoutes(): Router {
   r.get('/available-stock', validate({ query: availableStockSchema }), ctrl.availableStockReport);
   r.get('/low-stock', validate({ query: lowStockSchema }), ctrl.lowStockReport);
   r.get('/stock-movement', validate({ query: stockMovementReportSchema }), ctrl.stockMovementReport);
+
+  // Phase 11C3: Purchasing
+  r.get('/purchases', validate({ query: purchasesReportSchema }), ctrl.purchasesReport);
+  r.get('/purchase-payments', validate({ query: purchasePaymentsReportSchema }), ctrl.purchasePaymentsReport);
+  r.get('/suppliers', validate({ query: suppliersReportSchema }), ctrl.suppliersReport);
+
+  // Phase 11C4: Finance
+  r.get('/expenses', validate({ query: expensesReportSchema }), ctrl.expensesReport);
+  r.get('/salaries', validate({ query: salariesReportSchema }), ctrl.salariesReport);
+  r.get('/outstanding-invoices', validate({ query: outstandingInvoicesSchema }), ctrl.outstandingInvoicesReport);
+  r.get('/billing-summary', validate({ query: billingSummarySchema }), ctrl.billingSummary);
 
   return r;
 }

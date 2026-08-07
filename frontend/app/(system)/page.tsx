@@ -18,7 +18,7 @@ const PERIODS = [
   { key: 'month', label: 'This month', from: () => { const d = new Date(); d.setDate(1); d.setHours(0, 0, 0, 0); return d; } },
   { key: 'lastMonth', label: 'Last month', from: () => { const d = new Date(); d.setMonth(d.getMonth() - 1); d.setDate(1); d.setHours(0, 0, 0, 0); return d; }, to: () => { const d = new Date(); d.setDate(0); d.setHours(23, 59, 59, 999); return d; } },
   { key: '3m', label: 'Last 3 months', from: () => { const d = new Date(); d.setDate(d.getDate() - 89); d.setHours(0, 0, 0, 0); return d; } },
-  { key: 'year', label: 'This year', from: () => { const d = new Date(2026, 0, 1); return d; } },
+  { key: 'year', label: 'This year', from: () => { const d = new Date(); d.setMonth(0, 1); d.setHours(0, 0, 0, 0); return d; } },
   { key: 'custom', label: 'Custom', from: () => new Date() },
 ] as const;
 type PeriodKey = typeof PERIODS[number]['key'];

@@ -15,6 +15,13 @@ import type {
   DeliveriesReportQuery, DeliveriesReportResult,
   StockReportQuery, FinishedStockResult, LowStockResult, LowStockRow,
   StockMovementQuery, StockMovementResult,
+  PurchasesReportQuery, PurchasesReportResult,
+  PurchasePaymentsReportQuery, PurchasePaymentsReportResult,
+  SuppliersReportQuery, SuppliersReportResult,
+  ExpensesReportQuery, ExpensesReportResult,
+  SalariesReportQuery, SalariesReportResult,
+  OutstandingInvoicesQuery, OutstandingInvoicesResult,
+  BillingSummaryQuery, BillingSummaryResult,
 } from './reports.types.js';
 
 const CACHE_MODULE = 'reports';
@@ -505,5 +512,186 @@ export async function stockMovementReport(query: StockMovementQuery): Promise<St
       return { movementId: r.id, date: r.createdAt.toISOString(), productName: r.product.name, movementType: r.movementType, quantity: qty, quantityIn: qtyIn, quantityOut: qtyOut, balanceAfter: r.balanceAfter, reason: r.reason, referenceLabel: ref?.label ?? null, referenceHref: ref?.href ?? null };
     });
     return { rows: mapped, summary: { movementCount: rows.length, totalIn, totalOut }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+// ── Phase 11C3: Purchases ─────────────────────────────────────────
+
+export async function purchasesReport(query: PurchasesReportQuery): Promise<PurchasesReportResult> {
+  const key = `purch_${safeKey(query.from)}_${safeKey(query.to)}_${query.search ?? ''}_${query.supplierId ?? ''}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'purchases', identifier: key }), TTL, async () => {
+    const rows = await repo.findPurchasesForReport({ ...query, toEnd: addDay(query.to) });
+    let totalCost = new Prisma.Decimal(0);
+    const mapped = rows.map(r => { totalCost = totalCost.add(r.totalCost); return {
+      purchaseId: r.id, purchaseNumber: r.purchaseNumber,
+      date: r.purchaseDate.toISOString(), supplierId: r.supplierId, supplierName: r.supplier.name,
+      reference: r.reference, itemCount: r._count.items, totalCost: r.totalCost.toFixed(2),
+    };});
+    return { rows: mapped, summary: { purchaseCount: rows.length, totalCost: totalCost.toFixed(2) }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+export async function purchasePaymentsReport(query: PurchasePaymentsReportQuery): Promise<PurchasePaymentsReportResult> {
+  const key = `ppay_${safeKey(query.from)}_${safeKey(query.to)}_${query.search ?? ''}_${query.supplierId ?? ''}_${query.status ?? ''}_${query.paymentMethod ?? ''}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'purchase-payments', identifier: key }), TTL, async () => {
+    const rows = await repo.findPurchasePaymentsForReport({ ...query, toEnd: addDay(query.to) });
+    let recorded = new Prisma.Decimal(0), approved = new Prisma.Decimal(0), pending = new Prisma.Decimal(0), reversed = new Prisma.Decimal(0);
+    const mapped = rows.map(r => {
+      recorded = recorded.add(r.amount);
+      if (r.status === 'APPROVED') approved = approved.add(r.amount);
+      else if (r.status === 'PENDING') pending = pending.add(r.amount);
+      else if (r.status === 'REVERSED') reversed = reversed.add(r.amount);
+      return {
+        paymentId: r.id, paymentNumber: r.paymentNumber,
+        date: r.paymentDate.toISOString(), supplierId: r.supplierId, supplierName: r.supplier.name,
+        amount: r.amount.toFixed(2), method: r.paymentMethod as string, reference: r.paymentReference,
+        status: r.status as string,
+        purchaseNumbers: r.allocations.map(a => a.purchase.purchaseNumber),
+        hasEvidence: r.evidenceStoredFileId !== null,
+      };
+    });
+    return { rows: mapped, summary: { paymentCount: rows.length, recordedAmount: recorded.toFixed(2), approvedAmount: approved.toFixed(2), pendingAmount: pending.toFixed(2), reversedAmount: reversed.toFixed(2) }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+export async function suppliersReport(query: SuppliersReportQuery = {}): Promise<SuppliersReportResult> {
+  const key = `suppr_${query.search ?? ''}_${query.balanceFilter ?? 'all'}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'suppliers', identifier: key }), TTL, async () => {
+    const suppliers = await repo.findSuppliersForReport(query);
+    let totalOutstanding = new Prisma.Decimal(0);
+    let rows = suppliers.map(s => {
+      const opening = s.openingBalance?.amount ?? new Prisma.Decimal(0);
+      const purchases = s.purchases.reduce((sum, p) => sum.add(p.totalCost), new Prisma.Decimal(0));
+      const approved = s.purchasePayments.reduce((sum, pp) => sum.add(pp.amount), new Prisma.Decimal(0));
+      const out = opening.add(purchases).sub(approved);
+      totalOutstanding = totalOutstanding.add(out);
+      return { supplierId: s.id, supplierName: s.name, phone: s.phone, openingBalance: opening.toFixed(2), totalPurchases: purchases.toFixed(2), approvedPayments: approved.toFixed(2), outstanding: out.toFixed(2) };
+    });
+    if (query.balanceFilter === 'has-outstanding') rows = rows.filter(r => Number(r.outstanding) > 0);
+    else if (query.balanceFilter === 'zero-balance') rows = rows.filter(r => Number(r.outstanding) === 0);
+    return { rows, summary: { supplierCount: rows.length, totalOutstanding: totalOutstanding.toFixed(2) } };
+  });
+}
+
+// ── Phase 11C4: Expenses ──────────────────────────────────────────
+
+export async function expensesReport(query: ExpensesReportQuery): Promise<ExpensesReportResult> {
+  const key = `exp_${safeKey(query.from)}_${safeKey(query.to)}_${query.search ?? ''}_${query.category ?? ''}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'expenses', identifier: key }), TTL, async () => {
+    const rows = await repo.findExpensesForReport({ ...query, toEnd: addDay(query.to) });
+    let totalAmount = new Prisma.Decimal(0);
+    const mapped = rows.map(r => { totalAmount = totalAmount.add(r.amount); return {
+      expenseId: r.id, expenseNumber: r.expenseNumber,
+      date: r.expenseDate.toISOString(), category: r.category, description: r.description,
+      amount: r.amount.toFixed(2), paymentMethod: r.paymentMethod as string,
+      paymentReference: r.paymentReference, hasEvidence: r.evidenceStoredFileId !== null,
+    };});
+    return { rows: mapped, summary: { expenseCount: rows.length, totalAmount: totalAmount.toFixed(2) }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+// ── Phase 11C4: Salaries ──────────────────────────────────────────
+
+export async function salariesReport(query: SalariesReportQuery): Promise<SalariesReportResult> {
+  const key = `sal_${safeKey(query.from)}_${safeKey(query.to)}_${query.search ?? ''}_${query.salaryType ?? ''}_${query.status ?? ''}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'salaries', identifier: key }), TTL, async () => {
+    const rows = await repo.findSalariesForReport({ ...query, toEnd: addDay(query.to) });
+    let recorded = new Prisma.Decimal(0), approved = new Prisma.Decimal(0), pending = new Prisma.Decimal(0), reversed = new Prisma.Decimal(0);
+    const mapped = rows.map(r => {
+      recorded = recorded.add(r.amount);
+      if (r.status === 'APPROVED') approved = approved.add(r.amount);
+      else if (r.status === 'PENDING') pending = pending.add(r.amount);
+      else if (r.status === 'REVERSED') reversed = reversed.add(r.amount);
+      return {
+        salaryId: r.id, salaryNumber: r.salaryNumber,
+        date: r.paymentDate.toISOString(), employeeId: r.employeeId, employeeName: r.employee.name,
+        salaryType: r.salaryType, periodStart: r.periodStart.toISOString(), periodEnd: r.periodEnd.toISOString(),
+        amount: r.amount.toFixed(2), paymentMethod: r.paymentMethod as string, status: r.status as string,
+      };
+    });
+    return { rows: mapped, summary: { salaryCount: rows.length, recordedAmount: recorded.toFixed(2), approvedAmount: approved.toFixed(2), pendingAmount: pending.toFixed(2), reversedAmount: reversed.toFixed(2) }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+// ── Phase 11C4: Outstanding Invoices ──────────────────────────────
+
+export async function outstandingInvoicesReport(query: OutstandingInvoicesQuery): Promise<OutstandingInvoicesResult> {
+  const key = `outinv_${safeKey(query.from)}_${safeKey(query.to)}_${query.search ?? ''}_${query.paymentStatus ?? ''}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'outstanding-invoices', identifier: key }), TTL, async () => {
+    const rows = await repo.findOutstandingInvoices({ ...query, toEnd: addDay(query.to) });
+    let totalInvoiced = new Prisma.Decimal(0), totalPaid = new Prisma.Decimal(0), totalOutstanding = new Prisma.Decimal(0);
+    let mapped = rows.map(r => {
+      const fin = computeInvoiceFinance(r);
+      // Only include if there's actually an outstanding balance
+      if (fin.outstanding.isZero() || fin.outstanding.isNegative()) return null;
+      totalInvoiced = totalInvoiced.add(r.totalAmount);
+      totalPaid = totalPaid.add(fin.approved);
+      totalOutstanding = totalOutstanding.add(fin.outstanding);
+      return { invoiceId: r.id, invoiceNumber: r.invoiceNumber, date: r.createdAt.toISOString(), customerId: r.customerId, customerName: r.customer.name, orderId: r.orderId, orderNumber: r.order.orderNumber, total: r.totalAmount.toFixed(2), amountPaid: fin.approved.toFixed(2), outstanding: fin.outstanding.toFixed(2), paymentStatus: fin.paymentStatus };
+    }).filter((r): r is NonNullable<typeof r> => r !== null);
+
+    if (query.paymentStatus) {
+      mapped = mapped.filter(r => r.paymentStatus.toLowerCase() === query.paymentStatus!.toLowerCase().replace('_', ' '));
+    }
+
+    return { rows: mapped, summary: { invoiceCount: mapped.length, totalInvoiced: totalInvoiced.toFixed(2), totalPaid: totalPaid.toFixed(2), totalOutstanding: totalOutstanding.toFixed(2) }, periodLabel: label(query.from, query.to) };
+  });
+}
+
+// ── Phase 11C4: Billing Summary ───────────────────────────────────
+
+export async function billingSummary(query: BillingSummaryQuery): Promise<BillingSummaryResult> {
+  const key = `billing_${safeKey(query.from)}_${safeKey(query.to)}_${query.groupBy ?? 'month'}`;
+  return cache.getOrSet(buildCacheKey({ module: CACHE_MODULE, resource: 'billing-summary', identifier: key }), TTL, async () => {
+    const p = getPrisma();
+    const toEnd = addDay(query.to);
+    const useMonths = (query.groupBy ?? 'month') === 'month' || (Math.ceil((query.to.getTime() - query.from.getTime()) / 86400000) > 60);
+    const ck = (d: Date) => useMonths ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : d.toISOString().split('T')[0]!;
+
+    const [invRes, payRes, expRes, salRes, purchRes, suppPayRes, allInv, allPay, openRes, suppOpenRes, suppPurchRes, suppPayResAll] = await Promise.all([
+      p.invoice.aggregate({ where: { status: 'ISSUED', createdAt: { gte: query.from, lt: toEnd } }, _sum: { totalAmount: true } }),
+      p.customerPaymentAllocation.aggregate({ where: { payment: { status: 'APPROVED', approvedAt: { gte: query.from, lt: toEnd } } }, _sum: { amount: true } }),
+      p.expense.aggregate({ where: { expenseDate: { gte: query.from, lt: toEnd } }, _sum: { amount: true } }),
+      p.salary.aggregate({ where: { status: 'APPROVED', periodStart: { lte: toEnd }, periodEnd: { gte: query.from } }, _sum: { amount: true } }),
+      p.purchase.aggregate({ where: { purchaseDate: { gte: query.from, lt: toEnd } }, _sum: { totalCost: true } }),
+      p.purchasePayment.aggregate({ where: { status: 'APPROVED', paymentDate: { gte: query.from, lt: toEnd } }, _sum: { amount: true } }),
+      p.invoice.aggregate({ where: { status: 'ISSUED' }, _sum: { totalAmount: true } }),
+      p.customerPaymentAllocation.aggregate({ where: { payment: { status: 'APPROVED' } }, _sum: { amount: true } }),
+      p.customerOpeningBalance.aggregate({ _sum: { amount: true } }),
+      p.supplierOpeningBalance.aggregate({ _sum: { amount: true } }),
+      p.purchase.aggregate({ _sum: { totalCost: true } }),
+      p.purchasePayment.aggregate({ where: { status: 'APPROVED' }, _sum: { amount: true } }),
+    ]);
+
+    const opening = openRes._sum.amount ?? new Prisma.Decimal(0);
+    const customerOutstanding = opening.add(allInv._sum.totalAmount ?? new Prisma.Decimal(0)).sub(allPay._sum.amount ?? new Prisma.Decimal(0));
+    const suppOpening = suppOpenRes._sum.amount ?? new Prisma.Decimal(0);
+    const supplierOutstanding = suppOpening.add(suppPurchRes._sum.totalCost ?? new Prisma.Decimal(0)).sub(suppPayResAll._sum.amount ?? new Prisma.Decimal(0));
+
+    // Chart data
+    const invChart = await p.invoice.findMany({ where: { status: 'ISSUED', createdAt: { gte: query.from, lt: toEnd } }, select: { totalAmount: true, createdAt: true } });
+    const payChart = await p.customerPaymentAllocation.findMany({ where: { payment: { status: 'APPROVED', approvedAt: { gte: query.from, lt: toEnd } } }, select: { amount: true, payment: { select: { approvedAt: true } } } });
+    const expChart = await p.expense.findMany({ where: { expenseDate: { gte: query.from, lt: toEnd } }, select: { amount: true, expenseDate: true } });
+    const salChart = await p.salary.findMany({ where: { status: 'APPROVED', periodStart: { lte: toEnd }, periodEnd: { gte: query.from } }, select: { amount: true, paymentDate: true } });
+
+    const cm = new Map<string, { invoiced: Prisma.Decimal; received: Prisma.Decimal; expenses: Prisma.Decimal; salaries: Prisma.Decimal }>();
+    for (const i of invChart) { const k = ck(i.createdAt); const e = cm.get(k) ?? { invoiced: new Prisma.Decimal(0), received: new Prisma.Decimal(0), expenses: new Prisma.Decimal(0), salaries: new Prisma.Decimal(0) }; e.invoiced = e.invoiced.add(i.totalAmount); cm.set(k, e); }
+    for (const a of payChart) { const d = a.payment.approvedAt ?? new Date(0); const k = ck(d); const e = cm.get(k) ?? { invoiced: new Prisma.Decimal(0), received: new Prisma.Decimal(0), expenses: new Prisma.Decimal(0), salaries: new Prisma.Decimal(0) }; e.received = e.received.add(a.amount); cm.set(k, e); }
+    for (const x of expChart) { const k = ck(x.expenseDate); const e = cm.get(k) ?? { invoiced: new Prisma.Decimal(0), received: new Prisma.Decimal(0), expenses: new Prisma.Decimal(0), salaries: new Prisma.Decimal(0) }; e.expenses = e.expenses.add(x.amount); cm.set(k, e); }
+    for (const s of salChart) { const k = ck(s.paymentDate); const e = cm.get(k) ?? { invoiced: new Prisma.Decimal(0), received: new Prisma.Decimal(0), expenses: new Prisma.Decimal(0), salaries: new Prisma.Decimal(0) }; e.salaries = e.salaries.add(s.amount); cm.set(k, e); }
+    const chart = [...cm.keys()].sort().map((k) => ({ label: k, invoiced: cm.get(k)!.invoiced.toFixed(2), received: cm.get(k)!.received.toFixed(2), expenses: cm.get(k)!.expenses.toFixed(2), salaries: cm.get(k)!.salaries.toFixed(2) }));
+
+    return {
+      invoicedAmount: (invRes._sum.totalAmount ?? new Prisma.Decimal(0)).toFixed(2),
+      paymentsReceived: (payRes._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
+      currentCustomerOutstanding: customerOutstanding.toFixed(2),
+      expensesAmount: (expRes._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
+      approvedSalariesAmount: (salRes._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
+      purchasesAmount: (purchRes._sum.totalCost ?? new Prisma.Decimal(0)).toFixed(2),
+      approvedPurchasePayments: (suppPayRes._sum.amount ?? new Prisma.Decimal(0)).toFixed(2),
+      currentSupplierOutstanding: supplierOutstanding.toFixed(2),
+      chart,
+      periodLabel: label(query.from, query.to),
+    };
   });
 }
