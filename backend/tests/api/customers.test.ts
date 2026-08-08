@@ -80,6 +80,33 @@ async function seedOpeningBalance(customerId: string, amount: string) {
   });
 }
 
+/** Inserted directly, like seedOrder — the deactivation check only needs the raw rows. */
+async function seedIssuedInvoice(customerId: string, addressId: string, amount: string) {
+  const order = await getTestPrisma().order.create({
+    data: {
+      orderNumber: `ORD-TEST-${Math.random().toString(36).slice(2, 8)}`,
+      customerId,
+      customerAddressId: addressId,
+      addressLabel: 'Site',
+      addressLine: '123 Industrial Road',
+      paymentArrangement: 'CREDIT',
+      status: 'COMPLETED',
+      totalAmount: amount,
+    },
+  });
+
+  await getTestPrisma().invoice.create({
+    data: {
+      invoiceNumber: `INV-TEST-${Math.random().toString(36).slice(2, 8)}`,
+      orderId: order.id,
+      customerId,
+      status: 'ISSUED',
+      totalAmount: amount,
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+    },
+  });
+}
+
 describe('customers module', () => {
   beforeEach(async () => {
     await truncateAll();
@@ -648,6 +675,26 @@ describe('customers module', () => {
       expect(response.status).toBe(422);
       expect(response.body.error.code).toBe('CUSTOMER_DEACTIVATION_BLOCKED');
       expect(response.body.error.message).toMatch(/50000\.00/);
+    });
+
+    it('blocks normal deactivation with an unpaid ISSUED invoice even when the opening balance is zero', async () => {
+      // Regression test (Phase 14.2): the safeguard used to check only the
+      // static opening-balance row, so a customer with a zero opening
+      // balance but a real unpaid invoice could slip through deactivation.
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      await seedIssuedInvoice(customer.id, address.id, '15000.00');
+
+      const response = await request(app)
+        .post(`${CUSTOMERS}/${customer.id}/deactivate`)
+        .set(headers)
+        .send({});
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('CUSTOMER_DEACTIVATION_BLOCKED');
+      expect(response.body.error.message).toMatch(/15000\.00/);
     });
 
     it('allows normal deactivation once every order is completed or cancelled and the balance is zero', async () => {

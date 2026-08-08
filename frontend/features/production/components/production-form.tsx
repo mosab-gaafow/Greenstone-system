@@ -17,6 +17,7 @@ import { ApiError } from '@/lib/api-client';
 import * as productsApi from '@/features/products/api/products.api';
 import * as rawMaterialsApi from '@/features/raw-materials/api/raw-materials.api';
 import * as ordersApi from '@/features/orders/api/orders.api';
+import { isOrderCancellable } from '@/features/orders/types/order.types';
 import {
   productionFormSchema,
   type ProductionFormInput,
@@ -79,10 +80,12 @@ export function ProductionForm({ onSubmit, pending }: ProductionFormProps) {
   );
   const orderOptions = useMemo(
     () =>
-      (ordersQuery.data?.orders ?? []).map((order) => ({
-        value: order.id,
-        label: `${order.orderNumber} — ${order.customerName}`,
-      })),
+      (ordersQuery.data?.orders ?? [])
+        .filter((order) => isOrderCancellable(order.status))
+        .map((order) => ({
+          value: order.id,
+          label: `${order.orderNumber} — ${order.customerName}`,
+        })),
     [ordersQuery.data],
   );
 

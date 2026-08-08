@@ -19,6 +19,7 @@ import {
 } from './customers.repository.js';
 import { recordAudit } from '../../shared/audit/audit.service.js';
 import * as deliveriesService from '../deliveries/deliveries.service.js';
+import { computeCreditStatus } from '../customer-credit/customer-credit.service.js';
 import { runInTransaction, type TransactionClient } from '../../shared/database/transaction.js';
 import { cache } from '../../shared/cache/cache.service.js';
 import { buildCacheKey, buildCacheKeyPrefix } from '../../shared/cache/cache-keys.js';
@@ -422,17 +423,19 @@ async function assertLabelAvailable(customerId: string, label: string): Promise<
 }
 
 /**
- * Normal-deactivation safeguards (Phase 6E addendum, extended Phase 8A).
+ * Normal-deactivation safeguards (Phase 6E addendum, extended Phase 8A,
+ * corrected Phase 14.2 to use the live accounting balance instead of only
+ * the static opening-balance row).
  *
- * Checkable today: every Order must be COMPLETED/CANCELLED, accounting
- * outstanding balance must be exactly 0, no PLANNED/DISPATCHED deliveries,
- * and no reserved stock for this customer. Pending/unapproved Customer
- * payments cannot be checked yet (Phase 9).
+ * Every Order must be COMPLETED/CANCELLED, the live accounting outstanding
+ * balance (openingBalance + Σ ISSUED invoices − Σ APPROVED payment
+ * allocations — the same formula customer-credit uses) must be exactly 0,
+ * and there must be no PLANNED/DISPATCHED deliveries for this customer.
  */
 async function assertCustomerDeactivatable(customerId: string): Promise<void> {
-  const [activeOrders, openingBalance, hasActiveDeliveries] = await Promise.all([
+  const [activeOrders, creditStatus, hasActiveDeliveries] = await Promise.all([
     findActiveOrdersByCustomerId(customerId),
-    findOpeningBalanceAmount(customerId),
+    computeCreditStatus(customerId),
     deliveriesService.hasActiveDeliveriesForCustomer(customerId),
   ]);
 
@@ -445,8 +448,9 @@ async function assertCustomerDeactivatable(customerId: string): Promise<void> {
     );
   }
 
-  if (!openingBalance.isZero()) {
-    problems.push(`an outstanding balance of KES ${openingBalance.toFixed(2)}`);
+  const outstandingBalance = new Prisma.Decimal(creditStatus.outstandingBalance);
+  if (!outstandingBalance.isZero()) {
+    problems.push(`an outstanding balance of KES ${outstandingBalance.toFixed(2)}`);
   }
 
   if (hasActiveDeliveries) {

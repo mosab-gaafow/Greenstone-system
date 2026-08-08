@@ -1685,3 +1685,72 @@ describe('deliveries module', () => {
         .expect(422);
     });
   });
+
+  describe('permissions', () => {
+    async function seedDispatchedDeliveryAsAdmin() {
+      const { cookie: adminCookie } = await seedAdmin();
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const product = await seedProduct('Perm' + Math.random().toString(36).slice(2, 6), 100);
+      await seedFinishedStock(product.id, 500);
+      const customer = await seedCustomer('Perm' + Math.random().toString(36).slice(2, 6));
+      const address = await seedAddress(customer.id, 'Site');
+      const order = await getTestPrisma().order.create({
+        data: {
+          orderNumber: `ORD-2026-${String(9700 + Math.floor(Math.random() * 100))}`,
+          customerId: customer.id, customerAddressId: address.id,
+          addressLabel: address.label, addressLine: address.addressLine,
+          paymentArrangement: 'CREDIT', totalAmount: '5000.00',
+          items: { create: { productId: product.id, quantity: 200, agreedUnitPrice: '25.00', lineTotal: '5000.00', remainingQuantity: 200, allocatedQuantity: 200, sortOrder: 1 } },
+        },
+        include: { items: true },
+      });
+      const driver = await seedDriver('Perm' + Math.random().toString(36).slice(2, 6));
+      const vo = await seedVehicleOwner('Perm' + Math.random().toString(36).slice(2, 6));
+      const vehicle = await seedVehicle('PM' + Math.random().toString(36).slice(2, 5).toUpperCase(), vo.id);
+      const delivery = await request(app).post(DELIVERIES).set(adminHeaders).send({
+        orderId: order.id, customerAddressId: address.id, driverId: driver.id,
+        vehicleId: vehicle.id, deliveryDate: new Date().toISOString(),
+        items: [{ orderItemId: order.items[0]!.id, productId: product.id, plannedQuantity: 50 }],
+      }).expect(201);
+      await request(app).post(`${DELIVERIES}/${delivery.body.data.id}/dispatch`).set(adminHeaders).expect(200);
+      return { deliveryId: delivery.body.data.id as string, orderItemId: order.items[0]!.id as string };
+    }
+
+    it('blocks accountant from completing a delivery', async () => {
+      const { deliveryId, orderItemId } = await seedDispatchedDeliveryAsAdmin();
+      const { cookie: accountantCookie } = await createSignedInUser('accountant');
+      const accountantHeaders = await csrfHeaders(accountantCookie);
+      const res = await request(app).post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(accountantHeaders)
+        .send({ items: [{ orderItemId, deliveredQuantity: 50, brokenQuantity: 0 }] });
+      expect(res.status).toBe(403);
+    });
+
+    it('blocks accountant from correcting a delivery', async () => {
+      const { deliveryId, orderItemId } = await seedDispatchedDeliveryAsAdmin();
+      const { cookie: accountantCookie } = await createSignedInUser('accountant');
+      const accountantHeaders = await csrfHeaders(accountantCookie);
+      const res = await request(app).post(`${DELIVERIES}/${deliveryId}/correct`)
+        .set(accountantHeaders)
+        .send({ reason: 'x', items: [{ orderItemId, dispatchedQuantity: 40 }] });
+      expect(res.status).toBe(403);
+    });
+
+    it('allows admin to complete and correct deliveries', async () => {
+      const { deliveryId, orderItemId } = await seedDispatchedDeliveryAsAdmin();
+      const { cookie: adminCookie } = await seedAdmin();
+      const adminHeaders = await csrfHeaders(adminCookie);
+      const correctRes = await request(app).post(`${DELIVERIES}/${deliveryId}/correct`)
+        .set(adminHeaders).send({ reason: 'x', items: [{ orderItemId, dispatchedQuantity: 40 }] });
+      expect(correctRes.status).toBe(200);
+      const completeRes = await request(app).post(`${DELIVERIES}/${deliveryId}/complete`)
+        .set(adminHeaders).send({ items: [{ orderItemId, deliveredQuantity: 40, brokenQuantity: 0 }] });
+      expect(completeRes.status).toBe(200);
+    });
+
+    it('rejects unauthenticated dispatch requests', async () => {
+      const { deliveryId } = await seedDispatchedDeliveryAsAdmin();
+      const res = await request(app).post(`${DELIVERIES}/${deliveryId}/dispatch`).send({});
+      expect(res.status).toBe(401);
+    });
+  });

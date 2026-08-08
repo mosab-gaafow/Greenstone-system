@@ -5,6 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { EmptyState } from '@/components/data-display/empty-state';
+import { ApiError } from '@/lib/api-client';
 import { SettingsForm } from '@/features/settings/components/settings-form';
 import { useSettings, useUpdateSettings } from '@/features/settings/hooks/use-settings';
 
@@ -30,11 +31,19 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
         ) : query.isError ? (
-          <EmptyState
-            icon={SettingsIcon}
-            title="The settings could not be loaded"
-            description="Check your connection and try again."
-          />
+          query.error instanceof ApiError && query.error.status === 403 ? (
+            <EmptyState
+              icon={SettingsIcon}
+              title="You don't have access to this page"
+              description="Company settings are only available to Admin and Super Admin."
+            />
+          ) : (
+            <EmptyState
+              icon={SettingsIcon}
+              title="The settings could not be loaded"
+              description="Check your connection and try again."
+            />
+          )
         ) : (
           <Card>
             <CardContent>

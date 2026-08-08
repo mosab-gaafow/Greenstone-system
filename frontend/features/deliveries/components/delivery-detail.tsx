@@ -29,6 +29,9 @@ export function DeliveryDetailView({ id }: { id: string }) {
   const [cancelOpen, setCancelOpen] = useState(false);
   const [cancelReason, setCancelReason] = useState('');
   const [cancelReasonError, setCancelReasonError] = useState<string | null>(null);
+  const [correctOpen, setCorrectOpen] = useState(false);
+  const [correctReason, setCorrectReason] = useState('');
+  const [correctReasonError, setCorrectReasonError] = useState<string | null>(null);
 
   if (query.isPending) {
     return (
@@ -129,17 +132,7 @@ export function DeliveryDetailView({ id }: { id: string }) {
           {isAdministrator(user) && (
             <Button
               variant="outline"
-              onClick={() => {
-                const reason = prompt('Reason for correction:');
-                if (!reason?.trim()) return;
-                correctMutation.mutate({
-                  reason: reason.trim(),
-                  items: delivery.items.map((item) => ({
-                    orderItemId: item.orderItemId,
-                    dispatchedQuantity: item.dispatchedQuantity,
-                  })),
-                });
-              }}
+              onClick={() => { setCorrectOpen(true); setCorrectReason(''); setCorrectReasonError(null); }}
               disabled={correctMutation.isPending}
             >
               Correct
@@ -308,6 +301,41 @@ export function DeliveryDetailView({ id }: { id: string }) {
           onChange={(e) => { setCancelReason(e.target.value); if (cancelReasonError) setCancelReasonError(null); }}
         />
         {cancelReasonError && <p className="text-destructive text-sm" role="alert">{cancelReasonError}</p>}
+      </ConfirmDialog>
+
+      <ConfirmDialog
+        open={correctOpen}
+        onOpenChange={(open) => {
+          if (!open) { setCorrectOpen(false); setCorrectReason(''); setCorrectReasonError(null); }
+        }}
+        title={`Correct ${delivery.deliveryNumber}?`}
+        description="Finished stock will be adjusted to match the corrected quantities."
+        confirmLabel="Correct"
+        destructive
+        pending={correctMutation.isPending}
+        onConfirm={() => {
+          const trimmed = correctReason.trim();
+          if (!trimmed) { setCorrectReasonError('A reason is required.'); return; }
+          correctMutation.mutate(
+            {
+              reason: trimmed,
+              items: delivery.items.map((item) => ({
+                orderItemId: item.orderItemId,
+                dispatchedQuantity: item.dispatchedQuantity,
+              })),
+            },
+            { onSuccess: () => { setCorrectOpen(false); setCorrectReason(''); } },
+          );
+        }}
+      >
+        <textarea
+          className="border-input bg-background w-full rounded-md border px-3 py-2 text-sm"
+          rows={3}
+          placeholder="Reason for correction (required)"
+          value={correctReason}
+          onChange={(e) => { setCorrectReason(e.target.value); if (correctReasonError) setCorrectReasonError(null); }}
+        />
+        {correctReasonError && <p className="text-destructive text-sm" role="alert">{correctReasonError}</p>}
       </ConfirmDialog>
     </div>
   );

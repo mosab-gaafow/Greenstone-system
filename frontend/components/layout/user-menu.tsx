@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -47,11 +48,13 @@ export function UserMenuContent({ user }: { user: CurrentUser }) {
 
   return (
     <DropdownMenuContent align="end" className="w-60">
-      <DropdownMenuLabel className="font-normal">
-        <span className="block text-sm font-medium">{user.name}</span>
-        <span className="text-muted-foreground block truncate text-xs">{user.email}</span>
-        <span className="text-muted-foreground mt-1 block text-xs">{roleLabel(user.role)}</span>
-      </DropdownMenuLabel>
+      <DropdownMenuGroup>
+        <DropdownMenuLabel className="font-normal">
+          <span className="block text-sm font-medium">{user.name}</span>
+          <span className="text-muted-foreground block truncate text-xs">{user.email}</span>
+          <span className="text-muted-foreground mt-1 block text-xs">{roleLabel(user.role)}</span>
+        </DropdownMenuLabel>
+      </DropdownMenuGroup>
 
       <DropdownMenuSeparator />
 

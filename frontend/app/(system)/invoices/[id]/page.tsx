@@ -14,6 +14,8 @@ import { useInvoice, useVoidInvoice } from '@/features/invoices/hooks/use-invoic
 import { invoicePdfUrl } from '@/features/invoices/api/invoices.api';
 import { invoiceStatusLabel, paymentStatusLabel } from '@/features/invoices/types/invoice.types';
 import { formatDateTime } from '@/lib/format';
+import { useCurrentUser } from '@/features/auth/hooks/use-current-user';
+import { isAdministrator } from '@/lib/permissions';
 
 const TONES: Record<string, StatusTone> = { ISSUED: 'info', VOIDED: 'danger' };
 
@@ -21,6 +23,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   const { id } = use(params);
   const q = useInvoice(id);
   const voidMut = useVoidInvoice(id);
+  const { user } = useCurrentUser();
   const [voiding, setVoiding] = useState(false);
   const [reason, setReason] = useState('');
   const [reasonErr, setReasonErr] = useState<string | null>(null);
@@ -29,7 +32,7 @@ export default function InvoiceDetailPage({ params }: { params: Promise<{ id: st
   if (q.isError) return <div className="w-full p-4 sm:p-6 lg:p-8"><EmptyState icon={Receipt} title="Invoice not found" action={<Button variant="outline" render={<Link href="/invoices" />}><ArrowLeft className="size-4" />Back</Button>} /></div>;
 
   const inv = q.data;
-  const canVoid = inv.status === 'ISSUED';
+  const canVoid = inv.status === 'ISSUED' && isAdministrator(user);
 
   return <div className="w-full space-y-6 p-4 sm:p-6 lg:p-8">
     <Button variant="ghost" size="sm" render={<Link href="/invoices" />} className="text-muted-foreground -ml-2 h-9"><ArrowLeft className="size-4" />Back to invoices</Button>

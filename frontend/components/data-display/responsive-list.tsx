@@ -108,7 +108,9 @@ export function ResponsiveList<TRecord>({
   const subtitle = columns.find((column) => column.card === 'subtitle');
   const badge = columns.find((column) => column.card === 'badge');
   const meta = columns.filter((column) => column.card === 'meta');
-  const actions = columns.filter((column) => column.align === 'right' && column.card !== 'hidden');
+  const actions = columns.filter(
+    (column) => column.align === 'right' && column.card === undefined,
+  );
 
   return (
     <>

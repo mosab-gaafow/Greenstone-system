@@ -89,6 +89,12 @@ export async function createProduction(
 
   const order = input.orderId ? await ordersService.getOrder(input.orderId) : undefined;
 
+  if (order && (order.status === 'CANCELLED' || order.status === 'COMPLETED')) {
+    throw new BusinessRuleViolationError(
+      `Order ${order.orderNumber} is ${order.status.toLowerCase()} and cannot receive new production.`,
+    );
+  }
+
   const resolvedItems = await Promise.all(input.items.map((item) => resolveItem(item, order)));
   const resolvedUsages = await Promise.all(input.rawMaterialUsages.map(resolveUsage));
 

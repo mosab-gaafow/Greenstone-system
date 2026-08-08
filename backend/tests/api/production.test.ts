@@ -94,7 +94,12 @@ async function seedAddress(customerId: string) {
   });
 }
 
-async function seedOrder(customerId: string, addressId: string, items: { productId: string; quantity: number }[]) {
+async function seedOrder(
+  customerId: string,
+  addressId: string,
+  items: { productId: string; quantity: number }[],
+  overrides: Partial<{ status: 'PENDING' | 'IN_PRODUCTION' | 'COMPLETED' | 'CANCELLED' }> = {},
+) {
   const orderNumber = `ORD-TEST-${Math.random().toString(36).slice(2, 10)}`;
 
   return getTestPrisma().order.create({
@@ -105,6 +110,7 @@ async function seedOrder(customerId: string, addressId: string, items: { product
       addressLabel: 'Test site',
       addressLine: '123 Road',
       paymentArrangement: 'PREPAID',
+      status: overrides.status ?? 'PENDING',
       totalAmount: (items.reduce((sum, item) => sum + item.quantity * 10, 0)).toFixed(2),
       items: {
         create: items.map((item, index) => ({
@@ -344,6 +350,61 @@ describe('production module', () => {
         where: { orderItemId: orderItem!.id },
       });
       expect(allocation?.quantity).toBe(50);
+    });
+
+    it('rejects production for a cancelled order', async () => {
+      // Regression test (Phase 14.5-14.8 closure audit): the order picker
+      // and the backend previously allowed new production against a
+      // CANCELLED or COMPLETED order — closed orders must not receive more.
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const product = await seedProduct();
+      const order = await seedOrder(customer.id, address.id, [{ productId: product.id, quantity: 50 }], {
+        status: 'CANCELLED',
+      });
+
+      const response = await request(app)
+        .post(PRODUCTION)
+        .set(headers)
+        .send({
+          productionDate: '2026-01-10',
+          purpose: 'ORDER',
+          orderId: order.id,
+          items: [{ productId: product.id, pallets: 5, brokenQuantity: 0, curingDuration: 'TWO_DAYS' }],
+          rawMaterialUsages: [],
+        });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+      expect(response.body.error.message).toMatch(/cancelled/i);
+    });
+
+    it('rejects production for a completed order', async () => {
+      const { cookie } = await createSignedInUser('admin');
+      const headers = await csrfHeaders(cookie);
+      const customer = await seedCustomer();
+      const address = await seedAddress(customer.id);
+      const product = await seedProduct();
+      const order = await seedOrder(customer.id, address.id, [{ productId: product.id, quantity: 50 }], {
+        status: 'COMPLETED',
+      });
+
+      const response = await request(app)
+        .post(PRODUCTION)
+        .set(headers)
+        .send({
+          productionDate: '2026-01-10',
+          purpose: 'ORDER',
+          orderId: order.id,
+          items: [{ productId: product.id, pallets: 5, brokenQuantity: 0, curingDuration: 'TWO_DAYS' }],
+          rawMaterialUsages: [],
+        });
+
+      expect(response.status).toBe(422);
+      expect(response.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+      expect(response.body.error.message).toMatch(/completed/i);
     });
 
     it('caps the allocation at what the order item still needs', async () => {

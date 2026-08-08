@@ -136,6 +136,17 @@ export async function voidInvoiceAction(id: string, input: VoidInvoiceInput, con
   const now = new Date();
 
   await runInTransaction(async (tx: TransactionClient) => {
+    const approvedAgg = await tx.customerPaymentAllocation.aggregate({
+      where: { invoiceId: id, payment: { status: 'APPROVED' } },
+      _sum: { amount: true },
+    });
+    const approvedAmount = approvedAgg._sum.amount ?? new Prisma.Decimal(0);
+    if (approvedAmount.greaterThan(0)) {
+      throw new BusinessRuleViolationError(
+        `Invoice ${existing.invoiceNumber} has KES ${approvedAmount.toFixed(2)} in approved payments. Reverse the payment allocations before voiding.`,
+      );
+    }
+
     const result = await voidInvoice(tx, id, { voidedAt: now, voidedByUserId: context.user.id, voidReason: reason });
     if (!result) throw new InvalidDocumentStatusError('Invoice could not be voided — it may no longer be ISSUED.');
     await recordAudit(tx, { ...toAuditContext(context), action: 'VOID_INVOICE', module: AUDIT_MODULE, entityType: 'Invoice', entityId: id, documentNumber: existing.invoiceNumber, reason, previousData: { status: 'ISSUED' }, updatedData: { status: 'VOIDED', voidReason: reason } });

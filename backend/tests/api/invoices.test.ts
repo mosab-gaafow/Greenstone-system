@@ -57,6 +57,26 @@ describe('invoices module', () => {
     expect(res.body.data.status).toBe('VOIDED');
   });
 
+  it('blocks voiding an invoice with approved payments', async () => {
+    const { cookie } = await sadmin(); const h = await csrfH(cookie);
+    const p = await sp('V2'); const c = await sc('V2'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const inv = await request(app).post(INV).set(h).send({ orderId: o.id, dueDate: TOM }).expect(201);
+    const invoiceId = inv.body.data.id as string;
+
+    const PAY = `${API_BASE_PATH}/customer-payments`;
+    const pay = await request(app).post(PAY).set(h).send({
+      customerId: c.id, paymentMethod: 'CASH', paymentDate: TOM, amount: '500.00',
+      allocations: [{ invoiceId, amount: '500.00' }],
+    }).expect(201);
+    await request(app).post(`${PAY}/${pay.body.data.id as string}/approve`).set(h).send({}).expect(200);
+
+    const res = await request(app).post(`${INV}/${invoiceId}/void`).set(h).send({ reason: 'Wrong' }).expect(422);
+    expect(res.body.error.code).toBe('BUSINESS_RULE_VIOLATION');
+
+    const stillIssued = await request(app).get(`${INV}/${invoiceId}`).set(h).expect(200);
+    expect(stillIssued.body.data.status).toBe('ISSUED');
+  });
+
   it('lists', async () => {
     const { cookie } = await sadmin(); const h = await csrfH(cookie);
     await request(app).get(INV).set(h).query({ page: 1, pageSize: 10 }).expect(200);
@@ -196,5 +216,32 @@ describe('invoices module', () => {
     const match = /\/Count\s+(\d+)/.exec(body.toString('latin1'));
     expect(match).not.toBeNull();
     expect(Number(match![1])).toBe(1);
+  });
+
+  // --- permissions ---
+
+  it('blocks accountant from voiding an invoice', async () => {
+    const { cookie: adminCookie } = await sadmin(); const adminH = await csrfH(adminCookie);
+    const p = await sp('PermV1'); const c = await sc('PermV1'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const inv = await request(app).post(INV).set(adminH).send({ orderId: o.id, dueDate: TOM }).expect(201);
+
+    const { cookie: accountantCookie } = await createSignedInUser('accountant');
+    const accountantH = await csrfH(accountantCookie);
+    const res = await request(app).post(`${INV}/${inv.body.data.id}/void`).set(accountantH).send({ reason: 'x' });
+    expect(res.status).toBe(403);
+  });
+
+  it('allows admin to void an invoice', async () => {
+    const { cookie } = await sadmin(); const h = await csrfH(cookie);
+    const p = await sp('PermV2'); const c = await sc('PermV2'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const inv = await request(app).post(INV).set(h).send({ orderId: o.id, dueDate: TOM }).expect(201);
+    const res = await request(app).post(`${INV}/${inv.body.data.id}/void`).set(h).send({ reason: 'x' });
+    expect(res.status).toBe(200);
+  });
+
+  it('rejects unauthenticated invoice creation', async () => {
+    const p = await sp('PermV3'); const c = await sc('PermV3'); const a = await sa(c.id); const o = await so(c.id, a.id, p.id);
+    const res = await request(app).post(INV).send({ orderId: o.id, dueDate: TOM });
+    expect(res.status).toBe(401);
   });
 });
